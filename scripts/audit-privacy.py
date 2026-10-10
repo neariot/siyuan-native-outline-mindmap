@@ -108,9 +108,29 @@ MAX_BYTES = 2_000_000
 #: A test file. An id-shaped token inside one is fixture data —— the tests need an opaque identifier
 #: and invent one —— so it is excused by category rather than by an entry, the way the language auditor
 #: excuses a Chinese fixture literal. The count is always printed, because "it is only a fixture" is not
-#: the same as "it was invented": an id copied out of a live workspace still identifies that document,
-#: and the 60-odd that this rule found in the test suite included exactly that.
+#: the same as "it was invented": an id taken from a live workspace still identifies that document. What
+#: decides that is `--live`, which asks the instances what their ids actually are.
 TEST_FILE = re.compile(r"(^|/)(e2e/|.*\.test\.tsx?$|.*\.spec\.tsx?$)")
+
+#: A **script whose self-test holds its own fixtures** —— a module-level table named `SELFTEST…`, `…CASES…`
+#: or `…FIXTURES…`. Its id-shaped literals are that tool's fixtures, which is the situation `TEST_FILE`
+#: covers for a test file, and the language auditor decides it the same way.
+SELFTEST_DECL = re.compile(r"(?m)^[A-Z][A-Z0-9_]*(?:SELFTEST|CASES|FIXTURES)[A-Z0-9_]*\s*(?::[^=]+)?=")
+
+
+def selftest_files(paths):
+    """Which of these scripts declare a self-test table (read once, not per finding)."""
+    found = set()
+    for relpath in paths:
+        if not relpath.endswith(".py"):
+            continue
+        try:
+            with open(REPO_ROOT / relpath, encoding="utf-8") as handle:
+                if SELFTEST_DECL.search(handle.read()):
+                    found.add(relpath)
+        except OSError:
+            continue
+    return found
 
 #: How many findings of one rule in one file are printed. Playwright's traces record every request,
 #: so a single trace can hold thousands of ids from the *isolated* instance; printing them all buries
@@ -173,9 +193,13 @@ def check_patterns(paths, label):
     """The unconditional rules, over whatever scope was asked for."""
     findings, scanned, skipped = [], 0, 0
     counts, excused = {}, {}
+    selftests = selftest_files(paths)
     def add(finding):
         if finding.rule == "siyuan-id" and TEST_FILE.search(finding.path):
             excused["test-fixture-id"] = excused.get("test-fixture-id", 0) + 1
+            return None
+        if finding.rule == "siyuan-id" and finding.path in selftests:
+            excused["selftest-fixture-id"] = excused.get("selftest-fixture-id", 0) + 1
             return None
         key = (finding.path, finding.rule)
         counts[key] = counts.get(key, 0) + 1
