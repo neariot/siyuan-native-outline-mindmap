@@ -17,6 +17,14 @@ a file nobody reads might as well not exist.
   Mutations go through the kernel block / document API.
 - Locate things by block or doc ID. Never guess from a title or hpath.
 - Delete documents with `/api/filetree/removeDocByID` (the old `removeDoc` panics).
+- **Never put anything about a notebook the user actually works in into this
+  repository** —— no name, no id, no `hpath`, no document title, no content, no
+  screenshot of their workspace. Not in code, comments, docs, tests, fixtures,
+  examples, commit messages, or a log that gets committed. A real name is not a
+  convenient sample, it is personal data, and a comment is the easiest place to
+  leak it (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `甲分支`).
+  `python3 scripts/audit-privacy.py` checks this; with `--live` it cross-checks
+  the names against the running instance instead of trusting a pattern alone.
 - **Screenshot before debugging UI.** Do not guess from the DOM —
   a DOM count will always hand you a number, and that number may describe
   an area the user cannot even see (case: `pitfalls/debug.md` 6.12).
@@ -98,6 +106,12 @@ Without the user's explicit consent, do not:
 
 A local `git commit` during development is fine.
 
+**The source is not published.** The plugin is distributed as a packaged build attached to a Release
+(see the hard rule in section 1: nothing about a notebook the user works in may be published, and the
+safest way to keep that true is to publish the *build*, not the source). A distribution repository
+therefore holds a README and the packaged asset and nothing else, and the development checkout keeps
+**no remote** —— a `git push` from here would republish everything.
+
 ## 5. Environment and configuration
 
 Ports, addresses, and paths all go through `scripts/env.py` (which reads
@@ -152,6 +166,9 @@ npm run deploy      # build + deploy into the SiYuan workspace (--reload to hot-
 npm run typecheck   # tsc --noEmit
 npm run check       # every fast gate in one command (typecheck + unit + docs index + language + i18n keys + css scope)
 npm run i18n        # every `t('<key>')` exists in both catalogues; no entry is dead text
+npm run privacy     # no id-shaped literal or credential in tracked files (--live: also cross-checks
+                    #   the notebook names this machine's instances report, over tracked files and the
+                    #   local .logs/ test-results/ .tmp/ artifacts)
 npm run timings     # how long each script actually takes (reads .logs/script-usage.log)
 npm run redproof -- --file <f> --from <text> --to <text> --run "<check>"   # show a check can go red
 npm test            # offline unit tests, no SiYuan needed
@@ -175,7 +192,8 @@ If you touched CSS, layout, or kernel interaction, also run `npm run verify`.
 
 - **Comments state technical facts, not narrative.** No "who asked for this",
   no "who reported the bug", no quotes from anyone; no dates, no "fixed in the
-  third attempt"; no machine-specific ports, addresses, paths, or credentials.
+  third attempt"; no machine-specific ports, addresses, paths, or credentials; and say nothing about a
+  notebook the user really works in (the hard rule in section 1, enforced by `scripts/audit-privacy.py`).
   Put the history in the commit message or in `docs/` — the code keeps only
   "why it has to be this way", in a line or two when possible.
   ("User" in the product sense — whoever uses the plugin — is fine.)
@@ -272,6 +290,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 |---|---|
 | `python3 scripts/redproof.py` | "a new test must be shown to fail": requires **green before** the mutation, then red, then restores and verifies the bytes —— "any failure counts" is the vacuous pass this tool exists to prevent |
 | `python3 scripts/audit-language.py` | the section 2 language policy, over every file type at once |
+| `python3 scripts/audit-privacy.py` | a real notebook's identity or a credential in the repository; `--live` cross-checks the values the configured instances report |
 | `python3 scripts/check.py` | every fast gate in one command, with a time budget |
 | `python3 scripts/run-e2e.py <substring>` | one suite instead of all of them; durations reported per case |
 | `python3 scripts/script_log.py --report` | how long every script actually takes —— the evidence behind "fast enough for the foreground" |

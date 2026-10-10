@@ -224,7 +224,7 @@ Measured (one connector line between two nodes, label `测试连线`):
 
 ```
 mind map        1 dashed line, line data =
-                [{"id":"EMeWnSFiRi","toNodeId":"20261006001246-qsv4jv1","dashed":true,"label":"测试连线"}]
+                [{"id":"EMeWnSFiRi","toNodeId":"<anchor-id>","dashed":true,"label":"测试连线"}]
                 and the outline shows the connector marker 2 times (source and target both marked)
 click delete -> still 1 dashed line, data unchanged; still unchanged after 8s      <- before the fix
 after the fix -> 0 dashed lines, the attribute reads `[]`; still `[]` after 8s

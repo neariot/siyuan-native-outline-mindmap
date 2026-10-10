@@ -608,8 +608,8 @@ rebuilt it under the **block ID**. Measured proof that the two really differ -- 
 i.e. two distinct IDs for one node:
 
 ```
-node ID      = 20261005223702-kv25149
-mapped block = 20261005223703-ovmfqd7
+node ID      = <node-id>
+mapped block = <block-id>
 ```
 
 ⇒ the next write-back finds no mapping for the node ⇒ judges it new ⇒ **inserts a second copy**:

@@ -72,7 +72,7 @@ export function isTargetGoneError(e: unknown, docId = ''): boolean {
   // ★★★ The document itself must be confirmed gone before this counts as "document deleted".
   //
   //   A measured false positive ("original document deletion" showing up again,
-  //   pointing at `20261009154100-mpqi2c7`):
+  //   pointing at `<anchor-id>`):
   //   that document was **alive and well** (25 blocks, getBlockKramdown returning normally),
   //   only some **child block ID was stale** (a transient state during concurrency/rebuild), and the kernel answered
   //   `block not found` —— the very same wording as the "document deleted" error.

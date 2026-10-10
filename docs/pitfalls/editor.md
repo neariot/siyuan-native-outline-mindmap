@@ -450,7 +450,7 @@ plain text** -- not even a clickable element -- and clicking it does nothing, wi
 **Cause chain** (two independent silent failures on the same path):
 
 1. the kernel's own kramdown writes references with **double quotes** --
-   `见 ((20261006001709-ois7bgw "目标文档"))` -- while the parser matched **single quotes only**
+   `见 ((<anchor-id> "目标文档"))` -- while the parser matched **single quotes only**
    (`'([^']*)'`), so **no reference coming from SiYuan ever matched**: no `<span data-noderef>` was
    produced, and the text stayed text;
 2. even when a `<span data-noderef>` is produced, clicking did nothing because `mount.ts` passed

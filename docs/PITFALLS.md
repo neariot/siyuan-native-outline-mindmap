@@ -17,6 +17,7 @@ test-criteria — it had become unreadable.)
 | [`pitfalls/data.md`](pitfalls/data.md) | Data and write-back: block-ID namespaces, conflicts, fingerprints | `1.1`–`1.10` |
 | [`pitfalls/editor.md`](pitfalls/editor.md) | Editor interaction: focus, selection state, reverse keys, view switching, hints | `2.1`–`2.5`, `6.9b/d/g/o/v/w/x/y`, `6.9aa`–`6.9cc` |
 | [`pitfalls/mobile.md`](pitfalls/mobile.md) | Mobile: gestures, plugin entry points | `3.1`–`3.5` |
+| [`pitfalls/privacy.md`](pitfalls/privacy.md) | What must never reach the repository: a real notebook's name, id, path, or content; a credential, before and after deletion | `6.23` |
 | [`pitfalls/style.md`](pitfalls/style.md) | Rendering and styles: scoping, SVG, `@media`/`@container`, device capabilities | `4.1`–`4.7`, `6.9c/e/n/p/q`, `6.21`, `6.22` |
 | [`pitfalls/plugin.md`](pitfalls/plugin.md) | Plugin mechanics: i18n, icon tooltips | `5.1`–`5.5` |
 | [`pitfalls/build.md`](pitfalls/build.md) | Build and engineering: minifiers, DOM paths, dead-code removal | `6.2`, `6.3`, `6.7` |

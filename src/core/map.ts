@@ -618,7 +618,7 @@ export function kramdownToHtml(kd: string): string {
   // ★★★ Both **single and double quotes** must be accepted (measured fix).
   //
   //   The kramdown the SiYuan kernel itself produces uses **double quotes**:
-  //     see ((20261006001709-ois7bgw "target document"))
+  //     see ((<anchor-id> "target document"))
   //   But this code used to match single quotes only, `'([^']*)'` —
   //   so **every reference coming from SiYuan failed to match** and degraded to a line of plain text in the UI.
   //

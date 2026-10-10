@@ -61,7 +61,7 @@ export const POLL_INTERVAL_MS = 200;
  *   a single `'` is enough to truncate the literal and rewrite the query semantics.
  *   Routing everything through this helper is defence in depth and does not change normal-path behaviour.
  *
- * Note: a SiYuan block ID looks like `20261007120000-abcdefg` and contains no quotes;
+ * Note: a SiYuan block ID looks like `<14 digits>-<7 alnum>` and contains no quotes;
  *     for such values this function is a no-op (idempotent), so it adds no performance or semantic burden.
  */
 function sqlStr(v: string): string {
@@ -1569,8 +1569,8 @@ export class SiYuanStore {
           //
           //   Measured hard evidence (the same node SiblingE):
           //   ```
-          //   node ID      = 20261005223702-kv25149
-          //   mapped block = 20261005223703-ovmfqd7     ← the prefixes differ by 1 second, so they really are two IDs
+          //   node ID      = <node-id>
+          //   mapped block = <block-id>     ← the prefixes differ by 1 second, so they really are two IDs
           //   ```
           //   The result was **two SiblingE** in the document (each with its own paragraph block).
           //

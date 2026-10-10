@@ -72,6 +72,11 @@ GATES = [
         "why": "every `t('<key>')` exists in both catalogues, and no entry is dead text",
     },
     {
+        "name": "privacy",
+        "command": "python3 scripts/audit-privacy.py",
+        "why": "no id-shaped literal and no credential literal in the source",
+    },
+    {
         "name": "css-scope",
         "command": "python3 scripts/verify-css-scope.py",
         "why": "no unscoped bare selector survived the build",

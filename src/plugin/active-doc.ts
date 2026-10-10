@@ -13,7 +13,7 @@
 // the document keeps saying it has no content"): with several tabs there are **two** .protyle in a split,
 // and the one "containing the focused element" is exactly the **just-opened one**, not the one the user is viewing:
 //
-//     1656ms  hit=focus  id=20260919155158-a93feye   ← the just-opened empty document
+//     1656ms  hit=focus  id=<doc-id>   ← the just-opened empty document
 //             protyles=[the one the user is viewing, the just-opened one]   URL=the one the user is viewing
 //
 // So the panel reads that empty document, which has no content yet, and shows "This document has no content yet".
@@ -95,7 +95,7 @@ function fromDesktopLayout(): string {
   //    `.layout__wnd--active` vanishes entirely for an instant (measured hit count 0).
   //    while the Tab's `item--focus` marker in the layout tree **stays correct**:
   //
-  //        DOM_active windows=0   models=1   rootID=20261008000425-abyokpo focus=True
+  //        DOM_active windows=0   models=1   rootID=<root-id> focus=True
   //
   //    Taking only the fast path intermittently fails (measured 3 failures out of 5 runs),
   //    the panel sits at "Loading…" and the user thinks it is broken —— this is exactly the other face of

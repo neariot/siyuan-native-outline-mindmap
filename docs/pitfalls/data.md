@@ -215,8 +215,8 @@ So the strategy has to be: take the loss-free form, then let `moveNodes` correct
 **Root cause**: the two sides of the mapping table used different key spaces. The insert path registered the mapping under the **client-side node ID** (`makeSiyuanId()`), while `loadBlockMap` rebuilt it under the **block ID**; the insert sent `- ${text}` with no id, so the kernel assigned a fresh block ID. Measured proof that the two really differ:
 
 ```
-node ID      = 20261005223702-kv25149
-mapped block = 20261005223703-ovmfqd7     <- one second apart: two different IDs
+node ID      = <node-id>
+mapped block = <block-id>     <- one second apart: two different IDs
 ```
 
 -> the next write-back finds no mapping for that node, judges it new and **inserts a second copy**. The symptom of a key mismatch is a duplicate block, not an error.

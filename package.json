@@ -15,6 +15,8 @@
     "env": "python3 scripts/env.py",
     "check": "python3 scripts/check.py",
     "language": "python3 scripts/audit-language.py",
+    "i18n": "python3 scripts/check-i18n-keys.py",
+    "privacy": "python3 scripts/audit-privacy.py",
     "redproof": "python3 scripts/redproof.py",
     "timings": "python3 scripts/script_log.py --report",
     "package": "npm run build && cd dist-plugin && zip -r ../package.zip . -x '.*' && cd .. && npm run verify-css && npm run verify-pkg",

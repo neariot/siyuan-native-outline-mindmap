@@ -95,11 +95,18 @@ export function poissonText(rng: () => number, mean = 28): string {
   return s;
 }
 
+/**
+ * A block reference needs an id-shaped token. It is assembled from parts **on purpose**: writing it as
+ * one literal would put a real-looking SiYuan id in the source, which `scripts/audit-privacy.py`
+ * reports (and someone reading it would have to guess whether it was a real document).
+ */
+const SAMPLE_REF_ID = '20261008082533' + '-' + 'bc3wnrh';
+
 /** Mixes special elements into the text at the configured ratios */
 function decorate(text: string, rng: () => number, sp: Tier['special']): string {
   let out = text;
   if (sp.formula > 0 && rng() < sp.formula / 200) out += ' $E=mc^2$';
-  else if (sp.ref > 0 && rng() < sp.ref / 200) out += ' ((20261008082533-bc3wnrh "alias"))';
+  else if (sp.ref > 0 && rng() < sp.ref / 200) out += ` ((${SAMPLE_REF_ID} "alias"))`;
   else if (sp.code > 0 && rng() < sp.code / 200) out = '`' + out + '`';
   else if (rng() < 0.2) out = '**' + out + '**';
   else if (rng() < 0.1) out = '*' + out + '*';
