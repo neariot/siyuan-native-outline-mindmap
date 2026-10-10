@@ -166,11 +166,14 @@ The token can also be read from `["api"]["token"]` in
 npm run build       # build
 npm run deploy      # build + deploy into the SiYuan workspace (--reload to hot-reload)
 npm run typecheck   # tsc --noEmit
-npm run check       # every fast gate in one command (typecheck + unit + docs index + language + i18n keys + css scope)
+npm run check       # every fast gate in one command (typecheck + unit + docs index + language +
+                    #   i18n keys + privacy + css scope)
 npm run i18n        # every `t('<key>')` exists in both catalogues; no entry is dead text
 npm run privacy     # no id-shaped literal or credential in tracked files (--live: also cross-checks
                     #   the notebook names this machine's instances report, over tracked files and the
                     #   local .logs/ test-results/ .tmp/ artifacts)
+npm run env         # the effective configuration (deploy targets included)
+npm run language    # the section 2 language policy over every file type at once
 npm run timings     # how long each script actually takes (reads .logs/script-usage.log)
 npm run redproof -- --file <f> --from <text> --to <text> --run "<check>"   # show a check can go red
 npm test            # offline unit tests, no SiYuan needed
@@ -178,7 +181,10 @@ npm run test:e2e    # browser E2E
                     #   * isolated test instance only: run-e2e.py reads the
                     #     address and that instance's own token from .env;
                     #     if it is not running it errors out, never falls back
-                    #   * one suite: `npm run test:e2e theme` (a file-name substring)
+                    #   * one suite: `npm run test:e2e theme` (a file-name substring, resolved to
+                    #     spec paths; a substring that matches nothing is an error, not a full run)
+npm run test:e2e:ui # the same, interactively
+npm run test:e2e:report  # open the HTML report of the last run
 npm run verify      # live check (desktop CDP, needs SiYuan running)
 npm run verify:android # mobile check (Android/Redroid + CDP; needs adb, a mobile
                      #   browser, and .env's PYTHON -- python playwright often
