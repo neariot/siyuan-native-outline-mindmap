@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output (releases ship package.zip from a Release, not committed)
+dist-plugin/
+dist/
+package.zip
+
+# Local environment config —— contains an API token, never commit it.
+# Template is .env.example (that one is committed)
+.env
+.env.local
+
+# Python cache (produced by the tool scripts under scripts/)
+__pycache__/
+*.pyc
+
+# Scratch files / backups / drafts
+.tmp/
+
+# Run logs and live-test records
+.logs/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Playwright E2E artifacts (traces / failure screenshots / reports)
+test-results/
+playwright-report/

@@ -1,0 +1,95 @@
+name: CI
+
+# When it runs: on every push to main and on every PR.
+# E2E needs a kernel with SiYuan running, which a GitHub-hosted runner does not have ——
+# so this runs only the **self-contained** layers (see below), and E2E is manual-trigger only.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: 'Run E2E (requires SIYUAN_URL to point at a usable SiYuan)'
+        type: boolean
+        default: false
+
+jobs:
+  check:
+    name: Typecheck / unit tests / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # Offline unit tests run on Node, but the repo scripts are driven by python3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Offline unit tests
+        run: npm test
+
+      - name: Verify artifacts (CSS scoping + package contents)
+        run: |
+          npm run package
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: package.zip
+
+  e2e:
+    name: Browser E2E
+    # Runs only when manually triggered with an explicit request —— it needs a real SiYuan.
+    # Do not put E2E into the every-push pipeline: when it cannot run it turns into a permanent red X,
+    # and after a while nobody looks at CI anymore.
+    if: github.event_name == 'workflow_dispatch' && inputs.e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build + deploy to SiYuan
+        env:
+          SIYUAN_URL: ${{ secrets.SIYUAN_URL }}
+          SIYUAN_TOKEN: ${{ secrets.SIYUAN_TOKEN }}
+        run: |
+          npm run build
+          npm run deploy
+
+      - name: Run E2E
+        env:
+          SIYUAN_URL: ${{ secrets.SIYUAN_URL }}
+          SIYUAN_TOKEN: ${{ secrets.SIYUAN_TOKEN }}
+          SIYUAN_TEST_NOTEBOOK: ${{ secrets.SIYUAN_TEST_NOTEBOOK }}
+        run: npm run test:e2e
+
+      - name: Keep the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/

@@ -1,0 +1,38 @@
+{
+  "name": "siyuan-native-outline-mindmap",
+  "author": "neariot",
+  "url": "https://github.com/neariot/siyuan-native-outline-mindmap",
+  "version": "0.1.4",
+  "minAppVersion": "3.0.0",
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "disabledInPublish": false,
+  "displayName": {
+    "default": "Native Outline & Mindmap",
+    "zh_CN": "原生大纲导图"
+  },
+  "description": {
+    "default": "Edit SiYuan's own list blocks as an outline or a mindmap. Nodes ARE native list items — no custom attributes, no private storage, no second copy of your data. Everything stays searchable and fully editable after the plugin is uninstalled.",
+    "zh_CN": "用大纲 / 导图视图编辑思源原生块。节点就是思源列表项本身 —— 不写自定义属性、不用私有存储、不产生第二份数据。卸载插件后文档照常可搜索、可编辑。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh_CN": "README.zh-CN.md"
+  },
+  "icon": "icon.png",
+  "preview": "preview.png",
+  "keywords": [
+    "mindmap",
+    "mind map",
+    "思维导图",
+    "导图",
+    "outline",
+    "大纲",
+    "原生块",
+    "native blocks"
+  ]
+}

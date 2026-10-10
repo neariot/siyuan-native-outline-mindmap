@@ -1,0 +1,50 @@
+{
+  "name": "siyuan-native-outline-mindmap",
+  "version": "0.1.4",
+  "private": true,
+  "description": "A SiYuan plugin that edits native SiYuan blocks through outline / mindmap views: single source of data, no private copy, no custom attributes",
+  "scripts": {
+    "dev": "rsbuild dev",
+    "build": "rsbuild build && python3 scripts/verify-css-scope.py",
+    "preview": "rsbuild preview",
+    "test": "python3 scripts/run-tests.py",
+    "typecheck": "tsc --noEmit",
+    "verify": "python3 scripts/verify-live.py",
+    "verify:android": "python3 scripts/verify-android.py",
+    "record": "python3 scripts/record-demo.py",
+    "env": "python3 scripts/env.py",
+    "check": "python3 scripts/check.py",
+    "language": "python3 scripts/audit-language.py",
+    "redproof": "python3 scripts/redproof.py",
+    "timings": "python3 scripts/script_log.py --report",
+    "package": "npm run build && cd dist-plugin && zip -r ../package.zip . -x '.*' && cd .. && npm run verify-css && npm run verify-pkg",
+    "verify-pkg": "python3 scripts/verify-pkg.py",
+    "deploy": "python3 scripts/deploy.py",
+    "verify-css": "python3 scripts/verify-css-scope.py",
+    "snapshot-keymap": "python3 scripts/snapshot-keymap.py",
+    "test:e2e": "python3 scripts/run-e2e.py",
+    "test:e2e:ui": "python3 scripts/run-e2e.py --ui",
+    "test:e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "katex": "0.16.11",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@rsbuild/core": "1.2.0",
+    "@rsbuild/plugin-react": "1.2.0",
+    "@types/katex": "^0.16.8",
+    "@types/node": "^22.20.5",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.5.29",
+    "postcss-prefix-selector": "^2.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.5.4"
+  },
+  "license": "MIT",
+  "author": "neariot"
+}

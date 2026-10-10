@@ -1,0 +1,1564 @@
+/* ---------- color variables ----------
+ *
+ * ★ Scoped to the plugin container `.om-mm-host` only; never `:root` (2026-10-07).
+ *   `:root` is `html` —— plugin CSS is injected globally, so bare variable names on html
+ *   would affect SiYuan itself and other plugins. Keep names short, but keep the scope sound.
+ */
+.om-mm-host {
+  --bg: var(--b3-theme-background, #ffffff);
+  --bg-side: var(--b3-theme-surface, #f7f7f5);
+  --bg-hover: #f2f4f7;
+  --text: var(--b3-theme-on-background, #16181a);
+  --text-weak: var(--b3-theme-on-surface, #787878);
+  --border: var(--b3-border-color, #dee0e3);
+  --accent: #2f6fed;
+  --danger: #dc2d1e;
+  --code-bg: #f2f3f5;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+/**
+ * Dark-theme variables.
+ *
+ * ⚠️ The selector must be `html[data-theme-mode='dark']` —— that is **the attribute SiYuan actually writes**
+ * (on <html>, alongside data-light-theme / data-dark-theme).
+ * Written as `[data-theme='dark']` it **never matches** in SiYuan
+ * → in dark mode the whole block is dead code and the mind map keeps the light palette,
+ * showing up as "black text on a gray background / a white canvas".
+ *
+ * The variables also bind to SiYuan's `--b3-theme-*`, so colors follow the theme automatically.
+ */
+html[data-theme-mode='dark'] .om-mm-host {
+  --bg: var(--b3-theme-background, #1c1d1f);
+  --bg-side: var(--b3-theme-surface, #252629);
+  --bg-hover: var(--b3-theme-surface-lighter, #2b2d31);
+  --text: var(--b3-theme-on-background, #f0f2f5);
+  --text-weak: var(--b3-theme-on-surface, #9da3ad);
+  --border: var(--b3-border-color, #383a40);
+  --accent: var(--b3-theme-primary, #4f7cff);
+  --code-bg: var(--b3-theme-surface, #2b2d31);
+}
+/* ---------- scoping baseline ----------
+ *
+ * ★★★ Plugin CSS is **injected globally** into the page by SiYuan (kernel/model/plugin.go reads
+ *     index.css and drops the whole file into <style>). So **never** put
+ *     unscoped selectors such as `body` / `html` / `*` / `button` / `input` here ——
+ *     they would rewrite SiYuan itself and other plugins' UI (2026-10-07 maintainer feedback:
+ *     "a plugin should not change SiYuan UI unrelated to the plugin's own features").
+ *
+ *     This file used to carry leftovers such as `body { overflow: hidden }`, `button { background: none }`
+ *     which made the whole SiYuan page unscrollable and stripped every button style.
+ *     All removed; the rules now apply only inside the plugin's own container `.om-mm-host`.
+ *
+ * ★★ Scoping for the remaining selectors is **added at build time** (2026-10-08):
+ *     this file still writes bare class names (`.node-row`, `.outliner-title`, ...),
+ *     and postcss-prefix-selector wraps them all into `.om-mm-host` at build time ——
+ *     see `scripts/css-scope.mjs` and `tools.postcss` in `rsbuild.config.ts`.
+ *
+ *     So: **do not** hand-write `.om-mm-host .node-row` here
+ *     (it would be detected as already scoped and skipped; harmless, but pointless and harder to read),
+ *     write `.node-row` directly. `scripts/verify-css-scope.py` enforces this:
+ *     any bare selector in the build output fails the build.
+ */
+.om-mm-host,
+.om-mm-host *,
+.om-mm-host *::before,
+.om-mm-host *::after { box-sizing: border-box; }
+.om-mm-host {
+  height: 100%;
+  margin: 0;
+  touch-action: manipulation;
+  font-family: SourceSansPro, BlinkMacSystemFont, -apple-system, 'PingFang SC', Helvetica, Arial, 'Microsoft YaHei', SimHei, Heiti, 'Source Han Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  overscroll-behavior: none;
+}
+.om-mm-host button {
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+}
+.om-mm-host input,
+.om-mm-host select,
+.om-mm-host textarea { font: inherit; color: inherit; }
+
+/* ★★ Take back fill on stroke-style icons (2026-10-07)
+ *
+ * ⚠️ This rule **must sit outside @media**! The first version was inside `@media (max-width:768px)`,
+ *    so it applied on mobile only and desktop icons were still filled into solid squares
+ *    (measured: 0/15 reclaimed on mobile, 15/15 unclaimed on desktop).
+ *
+ * Symptom: in the bottom toolbar "Insert image / Toggle to-do / Insert today's date / Insert table"
+ *   render as **solid squares**, while `Aa` and `✓` turn faint and blurry; the floating dock's
+ *   add / lock / unlock / search icons are hit the same way.
+ *
+ * Root cause (computed style measured over CDP, not guessed):
+ *   we write `<svg fill="none" stroke="currentColor">`,
+ *   but SiYuan's base.css has a **global** rule
+ *     `svg { fill: currentColor; display: inline-block }`
+ *   (matched source `base.6ebf9935cf77dd602cbe.css` / the same on mobile).
+ *   **A CSS declaration outranks an SVG presentation attribute**,
+ *   so `fill="none"` is silently overridden:
+ *     svg : fill = rgb(34, 34, 34)   ← should be none
+ *     rect: fill = rgb(34, 34, 34)   ← the 15×15 frame is filled into a solid block
+ *   thin-stroke (1.5) icons express their shape through "hollowness"; a fill smears them.
+ *
+ * Fix: the plugin declares `fill: none` itself (CSS against CSS, same weight, later load wins).
+ *   An attribute selector covers the whole plugin host —— a new icon only has to follow the convention
+ *   of writing `fill="none"` to be protected; icons that want a solid fill state
+ *   `fill="currentColor"` explicitly and are unaffected by this rule.
+ *
+ * ⚠️ Do not paper over it with "thicker strokes" —— setting every stroke to 2.2 made the
+ *   15×15 frame of complex icons drown in the 2.2px stroke, **blurring them even worse** (reverted).
+ *   The two stroke widths 1.5 / 2.2 are intentional: 1.5 for complex icons, 2.2 for simple ones. */
+.om-mm-host svg[fill="none"],
+.om-mm-host .m-btn > svg,
+.om-mm-host .dock-btn > svg {
+  fill: none;
+}
+
+/* ---------- app shell ---------- */
+
+/* ★ Mobile-only components must default to hidden on desktop (2026-10-07 fix)
+ *
+ * Defect: a `B I U S A H1 H2 H3 ¶` format toolbar appeared at the **bottom** of the desktop panel,
+ * looking like "one toolbar too many". Actual user reports:
+ *   "why is there still a toolbar under outline mode"
+ *   "there is a B I U format toolbar, do you not see it"
+ *
+ * Root cause: the styles of `.mobile-keyboard-bar` and its children are **defined only inside
+ * `@media (max-width: 768px)`**. When the media query does not match they get no styles at all,
+ * so they fall back to a plain `<div>` (display:block) and **render in normal flow** at the bottom of the panel.
+ * Measured (1600px viewport, 420px panel):
+ *   .mobile-keyboard-bar  → display=block 420x71, bottom=1023
+ *   while matchMedia('(max-width:768px)') === false, though it should not appear at all.
+ *
+ * Fix: make "hidden" the desktop default and switch to visible only when the media query matches.
+ * Then a future mobile sub-component that forgets its desktop state can no longer leak onto desktop.
+ */
+.mobile-keyboard-bar,
+.mobile-format-drawer,
+.mobile-bar-main,
+.mobile-bar-scroll,
+.mobile-bar-fixed,
+.mobile-color-subbar,
+.mobile-color-swatch {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* ★ Preventing iOS "focus auto-zoom" (2026-10-07 fix):
+     iOS Safari zooms the whole page when focus lands on a contenteditable below 16px.
+     So on mobile the plugin's own editable areas are all raised to 16px.
+
+     ⚠️ Past defect: this block used to be `display: none !important` (and the selectors had no
+     scope prefix), while `.protyle-wysiwyg` itself carries the `contenteditable` attribute,
+     so SiYuan's **entire document editor** was hidden on mobile —— 66 contenteditable
+     elements all measured display:none and the page rendered blank.
+     This is a real font-size now, all limited to the plugin container `.om-mm-host`. */
+  .om-mm-host input,
+  .om-mm-host textarea,
+  .om-mm-host select,
+  .om-mm-host [contenteditable],
+  .om-mm-host .node-text,
+  .om-mm-host .node-para,
+  .om-mm-host .node-paras {
+    font-size: 16px;
+  }
+  .om-outline {
+    padding: 0 12px;
+  }
+  .om-outline-wrap {
+    padding: 12px 0 24px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  .breadcrumbs {
+    padding: 6px 12px;
+  }
+  .mobile-keyboard-bar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+    user-select: none;
+    -webkit-user-select: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    will-change: transform, bottom;
+    transition: bottom 0.1s ease-out;
+  }
+  /* ★ A local class instead of `body.keyboard-open` (2026-10-07):
+     plugin CSS is injected globally, so it must not depend on SiYuan's <body> classes, nor set any on it.
+     `.keyboard-open` now sits on the keyboard bar itself. */
+  .mobile-keyboard-bar.keyboard-open {
+    padding-bottom: 0px;
+  }
+  /* Collapse the Dock while the soft keyboard is up —— :has looks back from the plugin container, global body untouched */
+  .om-mm-host:has(.mobile-keyboard-bar.keyboard-open) .om-dock {
+    display: none !important;
+  }
+  .mobile-format-drawer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-hover);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-format-drawer::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-color-subbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-hover);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-color-subbar::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-color-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    flex: 0 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .mobile-color-swatch.clear {
+    background: #fff;
+    position: relative;
+  }
+  .mobile-color-swatch.clear::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 2px;
+    background: #ef4444;
+    transform: rotate(-45deg);
+  }
+  /*
+    ★★★ Horizontal space budget of the mobile bar (2026-10-05 measured fix, three iterations):
+
+      390px viewport, measured ledger ——
+        .mobile-bar-fixed (move left / move right / delete / done, 4 buttons + separators) = 192px
+        .mobile-bar-scroll (16 buttons, content width 659px)          = 180px
+      the fixed area ate nearly half the screen, leaving the scroll area only 180px,
+      7 buttons (add child topic / move up / move down / collapse topic / focus topic / undo / redo)
+      all sat outside the viewport —— and a 180px-wide scroll area barely scrolls on a phone.
+
+      Iteration log (every version was measured; do not re-walk it):
+        v1 `flex: 0 1 auto` on the fixed area → when squeezed it **overflowed the viewport itself**
+           (delete button x=400, done button x=449), worse than before.
+        v2 `flex: none` on the fixed area + narrow-screen tightening → the fixed area came back into view,
+           but the scroll area still had only 211px, so 7 buttons still needed horizontal scrolling.
+        v3 (current) **two rows**: the fixed area takes one row, the scroll area takes one row.
+           on a phone "indent / delete" are high-frequency structural operations and deserve a row of their own;
+           with a full 374px row the 16 buttons are mostly visible on one screen.
+  */
+  .mobile-bar-main {
+    display: flex;
+    flex-wrap: wrap; /* ★ allow wrapping: each of the two sub-areas takes one row */
+    align-items: center;
+    padding: 4px 8px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+    gap: 2px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .mobile-bar-scroll {
+    flex: 1 1 100%; /* a row of its own */
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-bar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-bar-fixed {
+    flex: 1 1 100%; /* a row of its own */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end; /* structural actions within reach of the right thumb */
+    gap: 2px;
+    padding-left: 2px;
+  }
+  .mobile-keyboard-bar .m-btn {
+    flex: 0 0 auto;
+    height: 38px;
+    min-width: 38px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: transparent;
+    color: #4b5563;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.12s, color 0.12s, transform 0.1s;
+  }
+  .mobile-keyboard-bar .m-btn:active {
+    background: var(--border);
+    transform: scale(0.94);
+  }
+  /* ★★ Mobile keyboard-bar icon size (2026-10-07, same day as "bottom icons blurred / turned into squares").
+   *
+   * The `fill` half of that symptom is fixed **once, for the whole host, outside every @media**
+   * -- see "Take back fill on stroke-style icons" near the top of this file. It is deliberately
+   * not repeated here: inside `@media (max-width: 768px)` it would leave desktop icons filled
+   * into solid squares again.
+   *
+   * What this block owns is size: the mark-up hard-codes 18px against a 20 viewBox (a 0.9 scale,
+   * too small on a 38px button), and without `shape-rendering` anti-aliasing smears thin strokes.
+   * So the keyboard-bar icons are raised to 20px, keeping the intentional stroke widths --
+   * 1.5 for complex icons (rect+circle+path) and 2.2 for simple ones (a single path/line).
+   *
+   * ⚠️ Do not compensate with thicker strokes: pushing every stroke to 2.2 made the 15×15 frame of
+   *   complex icons drown in its own stroke and look **worse** (reverted). */
+  /* Uniform keyboard-bar icon size (overrides the 18px hard-coded in the markup). */
+  .mobile-keyboard-bar .m-btn > svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    display: block;
+    shape-rendering: geometricPrecision;
+  }
+  .mobile-keyboard-bar .m-btn.active {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    font-weight: 600;
+  }
+  /* The Aa button's icon is a **stroked glyph** (unlike the solid glyphs of the other buttons),
+     so a blue stroke over a light blue background smears into one blob. Give it a stronger background + a deeper foreground. */
+  .mobile-keyboard-bar .m-btn.aa-btn.active {
+    background: rgba(37, 99, 235, 0.18);
+    color: #1d4ed8;
+  }
+  .mobile-keyboard-bar .done-btn {
+    background: var(--accent, #3da8f5);
+    color: #fff;
+    font-weight: 700;
+    min-width: 40px;
+    height: 34px;
+    border-radius: 6px;
+    margin-left: 2px;
+  }
+  .mobile-keyboard-bar .done-btn:active {
+    opacity: 0.85;
+    background: #2a88cf;
+  }
+  /*
+    Mobile delete button (added 2026-10-05):
+    until then mobile had no delete entry point at all, while desktop used the Del key —— on a phone there was nowhere to delete.
+    A restrained red marks it as destructive while keeping the size of the other m-btn, so it does not shout.
+  */
+  .mobile-keyboard-bar .del-btn {
+    color: var(--b3-theme-error, #d23f31);
+  }
+  .mobile-keyboard-bar .del-btn:active {
+    background: rgba(210, 63, 49, 0.14);
+  }
+  .mobile-keyboard-bar .m-sep {
+    flex: 0 0 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 2px;
+  }
+
+  /*
+    Narrow-screen tightening: 4 buttons + 4 separators in the fixed area still take ~192px at 390px,
+    squeezing the scroll area down to ~180px. Tighten the horizontal padding of buttons and separators
+    without shrinking the hit area (still 34–38px, meeting the minimum touch size),
+    giving as much width as possible back to the scroll area.
+  */
+  .mobile-keyboard-bar .mobile-bar-fixed .m-sep {
+    margin: 0 1px;
+  }
+  @media (max-width: 430px) {
+    .mobile-keyboard-bar .mobile-bar-fixed .m-btn {
+      min-width: 34px;
+      padding: 0 4px;
+    }
+    /* no duplicate separator between delete and "Complete"; saves one */
+    .mobile-keyboard-bar .mobile-bar-fixed .m-sep:last-of-type {
+      display: none;
+    }
+  }
+}
+.side-head .title { font-weight: 700; flex: 1; }
+.icon-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text-weak);
+  font-size: 14px;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.om-toolbar {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 6px 20px; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.om-toolbar button, .om-toolbar select {
+  padding: 4px 7px; border-radius: 6px; color: var(--text);
+}
+.om-toolbar button:hover, .om-toolbar select:hover { background: var(--bg-hover); }
+.om-toolbar button.on { background: var(--bg-hover); color: var(--accent); font-weight: 700; }
+.om-toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.om-toolbar input[type='color'] { width: 26px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; }
+
+/* ── collapse toggle for the top format toolbar ───────────────────────────────────────
+   Exactly the same approach as `.mm-bar-toggle` in the mind map view (2026-10-09):
+   hidden on desktop (the toolbar stays expanded) and shown only in a narrow container,
+   so the user can put away the bar that takes up space.
+
+   ★ The criterion is `@container`, not `@media`: this toolbar lives in a **SiYuan dock**,
+     its width follows the dock and is unrelated to the window width. A media query misjudges
+     the "big window + narrow panel" case (this project has already fixed 5 such mistakes). */
+.om-toolbar-toggle {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.om-toolbar-toggle:hover { background: var(--bg-hover); }
+.om-toolbar--collapsed { display: none !important; }
+
+@container (max-width: 560px) {
+  .om-toolbar-toggle { display: flex; }
+}
+
+/* ---------- outliner title ---------- */
+/* ★ Width follows the panel entirely, with no cap (2026-10-07 fix).
+ *
+ *   This used to hard-code `max-width: 860px`, so dragging the right dock from 400px
+ *   out to 1000px made the content **stop growing** at 860px, leaving large empty margins ——
+ *   the user perceives it as "dragging the width stopped working / the content is stuck".
+ *
+ *   Do not decide "how wide reads well" for the user: the panel width is what the user dragged,
+ *   they can see the screen and can have it as wide as they like. `margin: 0 auto` is gone too ——
+ *   content should fill the container; centering only creates pointless whitespace when there is room.
+ */
+.outliner-title {
+  width: 100%;
+  padding: 20px 32px 14px 32px;
+  box-sizing: border-box;
+}
+.outliner-title .title {
+  width: 100%;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 44px;
+  min-height: 44px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 4px 0;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: color 0.15s ease;
+}
+.outliner-title .title::placeholder {
+  color: var(--text-weak);
+  opacity: 0.45;
+  font-weight: 400;
+}
+.outliner-title-paras {
+  margin-top: 6px;
+}
+/* ★★★ `@media` → `@container` (2026-10-08).
+ *
+ *   The title area is **the plugin's own panel content**; its width follows the dock, not the window.
+ *   Consequence of using `@media` (measured: 1440px window, 300px right dock):
+ *     paddingTop=20px  fontSize=32px  ← the desktop set, never changed
+ *   the intended narrow-dock styles (14px / 24px) are **never applied**,
+ *   unless the user shrinks **the whole window** below 768px —— by which point SiYuan has already moved the panel away.
+ *
+ *   ⇒ a desktop user narrowing the sidebar is left with a 32px title that squeezes the content.
+ *
+ *   (The other two `@media (max-width: 768px)` blocks in this file are **device-related**
+ *     —— the mobile keyboard bar and the bottom floating dock position —— those follow the real device,
+ *     so keeping `@media` is correct; do not change them along with this one.) */
+@container (max-width: 768px) {
+  .outliner-title {
+    padding: 14px 20px 8px 20px;
+  }
+  .outliner-title .title {
+    font-size: 24px !important;
+    font-weight: 500;
+    line-height: 32px;
+    min-height: 32px;
+  }
+}
+
+
+/* ---------- outline ---------- */
+/* ★ 2026-10-07 fix: the selector used to be `.outline-wrap`, but the class name in the JSX is
+ *   `om-outline-wrap` (the rename touched the JSX and part of the CSS, missing these two rules) ——
+ *   so `overflow-y: auto` **never took effect**: the scroll container had no scrollbar and could not scroll.
+ *   Measured (1600px desktop): overflow-y=visible, scrollHeight(898)==clientHeight(898),
+ *   overflow content simply spilled out of sight and out of reach.
+ *   Same on mobile → user report: "the node view on mobile cannot seem to scroll by touch". */
+.om-outline-wrap { flex: 1; overflow-y: auto; padding: 18px 0 40vh; scroll-behavior: auto; }
+@media (max-width: 768px) {
+  .om-outline-wrap {
+    padding: 12px 0 24px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+}
+/* Same as `.outliner-title`: no width cap, content fills the panel.
+ * How wide the panel is, is the user's own drag; the plugin does not decide "how wide reads well" for them. */
+.om-outline { width: 100%; padding: 0 32px; box-sizing: border-box; }
+.node-row { display: flex; align-items: flex-start; gap: 2px; border-radius: 6px; transition: background-color 0.12s ease; }
+.node-row:hover { background-color: color-mix(in srgb, var(--bg-hover) 50%, transparent); }
+.node-row.drop-above { box-shadow: 0 -2px 0 var(--accent); }
+.node-row.drop-below { box-shadow: 0 2px 0 var(--accent); }
+.om-outline-wrap:focus { outline: none; }
+.node-row.selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+/*
+  ★ Touch-drag visual feedback (2026-10-05):
+  mobile uses "hold for 350ms then drag" instead of HTML5 drag.
+  Once the long press takes effect there must be clear feedback, or the user cannot tell that the item is "picked up"
+  and keeps retrying, thinking the UI is unresponsive.
+*/
+.node-row.touch-dragging {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 6px;
+}
+.node-row.touch-dragging .om-bullet {
+  transform: scale(1.25);
+  color: var(--accent);
+}
+/* Disable long-press selection / the system menu during a touch drag so they do not fight the gesture */
+.om-outline-wrap.touch-drag-active {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.om-bullet {
+  flex: none; width: 24px; height: 30px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-weak); cursor: pointer; user-select: none; position: relative;
+}
+.om-bullet:active { cursor: grabbing; }
+.om-bullet .bullet-border {
+  width: 18px; height: 18px; border-radius: 50%; background-color: transparent;
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.om-bullet .bullet-dot,
+.om-bullet .dot {
+  width: 6px; height: 6px; border-radius: 50%; background-color: #646a73;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.om-bullet:hover .bullet-border {
+  background-color: #bbbfc4 !important;
+  transform: scale(1.18);
+}
+.om-bullet:hover .bullet-dot,
+.om-bullet:hover .dot {
+  background-color: #23262b;
+}
+/* Collapsed-state concentric dot: an 18px outer halo around the 6px center */
+.node-row.collapsed .om-bullet .bullet-border,
+.om-bullet.collapsed .bullet-border {
+  background-color: #dee0e3 !important;
+}
+html[data-theme-mode='dark'] .node-row.collapsed .om-bullet .bullet-border,
+html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-border {
+  background-color: #373c43 !important;
+}
+.node-row.collapsed .om-bullet .bullet-dot,
+.om-bullet.collapsed .bullet-dot {
+  background-color: #47494b !important;
+}
+html[data-theme-mode='dark'] .node-row.collapsed .om-bullet .bullet-dot,
+html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
+  background-color: #dee0e3 !important;
+}
+
+/* Right-side expand/collapse arrow button (outliner-node-sidebar) */
+.outliner-node-sidebar,
+.node-sidebar-arrow {
+  flex: none; width: 24px; height: 26px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border-radius: 4px; opacity: 0; color: #8d939c;
+  background-color: transparent; border: none; padding: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  margin-left: auto; align-self: flex-start; margin-top: 3px;
+}
+.node-row:hover .outliner-node-sidebar,
+.node-row:hover .node-sidebar-arrow,
+.node-row.focused .outliner-node-sidebar,
+.node-row.focused .node-sidebar-arrow,
+.node-row.collapsed .outliner-node-sidebar,
+.node-row.collapsed .node-sidebar-arrow {
+  opacity: 0.7;
+}
+.outliner-node-sidebar:hover,
+.node-sidebar-arrow:hover {
+  opacity: 1 !important;
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+.sidebar-arrow,
+.sidebar-arrow-icon {
+  width: 0; height: 0;
+  border-left: 4.5px solid transparent;
+  border-right: 4.5px solid transparent;
+  border-top: 5.5px solid currentColor;
+  border-bottom: 0;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+.outliner-node-sidebar.collapsed .sidebar-arrow,
+.node-sidebar-arrow.collapsed .sidebar-arrow,
+.outliner-node-sidebar.collapsed .sidebar-arrow-icon,
+.node-sidebar-arrow.collapsed .sidebar-arrow-icon {
+  transform: rotate(-90deg);
+}
+/* ★★★ The criterion used the wrong **axis** (2026-10-08): `max-width` → `pointer: coarse`.
+ *
+ *   This block exists so that on a **touch screen** the arrow is visible and tappable:
+ *     · `opacity: 0.85 !important` —— touch devices **have no hover**,
+ *       while the arrow defaults to `opacity: 0` and only appears through `.node-row:hover`.
+ *       No hover ⇒ touch users **never see this arrow**.
+ *     · `32px` —— a finger is fatter than a mouse and has to be able to tap it.
+ *
+ *   Both are properties of the **input device** and have nothing to do with **width**. Using `max-width`
+ *   has this consequence (measured in a `hasTouch` context, 1440px window):
+ *     pointer:coarse=true  hover:none=true  yet opacity is still 0
+ *   —— tablet users never get these styles; conversely **mouse** users in a narrow window do.
+ *
+ *   ⇒ switch to `(pointer: coarse)`: that is the correct CSS expression of "touch".
+ *
+ *   The `32px` below belongs to it for the same reason: the bigger hit area is for fingers, not for narrowness.
+ */
+@media (pointer: coarse) {
+  .outliner-node-sidebar,
+  .node-sidebar-arrow {
+    opacity: 0.85 !important;
+    width: 32px;
+    height: 32px;
+  }
+}
+.taskbox { flex: none; width: 20px; height: 30px; display: flex; align-items: center; justify-content: center; }
+.taskbox input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+.num-badge { flex: none; min-width: 26px; height: 30px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 5px 4px 0 0; color: var(--text-weak); font-size: 13px; }
+.due-chip { flex: none; align-self: flex-start; margin-top: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text-weak); border-radius: 10px; font-size: 11px; line-height: 1; padding: 3px 7px; cursor: pointer; }
+.due-chip.over { color: var(--danger); border-color: var(--danger); font-weight: 700; }
+.link-chip { flex: none; align-self: flex-start; margin-top: 6px; font-size: 12px; line-height: 1; opacity: 0.85; }
+.summary-bar { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px 26px; padding: 5px 10px; border-left: 3px solid var(--accent); background: rgba(127, 127, 127, 0.08); border-radius: 0 8px 8px 0; font-size: 13px; }
+.summary-tag { flex: none; font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 1px 6px; }
+.summary-text { flex: 1; cursor: pointer; min-width: 0; }
+.summary-bar .icon-btn { flex: none; }
+.node-body { flex: 1; min-width: 0; }
+.node-text {
+  min-height: 30px; padding: 4px 6px; outline: none; border-radius: 6px;
+  font-size: 16px; word-break: break-word; line-height: 1.6;
+}
+.node-text:empty::before { content: attr(data-placeholder); color: var(--text-weak); opacity: 0.6; pointer-events: none; }
+.node-row.focused .node-text { background: var(--bg-hover); }
+.node-text h1, .node-text h2, .node-text h3 { margin: 0; }
+.om-h1 .node-text { font-size: 24px; font-weight: 500; min-height: 36px; line-height: 1.6; }
+.om-h2 .node-text { font-size: 21px; font-weight: 500; min-height: 32px; line-height: 1.6; }
+.om-h3 .node-text { font-size: 18px; font-weight: 500; min-height: 28px; line-height: 1.6; }
+.node-text .text-color-red, .om-mm-host span.text-color-red { color: rgb(220, 45, 30) !important; }
+.node-text .text-color-yellow, .om-mm-host span.text-color-yellow { color: rgb(255, 175, 56) !important; }
+.node-text .text-color-green, .om-mm-host span.text-color-green { color: rgb(117, 201, 64) !important; }
+.node-text .text-color-blue, .om-mm-host span.text-color-blue { color: rgb(61, 168, 245) !important; }
+.node-text .text-color-purple, .om-mm-host span.text-color-purple { color: rgb(138, 77, 243) !important; }
+.node-text code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.88em; font-family: ui-monospace, Consolas, monospace; }
+.node-text a { color: var(--accent); }
+.node-text table { border-collapse: collapse; margin: 6px 0; }
+.node-text td, .node-text th { border: 1px solid var(--border); padding: 4px 10px; min-width: 40px; }
+.node-text img { max-width: 100%; border-radius: 6px; }
+.node-text .formula { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 4px; padding: 0 4px; cursor: pointer; }
+
+/* ★ Placeholder until a formula is typeset, preventing "source flashes first, then typesets".
+   KaTeX is lazy-loaded by SiYuan and the instance arrives within about 150ms of the first pass; hide the content meanwhile,
+   but **keep the placeholder width and line height** (inline-block + min-width), or lines jump abruptly.
+   JS removes data-formula-pending once rendering finishes / it degrades to plain text. */
+.node-text [data-formula][data-formula-pending] {
+  display: inline-block;
+  min-width: 1.5em;
+  height: 1em;
+  vertical-align: -0.15em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-weak) 18%, transparent);
+  color: transparent;
+  overflow: hidden;
+}
+
+.node-text [data-tag] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px; padding: 0 4px; }
+.node-text [data-mention], .node-text [data-noderef] { color: var(--accent); cursor: pointer; }
+/* Attached paragraphs: a node may have several, each with its own editable box.
+   Each attached paragraph maps to one `.node-para`.
+   With multiple paragraphs the layout became a `.node-paras` container + one `.node-para` each —— all
+   paragraphs of a node live in one container, visually a single "description area".
+   ★ The `.node-note` rules were deleted once both Outliners (plugin / editor) had migrated:
+     no element in the repository uses this class any more, and keeping it would only make the next reader think
+     an old "single-select note" path still exists. */
+.node-paras {
+  display: flex; flex-direction: column;
+  /* Keep only a minimal gap between paragraphs: in SiYuan body text paragraphs are adjacent blocks,
+     and a bigger gap makes "several paragraphs of one node" look like "several separate notes". */
+  gap: 1px;
+}
+.node-para {
+  font-size: 13px; color: var(--text-weak);
+  min-height: 22px; padding: 0 6px 3px; outline: none;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Empty paragraphs must stay visible and clickable: give a placeholder, or users do not know they can type here.
+   ⚠️ The criterion is :empty. A genuinely empty string is treated as empty by the browser;
+   content holding the zero-width placeholder \u200b does not count as empty, and there min-height holds the height.
+   ★ An empty-string paragraph is **legitimate content** (a blank line the user typed on purpose), so this only hints
+   and never takes part in any "is the whole block empty" criterion. */
+.node-para:empty::before { content: attr(data-placeholder); opacity: 0.55; }
+/* 26px indent step + vertical guide line */
+.node-children {
+  margin-left: 10px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  transition: border-color 0.15s ease;
+}
+.node-children:hover {
+  border-left-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.selbar {
+  display: flex; gap: 8px; align-items: center;
+  padding: 6px 20px; background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.om-findbar { display: flex; gap: 6px; padding: 6px 20px; border-bottom: 1px solid var(--border); align-items: center; font-size: 13px; flex-wrap: wrap; }
+.om-findbar input { box-sizing: border-box; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); max-width: 100%; outline: none; }
+.om-findbar input:focus { border-color: var(--accent); }
+
+/* ---------- mindmap ---------- */
+.mm-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  touch-action: none !important;
+  overscroll-behavior: none !important;
+}
+.mm-bar { display: flex; gap: 8px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
+
+/* The toolbar became a compact single row + floating, so it does not fill the whole top.
+   Applies to the plugin mount container (.om-mm-root) only. */
+.om-mm-root .mm-bar {
+  /* ★ Do not use `nowrap` + a breakpoint: a breakpoint is bound to be wrong.
+     Measured (2026-10-08): the settings bar content is about 1131px while the container width can be anything from 237 to 1300:
+       · ≤560px   wraps through the @container below, fine
+       · 700px   → nowrap applies and "Export .mm" is pushed outside the viewport again
+       · 900~1100 → the hint text goes out of bounds
+       · 1200+   → the hint text **still** goes out of bounds (it is a fixed 298px and does not shrink)
+     The root cause is "deciding whether to wrap from a guessed width", when the real question is
+     **"does it fit"** —— which is exactly what flex-wrap does itself.
+     Switch to `wrap`: a wide container never wraps anyway (one row fits, so it stays one row)
+     and only a narrow one folds —— no breakpoint needed. */
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  padding: 6px 12px;
+  gap: 6px;
+  border-bottom: 1px solid var(--b3-border-color, var(--border));
+  background: var(--b3-theme-surface, var(--bg));
+  scrollbar-width: thin;
+}
+.om-mm-root .mm-bar::-webkit-scrollbar { height: 4px; }
+.om-mm-root .mm-bar::-webkit-scrollbar-thumb {
+  background: var(--b3-border-color, #ccc); border-radius: 2px;
+}
+
+/* ★ Wrap in a narrow container instead of pushing controls outside the viewport.
+   Previously unconditional nowrap + overflow-x:auto: SiYuan's right dock is only 237px by default,
+   while the settings bar content is 1131px (about 4.8x), so "Fit", "Export image" and "Export .mm"
+   all landed outside the viewport (measured: the last button reached x=1907 while the viewport was only 1440 wide),
+   findable only through a 4px-tall horizontal scrollbar —— users simply never notice it.
+
+   Judge by the **container** width, not the viewport: a SiYuan panel's width is unrelated to the window size,
+   and a media query misjudges in the big-window + narrow-panel case.
+
+   Wrap only when it does not fit; a wide container stays a compact single row (the original intent: do not fill the whole top). */
+@container (max-width: 560px) {
+  .om-mm-root .mm-bar {
+    /* Wrapping is already the global default (see the base rule), so this only handles row spacing.
+       overflow-x was dropped in the base rule too —— after wrapping a horizontal scrollbar is useless,
+       and keeping it only produces a phantom scrollbar from the last long text. */
+    row-gap: 6px;
+  }
+}
+.om-mm-root .mm-bar select { padding: 2px 6px; font-size: 12px; }
+.om-mm-root .mm-bar .btn { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+.om-mm-root .mm-bar .theme-swatches { display: flex; gap: 3px; flex-shrink: 0; }
+/* ★ Hint text: nowrap but **shrinkable** (2026-10-08 measured fix).
+ *
+ * Two requirements pull against each other and must be told apart:
+ *   · `nowrap`  —— must be kept. Switching to normal makes a narrow container **stack character by character**,
+ *                  inflating the toolbar to hundreds of pixels tall (hit with an early version).
+ *   · shrinkable —— must be allowed. It used to be `flex-shrink: 0`,
+ *                  so this text was a **fixed 298px** and went out of bounds even in a 1300px container
+ *                  (measured: the span's right edge reached 1668 while the viewport was only 1440).
+ *
+ * `min-width: 0` is the switch that lets a flex item **actually shrink** ——
+ * without it `flex-shrink: 1` does nothing while the content does not wrap (the content holds the minimum size).
+ *
+ * The rule hiding it in a narrow container is in the @container below —— a copy already lives there,
+ * and it judges by **container** (a media query misjudges in the big-window + narrow-panel case). */
+.om-mm-root .mm-bar > span {
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── narrow-screen (phone dock / sidebar) toolbar ────────────────────────────────
+   The "single row + horizontal scroll" above works on desktop but **does not hold on a narrow screen**:
+   measured: in a 390px panel scrollWidth=1316px, so 900-odd pixels of content
+   sit off-screen, and a phone shows no scrollbar —— users have no idea there is anything to the right,
+   which is the same as the feature disappearing.
+
+   Narrow screens switch to a **two-row grid**, arranging the controls by importance so all are visible and tappable. */
+/* ★★★ block-level `@media` → `@container` (2026-10-08).
+ *
+ *   The comment above is only half right: the stats text at the **end** of the block was already switched to
+ *   `@container`, but **every other rule in the block was still `@media`** ——
+ *   so an entire "narrow-screen toolbar" style block keyed off the **window** width,
+ *   while the `.mm-bar` it styles belongs to a **dock**, whose width is unrelated to the window.
+ *
+ *   Measured consequence (1440px window, 237px right dock):
+ *     labelDir = 'row'   ← the narrow-panel layout (caption above the control) never applied
+ *   Only shrinking the **window** to 520px turned it into 'column'.
+ *   I.e. a desktop user narrowing the sidebar never gets this layout built for a narrow dock. */
+
+@container (max-width: 560px) {
+  .om-mm-root .mm-bar {
+    gap: 4px 8px;
+    padding: 6px 10px;
+    overflow-x: visible;
+    overflow-y: visible;
+  }
+
+  /* Inside each label: the caption on top, the control filling the row, so nothing is squeezed and clipped */
+  .om-mm-root .mm-bar > label {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--b3-theme-on-surface, var(--text-weak));
+  }
+  .om-mm-root .mm-bar > label > select {
+    width: 100%;
+    min-width: 0;
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+
+  /* Buttons no longer take one grid cell each (that fit only 2 per row and wasted height),
+     back to flex so they pack tightly at content width and wrap automatically. */
+  .om-mm-root .mm-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .om-mm-root .mm-bar > label {
+    flex: 1 1 calc(50% - 4px);
+  }
+  /* The structure selector takes a row of its own (its option text is the longest) */
+  .om-mm-root .mm-bar > label:first-child {
+    flex: 1 1 100%;
+  }
+  .om-mm-root .mm-bar .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    flex: 0 0 auto;
+  }
+  .om-mm-root .mm-bar .theme-swatches { flex: 0 0 auto; margin-left: auto; }
+
+  /* Bigger hit area for the theme swatches (a finger is fatter than a mouse) */
+  .om-mm-root .mm-bar .theme-swatches { gap: 6px; }
+  .om-mm-root .mm-bar .theme-swatches > * { width: 20px; height: 20px; }
+
+  /* The stats text has no room in a narrow container, so hide it (not critical information).
+     ★ @container instead of @media: a panel's width is unrelated to the window size,
+       and a media query misjudges in the big-window + narrow-panel case (a point this file makes repeatedly). */
+}
+
+/* In a narrow container hide the stats text outright so it does not compete with the controls */
+@container (max-width: 560px) {
+  .om-mm-root .mm-bar > span:last-child { display: none; }
+}
+/* Toolbar collapse toggle: shown only when the **dock is narrow** (a wide dock needs no collapsing).
+ *
+ * ★★★ This used `@media (max-width: 560px)` (keyed off the **window** width) ——
+ *   wrong. This toggle controls a **SiYuan right dock**, and dock width is **unrelated** to window width:
+ *   measured: with a 1440px window the right dock is only **237px**, yet the toggle stayed hidden because the window was wide enough.
+ *   Conversely a landscape phone (900px window) has a wider dock, yet the toggle appeared.
+ *
+ *   ⇒ switch to a container query, the same yardstick as the `.mm-bar` wrapping criterion
+ *     (the same lesson as the "bucketing by width" incident in 6.9c).
+ *
+ *   Note: the `@container` threshold below matches the `.mm-bar` wrapping breakpoint (560px),
+ *   because "narrow enough to need wrapping" and "narrow enough to need collapsing" are the same thing.
+ */
+.om-mm-root .mm-bar-toggle {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-bottom: 1px solid var(--b3-border-color, var(--border));
+  background: var(--b3-theme-surface, var(--bg));
+  color: var(--b3-theme-on-surface, var(--text));
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.om-mm-root .mm-bar-toggle:hover { background: var(--b3-theme-surface-lighter, rgba(0, 0, 0, 0.04)); }
+.mm-bar--collapsed { display: none !important; }
+
+@container (max-width: 560px) {
+  .om-mm-root .mm-bar-toggle { display: flex; }
+}
+.mm-bar select { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.mm-canvas {
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none !important;
+  overscroll-behavior: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mm-canvas.dragging {
+  cursor: grabbing !important;
+}
+.mm-node { cursor: pointer; }
+.mm-node rect { stroke-width: 1.5; transition: stroke-width 0.15s; }
+.mm-node:hover rect { stroke-width: 2.2; }
+.mm-node text { font-size: 14px; user-select: none; }
+.mm-node .mm-badge { cursor: pointer; }
+.mm-node:not(.mm-collapsed) .mm-badge { opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
+.mm-node:not(.mm-collapsed):hover .mm-badge,
+.mm-node.active .mm-badge { opacity: 1; pointer-events: auto; }
+.mm-node.mm-collapsed .mm-badge { opacity: 1; pointer-events: auto; }
+/*
+  ★ Selection state (2026-10-05): Tab/Enter/Delete/F2 all act on the "currently selected node",
+    but there was **no visual feedback at all** —— the user did not know what was selected,
+    so keyboard actions landed on unexpected nodes.
+    A thicker stroke + a highlight color mark it out clearly.
+*/
+.mm-node.mm-selected rect {
+  stroke-width: 2.6;
+  stroke: var(--accent, #3b82f6);
+}
+.mm-node.mm-selected text { font-weight: 600; }
+.mm-label { font-size: 14px; line-height: 1.5; padding: 5px 12px; border-radius: 8px; word-break: break-word; }
+.theme-swatches { display: flex; gap: 4px; }
+.theme-swatches button { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.theme-swatches button.on { border-color: var(--text); transform: scale(1.1); }
+
+/* ---------- modal / misc ---------- */
+.btn { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.match-list { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+.match-item { padding: 6px 10px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); }
+.match-item:hover { background: var(--bg-hover); }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 18px; border-radius: 8px; font-size: 13px; z-index: 99; }
+
+/* ---------- breadcrumbs ---------- */
+/* Same for the breadcrumbs: no width cap, aligned left and right with the outline content. */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 8px 32px;
+  box-sizing: border-box;
+  font-size: 13px;
+  color: var(--text-weak);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.crumb-btn {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.crumb-btn:hover {
+  background: var(--bg-hover);
+}
+.crumb-sep {
+  color: var(--text-weak);
+  opacity: 0.5;
+}
+.crumb-cur {
+  font-weight: 600;
+  color: var(--text);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crumb-back-btn {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.crumb-back-btn:hover {
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-hover));
+}
+
+/* ---------- bottom floating icon action bar (outline & mind map) ---------- */
+.om-dock {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 28px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border);
+  z-index: 40;
+  user-select: none;
+  transition: bottom 0.2s ease, opacity 0.2s ease;
+}
+.dock-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-weak);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.dock-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+.dock-btn.active {
+  background-color: var(--bg-hover);
+  color: var(--accent);
+}
+.dock-level-popover {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 100px;
+  z-index: 50;
+}
+.dock-level-popover button {
+  padding: 6px 12px;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text);
+}
+.dock-level-popover button:hover {
+  background: var(--bg-hover);
+}
+.dock-level-popover .popover-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0;
+}
+
+.mm-floating-dock {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 28px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
+  z-index: 30;
+  user-select: none;
+}
+.mm-floating-dock .dock-btn {
+  width: 36px;
+  height: 36px;
+}
+@media (max-width: 768px) {
+  .om-dock {
+    bottom: 58px;
+  }
+  .mm-floating-dock {
+    bottom: 18px;
+    right: 18px;
+  }
+}
+
+/* ---- SiYuan plugin mount (stage 3) ---- */
+.om-mm-host { height: 100%; overflow: hidden; }
+/*
+  ★★★ It must be a **height-bounded flex column** (2026-10-05 measured fix).
+
+  It used to be `display: block; height: 100%` —— so the children (38px view switch bar +
+  `.outline-wrap` at 1625px) **overflowed** this 770px box,
+  while the host `.om-mm-host` is `overflow: hidden`, so the excess was **clipped out of reach**.
+
+  Measured (390×844 mobile, 20 nodes):
+    .om-mm-root   display=block  h=770  scrollHeight=1663
+    .outline-wrap   h=1625 (unconstrained)  scrollHeight==clientHeight → **cannot scroll**
+    → "node 20" is never visible or reachable, and there is **no scrollbar at all**
+
+  Root cause: `.outline-wrap { flex: 1; overflow-y: auto }` was designed as a scroll container,
+  but when the parent is not a flex container `flex: 1` **does nothing**, so the height grows with the content.
+
+  ⇒ add the flex column so `flex: 1` works and the parent constrains the height,
+    and only then does `overflow-y: auto` really produce a scroll area.
+  ⇒ also `min-height: 0` —— a flex item's default `min-height: auto`
+    stops it shrinking below its content; omitting it makes the flex pointless.
+*/
+.om-mm-root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  /* container for the settings-bar container queries (see .mm-bar below) */
+  container-type: inline-size;
+}
+/* Bars are not squeezed; all remaining height goes to the content area */
+.om-mm-root > .om-mm-viewswitch,
+.om-mm-root > .mm-bar { flex: 0 0 auto; }
+/* The content area takes the remaining height and scrolls itself —— a flex item needs min-height:0 to contain it */
+.om-mm-root > .om-outline-wrap,
+.om-mm-root > .mm-canvas,
+.om-mm-root > .om-mm-empty { flex: 1 1 auto; min-height: 0; }
+.om-mm-loading {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--b3-theme-on-surface, #666); font-size: 14px;
+}
+/* Empty state: shown when there is no document / the document has no content, replacing the old "demo data" */
+.om-mm-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; height: 100%; padding: 32px; text-align: center;
+  color: var(--b3-theme-on-surface, #666);
+}
+.om-mm-empty__title {
+  font-size: 15px; font-weight: 600;
+  color: var(--b3-theme-on-background, #222);
+}
+.om-mm-empty__hint {
+  font-size: 13px; line-height: 1.7; max-width: 420px; opacity: .8;
+  /* The text contains \n line breaks (splitting the guidance in two reads better), so they must be kept */
+  white-space: pre-line;
+  text-align: center;
+}
+.om-mm-empty .om-mm-viewswitch { margin-top: 6px; }
+
+.om-mm-err {
+  padding: 6px 12px; font-size: 12px;
+  color: var(--b3-theme-error, #d23f31);
+  background: var(--b3-theme-surface, #f5f5f5);
+  border-bottom: 1px solid var(--b3-border-color, #e0e0e0);
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* "Save as new document" recovery entry for when the target document was deleted externally */
+.om-mm-err-btn {
+  flex: 0 0 auto;
+  padding: 2px 10px; font-size: 12px; cursor: pointer;
+  color: var(--b3-theme-on-primary, #fff);
+  background: var(--b3-theme-primary, #3575f0);
+  border: none; border-radius: 4px;
+}
+.om-mm-err-btn:hover { filter: brightness(1.08); }
+.om-mm-err-btn:disabled { opacity: .5; cursor: default; }
+
+/* ---- node inline edit overlay (stage 4) ---- */
+.mm-edit-overlay {
+  position: absolute; top: 12px; left: 12px; z-index: 20;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; width: min(420px, calc(100% - 24px));
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+}
+.mm-edit-label { font-size: 11px; color: var(--text-weak, #888); }
+.mm-edit-input {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  padding: 6px 8px; font: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text, #222); background: var(--bg, #fff);
+  border: 1px solid var(--border, #ddd); border-radius: 6px;
+}
+.mm-edit-input:focus { outline: none; border-color: #2f6fed; }
+.mm-edit-actions { display: flex; gap: 6px; align-items: center; }
+.mm-edit-hint { font-size: 11px; color: var(--text-weak, #999); margin-left: auto; }
+
+/* ---- attached-paragraph overlay (a node shows its first paragraph only; click the badge at the top right to expand) ---- */
+.mm-para-badge {
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.mm-para-badge:hover {
+  opacity: 0.85;
+}
+
+.mm-para-overlay {
+  position: absolute; inset: 0; z-index: 25;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .18);
+}
+.mm-para-panel {
+  display: flex; flex-direction: column;
+  width: min(520px, calc(100% - 32px));
+  max-height: min(70%, 520px);
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  overflow: hidden;
+}
+.mm-para-panel:focus { outline: none; }
+
+.mm-para-head {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border, #eee);
+}
+.mm-para-title {
+  flex: 1; font-size: 13px; font-weight: 600; line-height: 1.45;
+  color: var(--text, #222);
+  word-break: break-word;
+}
+.mm-para-close {
+  flex-shrink: 0; width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; line-height: 1; cursor: pointer;
+  color: var(--text-weak, #888);
+  background: transparent; border: none; border-radius: 4px;
+}
+.mm-para-close:hover { background: rgba(0, 0, 0, .06); color: var(--text, #222); }
+
+.mm-para-count { padding: 6px 12px 0; font-size: 11px; color: var(--text-weak, #888); }
+
+.mm-para-list { flex: 1; overflow-y: auto; padding: 6px 12px 12px; }
+.mm-para-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--border, #eee);
+}
+.mm-para-item:last-child { border-bottom: none; }
+.mm-para-idx {
+  flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; border-radius: 50%;
+  color: var(--text-weak, #888);
+  background: rgba(0, 0, 0, .05);
+}
+.mm-para-body {
+  flex: 1; min-width: 0;
+  font-size: 13px; line-height: 1.6; color: var(--text, #222);
+  word-break: break-word; white-space: pre-wrap;
+}
+/* An empty paragraph needs an explicit hint, or users think the data was lost */
+.mm-para-empty { color: var(--text-weak, #aaa); font-style: italic; }
+.mm-para-empty-tip {
+  padding: 10px 2px; font-size: 12px;
+  color: var(--text-weak, #999); font-style: italic;
+}
+
+/* ---- attached-paragraph editor ---- */
+.mm-para-actions {
+  display: flex; gap: 6px; align-items: center;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border, #eee);
+}
+.mm-para-edit {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border, #eee);
+}
+.mm-para-edit-hint { font-size: 11px; color: var(--text-weak, #888); }
+.mm-para-textarea {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  padding: 7px 9px; font: inherit; font-size: 13px; line-height: 1.6;
+  color: var(--text, #222); background: var(--bg, #fff);
+  border: 1px solid var(--border, #ddd); border-radius: 6px;
+  white-space: pre;
+}
+.mm-para-textarea:focus { outline: none; border-color: #2f6fed; }
+
+.om-mm-saving {
+  position: absolute; top: 8px; right: 12px; z-index: 30;
+  padding: 3px 10px; font-size: 12px; border-radius: 12px;
+  color: var(--b3-theme-on-primary, #fff);
+  background: var(--b3-theme-primary, #2f6fed);
+}
+
+/* Conflict banner: appears when an external change collides with a local mind map change.
+   Deliberately a loud orange-yellow —— it means "your edit was not silently accepted",
+   so the user must see it and be able to pick a side in one click. */
+.om-mm-conflict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #fff4e5;
+  color: #8a5300;
+  border-bottom: 1px solid #ffd9a0;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.om-mm-conflict-btn {
+  border: 1px solid #e0a75e;
+  background: #fff;
+  color: #8a5300;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.om-mm-conflict-btn:hover {
+  background: #ffe9cc;
+}
+
+/* Node context menu. Modeled on the look of SiYuan's native context menu:
+   light, compact, no exaggerated rounding, with separators and shortcut hints. */
+.mm-ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.mm-ctx-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 180px;
+  padding: 4px 0;
+  background: var(--b3-theme-background, #fff);
+  border: 1px solid var(--b3-border-color, #e0e0e0);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  font-size: 13px;
+  color: var(--b3-theme-on-background, #202124);
+  user-select: none;
+}
+.mm-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mm-ctx-item:hover {
+  background: var(--b3-theme-surface-lighter, #f0f0f0);
+}
+.mm-ctx-key {
+  font-size: 11px;
+  opacity: 0.55;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.mm-ctx-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--b3-border-color, #e8e8e8);
+}
+/* Destructive actions (delete) use red —— but only strongly on hover, to avoid alarming the user */
+.mm-ctx-danger {
+  color: #c0392b;
+}
+.mm-ctx-danger:hover {
+  background: #fdecea;
+}
+
+/* Drop-position hint while dragging a block from SiYuan body text into the mind map */
+.mm-canvas.drop-hint {
+  outline: 2px dashed var(--b3-theme-primary, #3575f0);
+  outline-offset: -4px;
+}
+
+/* ---------------------------------------------------------------- mirror block */
+.om-mirror {
+  border: 1px solid var(--b3-border-color, #e0e0e0);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--b3-theme-background, #fff);
+}
+.om-mirror-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+}
+.om-mirror-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--b3-border-color, #e0e0e0);
+  background: var(--b3-theme-surface, #f7f7f7);
+  font-size: 12px;
+}
+.om-mirror-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.om-mirror-open {
+  color: var(--b3-theme-primary, #3575f0);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.om-mirror-open:hover { text-decoration: underline; }
+.om-mirror-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 10px;
+}
+.om-mirror-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.om-mirror-list li { white-space: pre-wrap; }
+.om-mirror-loading,
+.om-mirror-empty {
+  padding: 16px;
+  color: var(--b3-theme-on-surface, #666);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── outline / mind map view switch (inside the plugin) ──────────────────────────────── */
+.om-mm-viewswitch {
+  display: flex;
+  gap: 2px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--b3-border-color, var(--border));
+  background: var(--b3-theme-surface, var(--bg));
+  flex: 0 0 auto;
+}
+.om-mm-viewswitch button {
+  flex: 1;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-surface, var(--text));
+  font-size: 12px;
+  cursor: pointer;
+}
+.om-mm-viewswitch button:hover { background: var(--b3-theme-surface-lighter, rgba(0,0,0,0.05)); }
+.om-mm-viewswitch button.active {
+  background: var(--b3-theme-primary, #2f6fed);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ---- keyboard shortcut help panel ---- */
+.shortcuts-panel {
+  background: var(--b3-theme-surface, #fff);
+  max-height: 46vh;
+  overflow: auto;
+}
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px 20px;
+}
+.shortcuts-group { min-width: 0; }
+.shortcuts-title {
+  font-weight: 600;
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 4px 0 6px;
+}
+.shortcuts-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.shortcuts-keys {
+  flex: 0 0 auto;
+  min-width: 108px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border: 1px solid var(--b3-border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--b3-theme-background, #f6f6f6);
+  white-space: nowrap;
+}
+.shortcuts-desc { flex: 1 1 auto; opacity: 0.88; }

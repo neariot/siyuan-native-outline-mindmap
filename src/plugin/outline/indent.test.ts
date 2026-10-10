@@ -1,0 +1,301 @@
+/**
+ * Regression tests for bulk indent / outdent (corresponds to UI-TC-16 in agy).
+ *
+ * ──────────────────────────────────────────────────────────────────
+ * Why this test exists
+ * ──────────────────────────────────────────────────────────────────
+ *
+ * These two operations used to be inlined in the `mutate` callback of `Outliner.tsx`, untestable.
+ * Extracted into `indent.ts`, they can be unit-tested offline.
+ *
+ * ──────────────────────────────────────────────────────────────────
+ * Whether multi-select indent is a "staircase" or "flattening" -- SiYuan is the reference
+ * ──────────────────────────────────────────────────────────────────
+ *
+ * Pressing Tab with [A, B, C] selected at the same level has two possible semantics:
+ *
+ *     staircase (this plugin's implementation)      flattening (old implementation)
+ *       A                            A
+ *         B                            B
+ *           C                          C
+ *
+ * The old implementation was "front to back, attaching each item under its previous sibling", which yields **flattening**:
+ *     1. A is the first -> skip
+ *     2. B attaches under A -> the list becomes [A([B]), C]
+ *     3. C's "previous sibling" is now A (B is no longer at this level) -> C also attaches under A
+ *
+ * SiYuan's own approach (`siyuan-src/app/src/protyle/wysiwyg/list.ts:756-770`,
+ * `listIndent`) is: iterate over the selected items, maintaining a `previousID` whose initial value is **the previous item's
+ * id**, and at the end of each round set the item just handled as the next round's `previousID` --
+ * so item 2 attaches under item 1 and item 3 under item 2, yielding a **staircase**.
+ *
+ * This plugin therefore processes "back to front", matching SiYuan.
+ */
+
+export {};
+
+import type { OutlineNode } from '../../model/types';
+import { indentNodes, outdentNodes, topLevelSelected } from './indent';
+
+let pass = 0;
+let fail = 0;
+const failures: string[] = [];
+
+function check(name: string, cond: boolean, extra = '') {
+  if (cond) {
+    pass++;
+  } else {
+    fail++;
+    failures.push(`${name} ${extra}`);
+  }
+}
+
+/**
+ * Launder a boolean value to dodge TypeScript's literal narrowing.
+ *
+ * Why it is needed: tests often write `obj.field = true` immediately followed by the assertion `obj.field === false`.
+ * TS narrows the static type of `obj.field` to the literal `true` because of the assignment, so
+ * `=== false` is judged "necessarily false" and reports TS2367 -- yet of course it can change at runtime,
+ * and the assertion exists precisely to check that change. One function call is enough to make TS give up narrowing.
+ *
+ * Writing `const x: boolean = obj.field` directly is **not enough** -- narrowing pierces aliases.
+ */
+const readBool = (v: boolean): boolean => v;
+
+const N = (id: string, ...children: OutlineNode[]): OutlineNode =>
+  ({ id, modified: 0, text: id, children }) as OutlineNode;
+
+/**
+ * Render the tree as indented text, to make structural assertions easy.
+ * For example [A([B([C])])] -> "A > B > C" (each > means one level of nesting)
+ */
+const sketch = (nodes: OutlineNode[]): string => {
+  const out: string[] = [];
+  const walk = (x: OutlineNode, path: string[]) => {
+    out.push([...path, x.id].join(' > '));
+    x.children.forEach((c) => walk(c, [...path, x.id]));
+  };
+  nodes.forEach((n) => walk(n, []));
+  return out.join(' | ');
+};
+
+const idsOf = (nodes: OutlineNode[]): string[] => {
+  const out: string[] = [];
+  const walk = (x: OutlineNode) => {
+    out.push(x.id);
+    x.children.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return out;
+};
+
+// ──────────────────────────────────────────────────────────────────
+console.log('top-level filtering (nested items in a multi-selection must not be processed twice)');
+
+{
+  // Selecting [A, A's child B]: B must not be treated as an independent item -- when A indents, B follows naturally.
+  // Indenting B as well would turn B into a **sibling** of A, the opposite of the "indent together" intent.
+  const t = [N('A', N('B'))];
+  const tops = topLevelSelected(t, ['A', 'B']);
+  check('★ when an ancestor is selected, its descendants are filtered out', tops.length === 1 && tops[0] === 'A');
+}
+
+{
+  const t = [N('A'), N('B'), N('C')];
+  const tops = topLevelSelected(t, ['A', 'B', 'C']);
+  check('all three items at the same level are kept', tops.length === 3);
+  check('the original order is kept', tops.join() === 'A,B,C');
+}
+
+{
+  // Deep nesting: A > B > C, selecting only C -> C is a top-level item (no ancestor is selected)
+  const t = [N('A', N('B', N('C')))];
+  const tops = topLevelSelected(t, ['C']);
+  check('when no ancestor is selected, a deep node counts as top-level itself', tops.join() === 'C');
+}
+
+{
+  const t = [N('A', N('B', N('C')))];
+  const tops = topLevelSelected(t, ['A', 'C']);
+  check('★ only the outermost A remains, C is filtered out', tops.join() === 'A');
+}
+
+{
+  const t = [N('A', N('B', N('C')))];
+  const tops = topLevelSelected(t, ['B', 'C']);
+  check('★ selecting [B,C] keeps only B', tops.join() === 'B');
+}
+
+{
+  const t = [N('A')];
+  check('empty selection -> empty', topLevelSelected(t, []).length === 0);
+  check('nonexistent id -> empty', topLevelSelected(t, ['不存在']).length === 0);
+}
+
+// ──────────────────────────────────────────────────────────────────
+console.log('\n★ multi-select indent is a "staircase", not "flattening" (aligned with SiYuan listIndent)');
+
+{
+  const t = [N('A'), N('B'), N('C')];
+  const n = indentNodes(t, ['A', 'B', 'C']);
+  // A is the first sibling and cannot indent; B and C each indent once
+  check('2 indents happen (A is the first and cannot indent)', n === 2);
+  check('★ the resulting structure is the staircase A > B > C', sketch(t) === 'A | A > B | A > B > C');
+  check('the tree still has 3 nodes (none lost)', idsOf(t).length === 3);
+}
+
+{
+  // Contrast with the wrong "front to back" approach: that yields A > B, A > C (flattening)
+  const t = [N('A'), N('B'), N('C')];
+  indentNodes(t, ['A', 'B', 'C']);
+  const flat = sketch(t);
+  check('★ not flattened (A must not have B and C as two direct siblings under it)', flat !== 'A | A > B | A > C');
+  check('★ the parent of C is B (not A)', flat.includes('A > B > C'));
+}
+
+{
+  // Select all in a four-level list
+  const t = [N('1'), N('2'), N('3'), N('4')];
+  indentNodes(t, ['1', '2', '3', '4']);
+  check('★ selecting all four levels -> 1 > 2 > 3 > 4',
+    sketch(t) === '1 | 1 > 2 | 1 > 2 > 3 | 1 > 2 > 3 > 4');
+}
+
+// ──────────────────────────────────────────────────────────────────
+console.log('\nsingle indent: attach under the previous sibling');
+
+{
+  const t = [N('A'), N('B')];
+  indentNodes(t, ['B']);
+  check('B becomes a child node of A', sketch(t) === 'A | A > B');
+}
+
+{
+  const t = [N('A'), N('B')];
+  const n = indentNodes(t, ['A']);
+  check('★ the first sibling cannot indent (there is no previous sibling)', n === 0);
+  check('the structure is unchanged', sketch(t) === 'A | B');
+}
+
+{
+  const t = [N('A', N('A1')), N('B')];
+  indentNodes(t, ['B']);
+  check('B attaches under A and becomes a sibling of A1', sketch(t) === 'A | A > A1 | A > B');
+}
+
+{
+  console.log('  indenting expands the target parent (otherwise collapsed children stay hidden and look like they "vanished")');
+  const t = [N('A'), N('B')];
+  const a = t[0];
+  a.collapsed = true;
+  indentNodes(t, ['B']);
+  // TS narrows the static type of `a.collapsed` to the literal true (it was just assigned true),
+  // so `=== false` is judged "necessarily false" and errors. Of course it can change at runtime.
+  // Launder the value through a function returning boolean to dodge narrowing.
+  const readBool = (v: boolean): boolean => v;
+  check('★ the parent node is expanded', readBool(a.collapsed) === false);
+}
+
+// ──────────────────────────────────────────────────────────────────
+console.log('\noutdent: insert after the parent, becoming the next sibling of the parent');
+
+{
+  const t = [N('A', N('B'))];
+  const n = outdentNodes(t, ['B']);
+  check('1 outdent happens', n === 1);
+  check('★ B becomes a sibling of A (A > B is split apart)', sketch(t) === 'A | B');
+}
+
+{
+  const t = [N('A', N('B'))];
+  const n = outdentNodes(t, ['A']);
+  check('★ the root node cannot be outdented', n === 0);
+  check('the structure is unchanged', sketch(t) === 'A | A > B');
+}
+
+{
+  // A > B > C, outdent C by one level -> A > C, B  (C becomes the next sibling of B)
+  const t = [N('A', N('B', N('C')))];
+  outdentNodes(t, ['C']);
+  check('★ C is detached from B and becomes a sibling of B', sketch(t) === 'A | A > B | A > C');
+}
+
+{
+  // Multi-select outdent: A > [B, C, D]
+  const t = [N('A', N('B'), N('C'), N('D'))];
+  outdentNodes(t, ['B', 'C', 'D']);
+  check('★ all three are detached from A and become siblings of A', sketch(t) === 'A | B | C | D');
+}
+
+{
+  // A > [B, C], outdent only C
+  const t = [N('A', N('B'), N('C'))];
+  outdentNodes(t, ['C']);
+  check('only C moves: A > B stays, C becomes a sibling of A', sketch(t) === 'A | A > B | C');
+}
+
+// ──────────────────────────────────────────────────────────────────
+console.log('\nboundaries and invariants');
+
+{
+  const t = [N('A'), N('B')];
+  const before = JSON.stringify(t);
+  indentNodes(t, []);
+  check('empty selection: nothing is changed', JSON.stringify(t) === before);
+  check('empty selection: returns 0', indentNodes(t, []) === 0);
+}
+
+{
+  const t = [N('A'), N('B')];
+  check('missing target: returns 0', indentNodes(t, ['zzz']) === 0);
+}
+
+{
+  console.log('  indent / outdent lose no node (multi-select is where nodes are most easily dropped)');
+  const t = [N('A'), N('B'), N('C'), N('D')];
+  const before = idsOf(t).sort().join();
+  indentNodes(t, ['A', 'B', 'C', 'D']);
+  check('★ the node count is unchanged after indenting', idsOf(t).length === 4);
+  check('★ the id set is unchanged after indenting', idsOf(t).sort().join() === before);
+  outdentNodes(t, ['B', 'C', 'D']);
+  check('★ the node count is still unchanged after outdenting', idsOf(t).length === 4);
+  check('★ the id set is still unchanged after outdenting', idsOf(t).sort().join() === before);
+}
+
+{
+  console.log('  indenting updates modified (which triggers a write back to SiYuan)');
+  const t = [N('A'), N('B')];
+  const b = t[1];
+  const before = b.modified;
+  indentNodes(t, ['B']);
+  // ★ Note: after indenting, B is **no longer at t[1]** (it moved into t[0].children),
+  //   so the assertion must hold the original object reference; do not fetch it back via t[1] -- that slot
+  //   is empty now. This pitfall was hit once while writing the assertion.
+  check('★ the moved node shows a changed modified', b.modified !== before);
+  check('B really was moved away (t[1] is now empty)', t.length === 1);
+}
+
+{
+  console.log('  outdenting changes no field other than position');
+  const t = [N('A', N('B'))];
+  t[0].children[0].text = '文字内容';
+  outdentNodes(t, ['B']);
+  check('text is preserved (outdenting loses no content)', t[1].text === '文字内容');
+}
+
+{
+  console.log('  idempotence: two indents should form two levels instead of cancelling each other out');
+  const t = [N('A'), N('B'), N('C')];
+  indentNodes(t, ['A', 'B', 'C']);
+  const once = sketch(t);
+  // Indent the currently deepest node C once more: C has no previous sibling left (it is already at the head), so nothing should change
+  indentNodes(t, ['C']);
+  check('indenting a node that is already at the head -> no change', sketch(t) === once);
+}
+
+console.log(`\n${pass}/${pass + fail} passed`);
+if (failures.length) {
+  console.log('\nfailures:');
+  for (const f of failures) console.log('  - ' + f);
+  process.exit(1);
+}

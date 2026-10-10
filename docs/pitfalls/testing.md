@@ -1,0 +1,690 @@
+# Pitfalls - Testing and criteria
+
+<- [Master index](../PITFALLS.md) | Things we stepped on once and do not want to step on again; each entry reads "symptom -> cause -> practice".
+
+Entry numbers (like `2.3`, `6.9v`) are **stable IDs**: other documents cross-reference them by
+number, so keep the original numbers when splitting and never renumber. The numbers are not the order inside this file;
+the `6.x` ones were moved here from the old "engineering and testing" section, grouped by topic.
+
+### 6.1 If an offline test can do it, do not open a browser
+
+This is the core of this project's testing strategy; see `TESTING.md`.
+
+Key points:
+- SiYuan's own frontend tests use `node --import tsx --test` -- no browser, no jsdom
+- This project copied that, and `npm test` dropped from 45s to ~5s
+- Components assert the markup `renderToStaticMarkup` produces (SSR), which is stricter than
+  `querySelector` + `getComputedStyle` in a browser, and can assert a whole structure
+- Gesture / interaction logic uses a hand-written DOM stub (`src/plugin/test-dom-shim.ts`)
+- Only four things need a real browser: whether CSS really takes effect, `ResizeObserver`,
+  the end-to-end round trip with the kernel, and screenshots / screen recording
+
+When you write a test you must verify that it can fail. After writing a new test, temporarily break the implementation, confirm the test goes red, then restore it.
+(This project has fallen for exactly that: the CDP touch test "passed", when it was really a false positive.)
+
+### 6.4 Echo comparison on empty nodes: both sides must use the same definition
+
+**Symptom**: click an empty node in the outline and press Enter repeatedly; the top banner accumulates
+"⚠ 1 content conflict -> ⚠ 2 -> ⚠ 3" even though **nothing changed externally**.
+
+**Cause**: the same "empty" has a different shape in three places, and if either side is not normalised thoroughly they can never match:
+
+| Where | Shape |
+|---|---|
+| Mind map node | `<span></span>` / `<span></span><p><br></p>` |
+| What we write out | zero-width space `​` |
+| What the kernel echoes back | `<div contenteditable="true">​​</div>` |
+
+The diagnostic log printed by temporary instrumentation:
+
+    {"incoming":"​​",   <- the kernel's echo
+     "current":"",                <- the mind map side
+     "isEcho":true,               <- it really is what we wrote ourselves
+     "ownVals":[""]}              <- the values we registered
+
+`isEcho` recognised it, but `"" !== "​​"`, so `isOwnValue` returns false ->
+falls into the conflict decision -> one false report per Enter press.
+
+**One more easily missed point**: every node corresponds to **two** blocks in SiYuan (listItem + paragraph block),
+and the two have different `content` formats -- listItem is `' 甲'` (leading space) or `' '` (one space when empty),
+while the paragraph block is `'甲'` or `''`. So normalisation must strip tags + drop zero-width spaces + collapse whitespace + trim.
+
+**Fix**: `plainNodeText` in `mount.ts` and `htmlFragmentToText` in `sync.ts`
+must use **the same set of rules**, changed on both sides together. Changing only one side is the same as not changing anything.
+
+---
+
+### 6.8 If you can assert it statically, do not accept it through a browser
+
+**Symptom**: to verify a single tooltip bubble, CDP dispatched `mouseover` and then took a screenshot,
+but the timing and coordinates never lined up; several rounds produced no stable result.
+
+**Cause**: `tooltip` is a purely static JSX prop -- compiled it is just the two strings `aria-label` and
+`title`. Verifying it with "run it + hover + screenshot" trades a deterministic fact
+for an observation subject to render timing, animation delay and window coordinates.
+
+**Practice**: verify on two layers, each with the tool that suits it.
+
+| What to verify | With what |
+| --- | --- |
+| Is the prop written correctly | `node --test` reads the source / build output and asserts strings (`tooltip-build.test.ts`) |
+| Are the logic branches right | a pure-function unit test (`tooltip.test.ts`) |
+| Does it really render | a browser, but checking the DOM prop only, **not a screenshot** |
+
+Leave the browser for one-off confirmations like "is this prop in the DOM at all"; do not use it as a regression tool.
+
+**Why:** screenshot verification is slow (each run waits 25~45 seconds for a build) and brittle (timing / coordinates / zoom are three separate uncertainties),
+and once it enters CI it is a long-term source of flakiness. Static assertions take milliseconds and are fully deterministic.
+
+---
+
+### 6.9f `window.confirm` **cancels by default** in a headless browser -- it fabricates a fake bug
+
+Hit while writing the right-click menu cases. Deleting a node pops a confirmation dialog, and
+headless Chromium's `window.confirm()` **returns false automatically**, so the deletion is (correctly) aborted.
+
+What we saw: the menu item **exists, is visible and has a normal size**, and after the click **the menu did close**
+(so the handler did run), yet the node count did not drop by one and the document in SiYuan did not change.
+**It looks exactly like "delete is broken".**
+
+My first probe took it for a bug and I almost went off to fix something that was not broken.
+After adding `page.on('dialog', d => d.accept())` everything was normal.
+
+**Lessons**:
+1. ★ When testing an action that sits behind a confirmation dialog, **you must wire up the dialog first**;
+   Playwright's default behaviour with no handler is to **cancel**, not to "do nothing".
+2. ★ Conversely, "the handler ran" does not mean "the feature is not broken",
+   and it does not mean "the feature is broken" either -- an unwired dialog may be sitting in between.
+   Before concluding "some action had no effect", first confirm that **no other interaction gate** is in the way.
+3. ★ It is worth testing **both directions**: after confirming it should be deleted, **after cancelling it must not be**.
+   Test only the former and a defect like "delete without waiting for the confirmation at all" slips through.
+
+### 6.9h Do not mistake a "block attribute" for body text in an assertion
+
+Stepped on while writing the case above. SiYuan puts a listItem's block attributes **on the same line**:
+
+    - {: id="20261008212051-…" updated="…"}((20261008212051-… '甲分支'))
+
+My filter only stripped the "the whole line is an attribute" case, so the assertion saw the `{: id=…}` prefix,
+misread it as "there is still original text before the reference", and reported a **false failure** (the code was in fact right).
+
+★ When you read kramdown to write an assertion, strip `{: …}` **inline**; filtering whole lines only is not enough.
+
+### 6.9i The second "I thought it was a bug" case: the subdocument path
+
+In the same probe, "the subdocument was not created" was also my misjudgement -- it was created, it is just that the position
+looks "wrong" only relative to whether my expectation is right:
+
+- the parent document is at the notebook root (`hpath = /父文档`) -> `lastIndexOf('/') === 0`
+  -> `cut > 0` does not hold -> `dir = '/'` -> the subdocument lands at `/甲分支`.
+  **This is correct**: the parent is at the root, so the subdocument is naturally at the root too.
+- the parent document is in a subdirectory (`hpath = /目录/父文档`) -> `dir = '/目录/'`
+  -> the subdocument lands at `/目录/甲分支`, a sibling of the parent. Confirmed by measurement ✅.
+
+**Lesson**: before reporting "some feature had no effect", first confirm that your **expectation** is right.
+A probe hardcoding an expectation does not mean the product has to satisfy it.
+
+### 6.9j When asserting a tree structure, **a flat text list is blind**
+
+**Symptom** (re-checked 2026-10-08): `dragdrop.spec.ts` has a control experiment for the "three drop zones",
+asserting "dropping on the **exact middle** of a row changes nothing". It was green all along --
+**but it was wrong**. The `child` zone had been working fine the whole time.
+
+**Cause**: the criterion used `rowTexts()` = `allTextContents()`,
+which returns a **flat array of text and cannot see indentation**.
+The effect of a `child` drop, however, is "turn the source node into a **child** of the target" --
+**it does not change the row order, only the level**. The flat list is identical before and after:
+
+    before: ["甲","甲一","乙","丙"]   x: 甲=1161 甲一=1188 乙=1161 丙=1161
+    after: ["甲","甲一","乙","丙"]    x: 甲=1161 甲一=1188 乙=1188 丙=1161
+            ↑ completely identical, assertion passes        ↑ 乙 moved one level deeper; the feature clearly did take effect
+
+SiYuan's kramdown also confirmed that "乙" had moved under "甲".
+
+**Cost**: on that basis I wrote down "the `child` zone measures as no change" and **put it into comments and a table**,
+recording a working feature as a defect, and making every sibling-reorder case avoid the default drop zone.
+
+**Practice**:
+1. Asserting a tree-structure change must **read the level along with the text** -- read the row's left edge x or the DOM depth,
+   not just the text order. `dragdrop.spec.ts` now has `treeShape()` (`x|text`).
+2. That control experiment became **two assertions**:
+   - drop on the middle of a row -> **the row order does not change** (exactly the symptom that fooled me at the time)
+     **and the indentation must get deeper** (what child really does)
+   - drop on the top edge of a row -> it moves to the front, **and the indentation does not change** (sibling reorder)
+   Only now is the difference between the two drop zones really pinned down.
+
+★ **Lesson**: an assertion that is "always green" may not be a defence but a **blind spot**.
+  An assertion passing only says "the thing it checks holds"; it does not say "the behaviour under test is as described".
+  When writing an assertion, ask: **can this function see the change I want to test?**
+
+### 6.9k Two guards, only one tested -- delete the other and nobody shouts
+
+**Background**: drag and drop has two safety guards.
+
+```js
+const tops = topLevelIds(ids.filter((i) => i !== targetId));  // ① blocks "dropping onto itself"
+if (tops.length === 0) return;
+const desc = new Set();  ...
+if (desc.has(targetId)) return;                                // ② blocks "dropping into its own descendant"
+```
+
+**Finding** (2026-10-08): delete ② entirely and the case "dropping onto itself changes nothing"
+**is still green** -- because it only reaches ① (`targetId` is already filtered out when dragging onto itself),
+**and never touches ② at all**.
+
+Yet ② is the only guard that blocks "ancestor -> descendant". With it deleted, drag "甲" onto "甲一":
+
+    before: 1001|甲 / 1028|甲一 / 1001|乙 / 1028|乙一
+    after:  1001|乙 / 1028|乙一 / 1001|甲 / 1028|甲一
+           ↑ 甲 jumped to the top level together with its children -- there is now a cycle in the tree
+
+**Practice**: add "an ancestor cannot be dropped into its own descendant", testing ② specifically.
+**One case per guard**, so deleting either one makes a test shout.
+
+★ **Lesson**: when a function has several early returns / guards,
+  do not assume "I tested a nearby one = I covered the whole set".
+  Ask: **does this case really reach the branch I care about?**
+  The way to verify is simple -- **delete that guard and see whether the case goes red**.
+
+### 6.9l The criterion of the "drop onto itself" case is blind too
+
+Found while digging into the above. It used `rowTexts()` (flat text) to assert "completely unchanged",
+but if "a node becomes its own child" really did slip through, what changes is the **level**,
+and flat text **cannot see it at all** (the text is still that row, and the order did not change either).
+Same root cause as 6.9j. Now switched to `treeShape()`.
+
+(This one really is **unchanged** at the moment -- I confirmed it both ways with shape + kramdown.
+The criterion was changed so that it shouts if it ever really breaks.)
+
+### 6.9m "Fit" was tested on one document shape only = one direction covered
+
+**Background**: fit scales by a single factor -- the smallest of the two axes:
+
+```js
+const k = Math.min(1, (cw - pad) / layout.w, (ch - pad) / layout.h);
+```
+
+**Both** directions can become the bottleneck:
+
+| Document shape | What hits the limit first |
+|---|---|
+| Wide and shallow | **width** |
+| Narrow and deep | **height** |
+| Single node | neither hits it, which tests the `min(1, …)` ceiling |
+| Multi-level, multi-branch | there is quantity in both directions |
+
+The old case "Fit fits all the nodes" used only **one shape** of the shared test document
+(4 branches x 2 child nodes), so it covered only one of the branches.
+
+**Practice**: add "Fit fits every document shape",
+running 4 shapes, failing on any overflow and reporting the full geometry.
+
+★ This also **confirmed that the formula is not miscomputed** (worth recording):
+  by hand `k = min(1, (237-24)/631, (650-24)/345) = 0.3376`,
+  measured k = `0.3375594…` -- the first 5 decimal places agree.
+  So the "287px left over top and bottom" observed earlier is **not a bug**:
+  `layout` carries its own `padX=80 / padY=60` padding, and fitting to width in a narrow column
+  naturally leaves a lot of vertical slack. "Does not overflow" is the design goal; "fills it up" is not.
+
+**Injection check**: drop the `layout.h` term and scale it up 1.6x ->
+3 of the 4 shapes go red, each reporting the exact overflow (wide and shallow 9 left/9 right,
+narrow and deep 28 left/28 right, multi-level multi-branch 17 left/17 right).
+
+### 6.9r Change a default and the test helper has to "expand" too
+
+**Symptom** (2026-10-08): after the toolbar's first-visit default was made a function of the column width (see 6.9q),
+**all 7 cases in `export.spec.ts` went red at once**:
+
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    waiting for locator('.mm-bar button').filter({ hasText: 'Export image' })
+      - locator resolved to <button class="btn">Export image</button>
+      - element is not visible        <- the button **was found**, but it cannot be clicked
+
+**Cause**: the right column the test uses is only 237px => the toolbar is now **collapsed by default**
+(`.mm-bar--collapsed { display: none !important }`),
+so the button is `attached` but has no size.
+
+**This is not a product defect** -- collapsing by default in a narrow column is exactly the **intended** behaviour.
+What is wrong is the test helper `revealInBar`: it only did "scroll horizontally to the button",
+not "bring the button into a clickable state". And whether it is collapsed **is the same problem**.
+
+**Practice**: in `revealInBar`, first determine whether the bar is collapsed, expand it if so, then scroll.
+
+★ **Lesson**: when you change a "default value / initial state", think through
+  **who depends on that default**. This time it was the **test helper**,
+  and its failure message ("element is not visible") looks exactly as if the product broke --
+  it is very easy to misjudge it as "my change broke export" and go and change the product instead.
+  In fact the product is right, and **the helper is what needs fixing**.
+
+  => How to decide: does the user **need** this behaviour?
+    collapsed by default in a narrow column -> yes, needed (not collapsing would eat 1/3 of the panel).
+    the helper cannot click the button -> the helper did not do its job.
+
+### 6.9s When collapsed, `.mm-bar` is **0** wide -- using it as "the column width" gives a false failure
+
+**Symptom** (2026-10-08): after first-visit default collapse (6.9q), several cases that **measure the column width**
+reported inexplicable failures:
+
+    Error: it should really have been widened (measured 0px)
+    Expected: > 560      Received: 0
+
+The right column had clearly been dragged to 900px, yet it said "not widened".
+
+**Cause**: those cases use `.mm-bar`'s `getBoundingClientRect().width` as "the column width".
+But **when the toolbar is collapsed** it is `display: none` => width **0**.
+So "column width 900" became "column width 0" and the assertion failed the other way round.
+
+**Practice**: always measure **column width** with `.layout__dockr` (the dock itself), never `.mm-bar`.
+The `dock` does not become 0 just because the toolbar is collapsed.
+
+★ A second pitfall from the same root: **when collapsed, every child control is 0 wide**.
+  The width-scan case walks `bar.children` looking for overflow --
+  in the collapsed state there is "nothing to measure", so it **passes vacuously**,
+  looking green while verifying nothing at all.
+  => every width must be preceded by `ensureBarOpen(page)`.
+
+★ **Lesson**: an element "existing" does not mean it "has a size".
+  Every `getBoundingClientRect()` inside a `display: none` subtree is 0,
+  and 0 **silently** leads comparison-style assertions to a wrong conclusion --
+  either a false failure (as here) or a vacuous pass (more dangerous, because there is no signal).
+
+### 6.9t `toBeLessThan(560)` is satisfied by **0** -- the precondition assertion passes vacuously
+
+**Symptom** (2026-10-08): a precondition assertion was added to the "narrow sidebar" case,
+"the column must really be narrow", and then a **900px wide column was injected** to confirm it goes red --
+the result was **still green**.
+
+**Cause**: when the toolbar is collapsed `.mm-bar` is `display:none`,
+so `getBoundingClientRect().width` is **0**. Yet
+
+```js
+expect(i.barWidth, 'the bar must be really narrow').toBeLessThan(400);   // 0 < 400 ✅ passes!
+```
+
+**0 satisfies any "less than N" assertion.** So the "precondition check" was a sham --
+it did not catch the wrong injection, and it gave me the illusion of having "verified".
+
+**Practice**: wherever you "take a float / pixel quantity and then assert it is below some threshold",
+you must **first assert that something was measured**:
+
+```js
+expect(i.barWidth, 'the toolbar should have a width (0 means collapsed, nothing measured)').toBeGreaterThan(0);
+expect(i.barWidth, 'the bar must be really narrow').toBeLessThan(400);
+```
+
+**Measured confirmation**: before the guard, a 900px wide column was still green; after it, red at once,
+reporting "the toolbar should have a width (0 means collapsed, nothing measured)".
+
+★ This class of defect is **far more dangerous** than a "false failure":
+  a false failure shouts, **a vacuous pass does not** -- it quietly gives the illusion of "verified".
+  Same family (already recorded in this file):
+    · 6.9s when collapsed every child control is 0 wide -> the overflow scan "has nothing to measure" and stays green
+    · 6.9k the guard was not covered -> the assertion covers one branch only and stays green
+  What they share: **the assertion also holds in the state where nothing was tested at all**.
+
+★ A self-check to run: read every `toBeLessThan` / `toBeGreaterThan` and
+  ask "**would 0 (or an empty set) pass**". If yes -> a precondition guard is missing.
+
+### 6.9u A control group written as `toBe(before.x)` -- always true when both sides are 0
+
+**Symptom** (2026-10-08): `outline.spec.ts` has two "control group" assertions that
+**stay green even with a real bug injected**.
+
+**Cause**: they are written as "the same as before", and in this scenario before/after **is always 0**:
+
+```js
+expect(after.collapsed, 'zoom must not produce a collapsed marker').toBe(before.collapsed);
+expect(collapsed.crumbs.length, 'collapsing must not produce breadcrumbs').toBe(before.crumbs.length);
+```
+
+Measured states:
+
+| State | rows | collapsed | crumbs |
+|---|---|---|---|
+| Initial | 5 | **0** | **0** |
+| After zoom | 3 | **0** | 2 |
+| After collapse | 3 | 1 | **0** |
+
+=> `after.collapsed === before.collapsed` is `0 === 0`,
+and `collapsed.crumbs.length === before.crumbs.length` is `0 === 0` too.
+**Always true, zero defensive value.**
+
+**Measured confirmation**: injecting into `Outliner` "add `collapsed` to a row when `depth > 0`"
+(i.e. marking rows collapsed after zoom by mistake), by the zoom step `collapsed` goes from 0 to 2 --
+**the original assertion is still green**.
+
+**Practice**: a control group must be written in **both directions**:
+
+```js
+expect(before.collapsed, 'precondition: no collapsed marker before zooming in').toBe(0);
+expect(after.collapsed, `zoom **must not** produce a collapsed marker, measured ${after.collapsed}`).toBe(0);
+```
+
+After the change the same injection **goes red at once** (the precondition line hits first).
+
+★ **A "control group" is the easiest place to pass vacuously** -- because it is naturally written as "the same as before",
+  and "before" is often exactly 0 / the empty set. When writing a control group, ask one question:
+  **if the feature under test were completely broken, would these two values still be equal?**
+  If yes -> this control has no meaning.
+
+★ Same family as 6.9t (`toBeLessThan(N)` satisfied by 0;
+  here `toBe(x)` with both sides 0). What they share:
+  **the assertion also holds in the state where nothing was tested at all.**
+
+### 6.9z Three signals in tests that "look right but are false"
+
+> None of these three is a product bug; they are **the test itself seeing wrong**. They are more dangerous than a false failure --
+> a false failure shouts, a false signal just **quietly goes slow**.
+>
+> When screening a signal the question is not "does this property look like it", but
+> **"does it really take different values in the two states I want to tell apart"**.
+
+**① `.om-dock` cannot be the "plugin has loaded" signal**
+
+Measured on the initial page with no panel open:
+
+```
+.om-dock            0      <- it renders only when **a panel is open and has content**
+.om-mm-viewswitch   0
+.om-mm-host         0
+[data-type*=…]      1      <- the real entry button; present as soon as the plugin mounts
+```
+
+`.om-dock` is a toolbar **inside the Outliner panel**. Treat it as a load signal and
+with the panel closed you wait a full 60 seconds for nothing -- and this check runs **before every case starts**.
+
+**② `isVisible()` cannot be the "panel is open" signal**
+
+With the panel **closed**, `.om-mm-viewswitch` is still `display:flex` and `isVisible()` is still true,
+**the only difference is a width of 0**:
+
+```
+after nav    n=1  w=0     <- closed, but isVisible()=true
+click #1     n=1  w=0
+click #2     n=1  w=122   <- this is the open one
+click #3     n=1  w=0     <- closed again (confirming it "toggles")
+```
+
+=> the criterion can only be **width > 0**, and it must tolerate "one click may still leave it closed".
+Click with `force: true` (the Dock icon carries a tooltip, which intercepts a normal click).
+
+Also, switching documents leaves the old panel's DOM behind, so always take `last()`, never `first()` --
+`.first()` selects that old `display:none` node; measured
+`112 × locator resolved to <div class="om-dock"> … hidden` until it times out.
+
+**③ `locator.evaluate` cannot be used to check a transient state**
+
+It **waits for the element to appear automatically** (until the locator times out). Yet the question "is the panel open"
+has to be asked **before the panel is even mounted** -- so the question blocks for the whole timeout and drags the case down with it,
+and the error is `Target page, context or browser has been closed`
+(the case timed out first and the page was torn down), **which hides the real cause**.
+
+=> to check a transient state, use `page.evaluate` to query the DOM directly: not found is 0, and it returns at once.
+
+---
+
+### 6.10 After creating a document, wait for the kernel **index**; do not read it at once
+
+After SiYuan creates a document, the `blocks` table is not queryable immediately (measured at about 0.5~2s).
+
+And the way the plugin reads a **document title** is exactly
+`SELECT content FROM blocks WHERE id='<docId>' LIMIT 1` (`loadDoc` in `store.ts`) --
+while the index is not ready this query returns empty, so the title is **permanently** an empty string (a reload does not heal it either,
+because the plugin reads it only once, at mount).
+
+**Observed behaviour**: about 1 time in 3, "the outline panel's title bar is empty".
+
+The fix is on the test side: after creating the document, poll the `blocks` table and hand it over only once it is really queryable.
+
+★ Lesson: **"occasional" does not mean "random"**. Whenever something "passes sometimes and not others",
+first look for a definite precondition that can simply be waited out -- if you find one it is a deterministic bug,
+and only if you do not is it time to suspect a flake.
+
+★ The wrong move: do not add a fallback to the product code just because it is "occasional".
+A real user does not create a document and start reading it within 200ms.
+
+### 6.11 An assertion that races real timing can never be stable
+
+The readiness-gate case used to be written as: **grab one frame immediately** after `goto` and assert "colour count < 60".
+That is a race against real loading -- grab early and it is a pure splash screen (9 colours) -> pass;
+grab a little later and the UI is half painted (possibly > 60 colours) -> fail. Measured: three runs in a row, one failure.
+
+It was split into **two things that do not interfere with each other**:
+
+1. **The threshold itself**: verify the decision function on a synthetic minimal page (no race against anything)
+2. **The real ready state**: once the gate lets it through, confirm the statistic really crosses the threshold
+
+★ A more hidden problem came with it: the decision threshold used to be **copied** into the case,
+so changing the threshold in `fixtures.ts` left the case green -- meaning it was not verifying the gate at all.
+An **injection check** caught it: change the threshold -> the case does not go red -> the assertion is not testing the thing under test.
+
+Whenever "a constant from the code under test appears inside an assertion", be on guard for this.
+
+### 6.13 A default value that "guesses a target" -- looks safer, is actually more dangerous
+
+**Symptom**: tests, scripts and verification tools all "run", and you never have to configure anything.
+Switch machines, forget to export a variable, or have **the instance they depend on not running at all**, and they still run to the end
+and still report green. Until one day you find out they were never testing what you thought.
+
+**Four ways to get it wrong** (all of them have happened in this repository; the values here are placeholders):
+
+| Wrong way | What it looks like | Consequence of forgetting to configure |
+|---|---|---|
+| Address fallback | `process.env.URL \|\| 'http://<some hardcoded target>'` | Really creates and deletes documents against **somebody else's live instance** |
+| Credential fallback | `process.env.TOKEN \|\| '<some literal>'` | **real credentials end up in the source and in git** |
+| Downgrade chain | candidate list = `[<first choice>, <second choice>]`, use whichever answers | first choice not running -> **silently switches target, runs to the end and reports green** |
+| Heuristic path search | walk up N levels from the current directory / try a few common locations | **change the working directory and it connects to another workspace** |
+
+**Cause**: none of these defaults is a "safe fallback"; each is a **guess**
+(guessing a target, a path, a credential). The problem with a guess is not that it "may be wrong",
+but that **it stays silent when wrong** -- an error stops you; a wrong guess just hands you a conclusion that looks normal.
+
+Two counter-intuitive points:
+
+- **A downgrade chain is more dangerous than a single value.** A wrong single value fails immediately; a downgrade chain, when the main target is unavailable,
+  **switches to another target and runs to the end**, and that target is often the production / user instance.
+  "More robust" and "more dangerous" are the same thing here.
+- **A tool that "runs by default" is itself a bad smell.** A verification tool that runs
+  without any configuration very likely has a default target you do not know about.
+
+**Practice**:
+
+1. Config missing -> **fail and name the key**, do not fill in a default.
+2. A target may have exactly one source (a config file or an explicit command-line argument): no probing, no downgrading, no `||`.
+3. The right reaction to "the target is not running" is to **tell the user how to start it**, not to pick another target.
+4. Credentials are read from the environment / a config file only. Anything that has been into git is a finding --
+   treat it as a finding (it is still in the history).
+5. The self-check question: **would this empty value / this failure make the script connect to or write somewhere else?**
+   If yes -> it is a guess; delete it.
+
+See AGENTS §5.1.
+
+### 6.x Before measuring performance, check whether the machine is busy
+
+**Fact**: measuring "one input -> the sync flows back" in the T3 document (2000 nodes)
+gave **342ms**, **10.9ms** and **75ms** three times in a row on the same day, and in the fourth round SiYuan's own body text
+took **6893ms** for its own first input. A 600x spread.
+
+The cause is not in the code but in the machine: this box has 4 cores yet permanently runs 3,600+ processes and 32,000+ threads,
+with a load average of 30~150, and free memory often down to a little over a hundred MiB (`kswapd` had burned two hours of CPU
+thrashing). Under that load the same piece of code has no comparability at all.
+
+**Practice**:
+
+1. **Look at the load average before deciding whether to measure at all**. `scripts/perf-probe.py` already does this:
+   above "cores x 2" it refuses to produce numbers at all (exit code 3), and only `--force` forces a measurement.
+   Better no number than a noise value that gets taken as a conclusion.
+2. **An offline test asserts a "scaling ratio", not an absolute duration**. An absolute duration fluctuates by machine model, so asserting it gives you
+   a test that goes red and green; a scaling ratio (double the nodes and the time should not grow by more than a few times) is stable across machines --
+   a fast machine shrinks numerator and denominator together. `src/perf/baseline.test.ts` is written that way and
+   still passes stably at load 148.
+3. **You cannot just take "the median of N consecutive runs" for one input**. The first input also triggers
+   the page's first layout, editor initialisation and the paint settling after the panel mounts; you must **discard the first two rounds** as warm-up.
+   Copying "run it 5 times and take the median" reliably measures cold-start numbers and produces an illusion that looks very much like a bug.
+
+**Why**: I almost changed the render logic on the strength of that 342ms. That would have broken good code
+to "fix" a problem that does not exist at all -- worse than failing to measure performance.
+
+**Corollary**: when you get a number that is "implausibly good" or "implausibly bad", first ask
+"is this number trustworthy", and only then "how do I fix it".
+
+---
+
+### 6.15 Read once, miss, and file a bug: the kernel index is asynchronous so "not found" is not "does not exist"
+
+**Symptom**: while probing what `insertBlock` returns, a script queried the **type** of each returned block id
+(`SELECT type FROM blocks WHERE id=…`) immediately after the insert, and about **half** of the ids came back not found
+(recorded as `?`). The obvious conclusion was "`insertBlock` does not return a fixed type -- sometimes a List,
+sometimes a listItem, sometimes nothing".
+
+**Cause**: the `blocks` index is **asynchronous**. Right after an insert, `SELECT … WHERE id=…` returns an **empty row set**,
+because the block is not in the index yet, not because it does not exist. The script turned that "no answer" into a
+data point and read the row set as a type.
+
+**Measured (kernel 3.8.6)**: with polling (up to 12 s) every id resolves, and the type is **`i` (listItem)** each time.
+The value the probe was hunting was never unstable -- **the probe read too early**:
+
+```
+immediately (0 wait), single shot : "?" for about half of the returned ids
+with polling (max 12 s)           : "i", every id
+```
+
+★ And note how easily this manufactures a kernel bug report: the suspicion stood until the polling was added.
+What the row set described was the **timing of the read**, not the behaviour of `insertBlock`.
+
+**Practice**:
+1. When a lookup comes back empty, record **unknown**, and do not let "unknown" be read as "does not exist" by the code below it.
+   In an asynchronous index a single-shot probe is a false-negative generator (6.10, 6.11).
+2. Poll until the answer appears or you time out -- never a fixed `sleep`, and never "query once and report".
+3. The question to ask of a probe that answers "present / absent" is: **which of the two states does it actually distinguish --
+   "absent" or "not yet visible"?** If it cannot tell them apart, it is not evidence yet.
+
+**Why the numbers live here and not in the test**: they are a record of a **methodology correction**, not of product
+behaviour. `kernel-bugs.test.ts` keeps only the shape (`query immediately when the index is not ready ⇒ nothing found`,
+polling returns the right type on both branches); a printed observation cannot go red, so it is not evidence there.
+
+### 6.16 Every case failing at once: the shared precondition is part of the subject
+
+**Symptom** (the misjudgement that came with the above): every `insertBlock` case panicked -- the fixture was a clean
+document (`- 甲` / `- 乙` / `- 丙`), the markdown passed in varied (`- `, an empty string, `- 甲`, `x`), and **at the
+time all of them really did panic**. Conclusion drawn: "empty / minimal markdown crashes the kernel".
+
+**Cause**: the markdown content had nothing to do with it. The probe kept passing a **document ID** as `previousID`, and
+`previousID` = a document ID is out of range for `insertBlock` -> nil-pointer panic. **Every case failed because every
+case shared that one wrong precondition**, not because the subject was broken.
+
+**Measured**: once the anchor was corrected, the four markdown variants were all normal, and the anchor table was clean:
+
+| `previousID` points at | Result |
+|---|---|
+| a document ID | panic |
+| a listItem / a List / a paragraph / a heading | normal |
+
+**Practice**: when **all** cases fail, suspect the **test script** before the subject -- look for the one condition
+they share. And keep one case with a known-good precondition as a **positive control**: if it also fails, the
+environment (not the subject) is what is broken.
+
+★ **Lesson**: "all of them failed" is not "the subject is broken everywhere"; it is "one shared condition is wrong".
+The working case above (a listItem anchor) is what proved the environment itself was fine. This collection does not
+otherwise record the endpoint's anchor rules -- those are kernel behaviour and live in
+[`kernel-api.md`](../kernel-api.md) 7.1; the debugging detour around the same anchor is
+[`debug.md`](debug.md) 6.14.
+
+### 6.17 What the kernel adopts is the id: node ID === block ID, and kramdown shows it inline
+
+**Symptom** (measured, defect #54): the same node content landed in SiYuan **twice**, each copy with its own paragraph block.
+The counted duplicates (same node 同E) were **2**, and they were inserted 17 seconds apart, so the second one was not
+a race in flight -- it was a re-insertion:
+
+```
+子T
+  ├── 同E   (22:32:58)
+  └── 同E   (22:33:15)   <- duplicate
+```
+
+**Cause**: the map key had **two namespaces**. The insert wrote `- ${text}` and let the kernel assign a block ID,
+while `syncStructure` registered the mapping under the **client-side node id** (`makeSiyuanId()`) and `loadBlockMap`
+rebuilt it under the **block ID**. Measured proof that the two really differ -- the prefixes are one second apart,
+i.e. two distinct IDs for one node:
+
+```
+node ID      = 20261005223702-kv25149
+mapped block = 20261005223703-ovmfqd7
+```
+
+⇒ the next write-back finds no mapping for the node ⇒ judges it new ⇒ **inserts a second copy**:
+the document held **2** 同E entries, each with its own paragraph block.
+
+**Fix**: inline the node's **own id** into the inserted markdown, so the kernel **adopts** that id
+(`{: id="…"}` is SiYuan's native inline-attribute syntax; a non-conforming id falls back to the id-less form so
+the kernel never receives a bad one). The keys then agree, and no duplicate appears.
+
+**Confirmed in kramdown** (the same fact, seen from the read side): every `listItem` carries the
+`{: id="…"}` inline attribute, and the reader strips that prefix and keeps the id only when it matches
+`SIYUAN_ID_RE`. That is what makes "node.id === block ID" readable straight out of the document text --
+it is the direct evidence for "the kernel adopted the id", and it is how a structural assertion can compare ids
+without a second SQL round trip.
+
+★ Distinct from 6.9h: 6.9h is about the attribute sitting **inline** so a naive filter mistakes it for body text
+(false failure); this one is about the attribute being **the id carrier**. Both must strip it; only one of them
+expects it to be there.
+
+**Practice**: a mapping key must stay in **one namespace on every write path**. Before this fix the read path used
+the block ID and the write path used the client id -- the two look identical in normal operation and only diverge
+whenever the kernel assigns an id itself, and the symptom is a **duplicate block, not an error**.
+
+### 6.18 "Stable for 18 seconds": when an effect rebuilds blocks, a check that is too early only sees the transient
+
+**Symptom** (measured, defect #53): 甲 already had the child 子T; adding the sibling 同E **overwrote 子T's block** in
+SiYuan -- what is left there is one block whose content is the new 同E -- while the UI still showed both children
+(the two node ids differ, so the in-memory tree was right and only the write-back was wrong). An immediate structural
+check could say "child list rebuilt, children present"; the state did not hold.
+
+**Cause**: the insert **destroys and rebuilds blocks** inside the kernel. An immediate read describes the state
+**at that instant**, and the rebuild is not finished (or the stale mapping has not been pruned yet). The check then
+freezes the transient state and calls it the result.
+
+**Measured**: after the fix, the rebuilt state was read again **18 seconds later** and was unchanged --
+`['甲','  子T','  同E','乙','丙']` with the child list count = 1 (the count is per listItem, measured under 甲 in that
+document). That wait is what separates "the new state is durable" from "the new state is just the first frame after a rebuild".
+
+**Practice**:
+1. Where an operation is known to rebuild blocks (any insert that triggers a structural rebuild, `updateBlock` on a
+   whole document, undo/redo replay), a single read is not a verification. Re-read after a settling interval and
+   compare -- a state that does not survive the interval did not land.
+2. Keep that second read even when both values are as expected: what it guards is **drift**, and drift is exactly
+   the failure mode of a "probably fine now" state.
+3. This is a *measured* duration, not a timeout to sleep on: the read itself still polls to a stable value
+   (6.10 / 6.11); the 18 seconds only say how long the settled state was held before being trusted.
+
+★ **Lesson**: an assertion run at the wrong moment does not verify the subject, it verifies the moment.
+Ask of every check that follows a mutation: **is it reading the result, or a frame of the operation?**
+
+---
+
+### 6.22 A red proof handed the user a deliberately broken build
+
+**Symptom**: a mutation test passed -- the check went red on a verified mutation, the source file was
+restored, everything looked clean. What also happened, silently, is that a plugin with one deliberately
+dead dark-mode rule was live in the workspace the user was working in for the ~15s between the mutated
+deploy and the restoring one.
+
+**Cause**: the red proof ran `npm run deploy`, and that command deploys to **every** path in
+`PLUGIN_DIRS` -- which includes the user's workspace, not just the isolated test instance. The two
+instances each hold a copy of the plugin (that is deliberate, so neither side runs stale code), so
+"deploy" is never "deploy to the test instance". `--target` does not help: it only *adds* a target.
+
+**Practice**: a check that needs the build output (E2E, `verify`) must narrow the deploy explicitly and
+show the narrowed list before the check runs:
+
+```bash
+PLUGIN_DIRS=<test-instance plugin dir> npm run deploy
+```
+
+`python3 scripts/redproof.py --deploy` does this, prints the single target it is about to use, and
+deploys **again** after restoring the source (otherwise the mutated build stays in the instance). It is
+the only sanctioned way to run a mutating check: the rule "a red proof is by definition a broken build,
+so it must not touch the workspace the user is in" now has a tool instead of a memory.
+
+★ **Lesson**: `code:0` on the deploy and a green final verdict say nothing about *where* the mutation
+landed. Read the target list, not just the exit code.

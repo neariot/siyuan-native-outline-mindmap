@@ -1,0 +1,39 @@
+# Chinese that AGENTS.md section 2 permits inside an otherwise English file.
+#
+# Checked by `python3 scripts/audit-language.py`, which reports every entry that stops
+# matching anything (`ALLOWLIST-STALE`) and exits 1 for it.
+#
+# Entry forms:
+#   path:line   one line; the findings on it are allowed
+#   path        the whole file, but `string` findings only -- a comment, a test name and an
+#               assertion message are violations by policy and need a line or token entry
+#   i18n:X      the product's own Chinese text; the tool verifies X is part of a string in
+#               src/plugin/i18n/zh_CN.json or src/plugin/plugin.json
+#   fixture:X   CJK content under test (a node title, a probe label); at most 12 characters
+#   kernel:X    a value the kernel or the product emits verbatim; at most 12 characters
+#
+# A token entry matches a finding whose CJK text is *exactly* that token, anywhere, so the
+# list survives an edit that moves lines. The 12-character cap on `fixture:`/`kernel:` is
+# deliberate: a quoted label is short, a Chinese sentence is not, so prose cannot be
+# allowed by a token -- it needs a `path:line` entry, which makes a reviewer read the line.
+# NOTE: a `path:line` entry inside docs/** moves whenever that doc is edited above it.
+#       Re-run the audit to see `ALLOWLIST-STALE ... no finding on that line` and re-point it.
+
+# ---------------------------------------------------------------- product strings (i18n)
+
+# ------------------------------------------------------- kernel / product values verbatim
+kernel:「原生大纲导图」  # CJK text the product emits verbatim, quoted as evidence; seen in scripts/verify-android.py
+kernel:目录  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/testing.md
+kernel:｜  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/build.md
+kernel:已删文档  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/data.md
+kernel:父文档  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/testing.md
+kernel:目标内容  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/plugin.md
+kernel:简体中文  # CJK text the product emits verbatim, quoted as evidence; seen in README.md
+
+# ------------------------------------------------------------------ CJK fixture content
+fixture:「逻辑图（向右）」  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/mindmap/structure-order.test.ts
+fixture:「思维导图（左右）」  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/mindmap/structure-order.test.ts
+fixture:「树形图（向右）」  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/mindmap/structure-order.test.ts
+fixture:一律  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/plugin/mindmap-anchor.test.ts
+fixture:思维导图（左右）  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/mindmap/structure-order.test.ts
+
