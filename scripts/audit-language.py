@@ -112,6 +112,7 @@ import io
 import json
 import os
 import re
+import unicodedata
 import subprocess
 import sys
 import tokenize
@@ -1068,6 +1069,31 @@ def selftest_files():
     return found
 
 
+#: The punctuation that wraps a quoted label in prose. Named rather than written, so this file holds no
+#: CJK of its own and a reader still sees exactly which marks are meant. (Its own self-test requires the
+#: file to be clean, which is how this list came to be spelled this way.)
+QUOTE_MARKS = "".join(unicodedata.lookup(name) for name in (
+    "LEFT CORNER BRACKET",
+    "RIGHT CORNER BRACKET",
+    "LEFT WHITE CORNER BRACKET",
+    "RIGHT WHITE CORNER BRACKET",
+    "LEFT DOUBLE ANGLE BRACKET",
+    "RIGHT DOUBLE ANGLE BRACKET",
+    "LEFT ANGLE BRACKET",
+    "RIGHT ANGLE BRACKET",
+    "LEFT BLACK LENTICULAR BRACKET",
+    "RIGHT BLACK LENTICULAR BRACKET",
+    "LEFT TORTOISE SHELL BRACKET",
+    "RIGHT TORTOISE SHELL BRACKET",
+    "LEFT PARENTHESIS", "RIGHT PARENTHESIS", "SPACE", "IDEOGRAPHIC SPACE",
+))
+
+
+def trim_quotes(text):
+    """The quoted label without the marks around it."""
+    return text.strip(QUOTE_MARKS)
+
+
 def excuse_rule(finding, product, fixtures=(), selftests=frozenset()):
     """The category that makes this finding legitimate, or None.
 
@@ -1094,7 +1120,7 @@ def excuse_rule(finding, product, fixtures=(), selftests=frozenset()):
     if finding.path == MANIFEST:
         return "manifest"
     if finding.kind in ("comment", "doc-prose", "assertion") and any(
-        finding.text in value for value in product
+        trim_quotes(finding.text) in value for value in product
     ):
         return "product-text"
     if finding.kind == "string" and TEST_FILE.search(finding.path):

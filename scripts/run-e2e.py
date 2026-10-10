@@ -122,7 +122,7 @@ def _sweep_traces(code):
         print("  ✓ passing run: removed test-results/ (traces hold the token in an auth header)")
     else:
         print(f"  ✗ failing run: kept {os.path.relpath(target, ROOT)}/ for debugging —— it contains the "
-              f"token in an Authorization header, so delete it once you are done with it")
+              f"live request headers, so delete it once you are done with it")
 
 
 if __name__ == "__main__":

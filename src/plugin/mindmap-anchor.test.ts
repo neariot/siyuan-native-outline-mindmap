@@ -128,12 +128,9 @@ console.log('\n=== §101 adding a sibling at child level overwrites the previous
 
 console.log('\n=== The measurement must stay written down in the source ===');
 {
-  // ★ This section used to assert on a string the test itself declared four
-  //   lines above (`const oldClaim = '…'` then `oldClaim.includes('一律')`), so
-  //   it could never go red no matter what the implementation said, and the
-  //   word it looked for disappeared the moment the source was translated into
-  //   English. Assert on the **real** source instead: the anchor chain below is
-  //   the one this file's replica mirrors.
+  // ★ Assert on the **real** source. An assertion that reads a string this test declares itself —— a local
+  //   constant checked with `includes` —— can never go red, whatever the implementation does. So this reads
+  //   `src/siyuan/store.ts` and looks for the anchor chain that the replica below mirrors.
   //
   //   ★★ What must survive in the code is the *distinction*: a child level
   //   anchors on the parent's paragraph block, while a sibling level must not.
