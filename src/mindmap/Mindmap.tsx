@@ -758,6 +758,8 @@ export default function Mindmap({
   const canvasRef = React.useRef<HTMLDivElement | null>(null);
   /** Reference to `.mm-wrap`: used to measure the **dock** width (the criterion for the first-visit default, see below) */
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
+  /** The attached-paragraph panel, so focus can be moved to it when it opens (never per render) */
+  const paraPanelRef = React.useRef<HTMLDivElement | null>(null);
 
   /**
    * Give focus back to the canvas.
@@ -882,6 +884,21 @@ export default function Mindmap({
    *   after which only the first keyboard action takes effect (this pitfall was already hit with the "map overlay" in this project).
    *   The same focusCanvas() as commitEdit is reused here.
    */
+  /**
+   * Move focus into the attached-paragraph panel when it opens.
+   *
+   * ★ Not through an inline `ref` callback. Such a callback gets a **new identity on every render**, so
+   * React calls it again each time (null, then the element), and the guard it used —— comparing against
+   * `document.activeElement` —— was satisfied while the user typed, because the active element is the
+   * textarea *inside* the panel. The panel took focus back on every keystroke, so the editor accepted one
+   * character per click. Keyed on the view, the focus happens once per opening: opening it makes Esc work
+   * immediately and lets a keyboard user scroll the content.
+   */
+  React.useEffect(() => {
+    if (paraView === null) return;
+    paraPanelRef.current?.focus();
+  }, [paraView]);
+
   const closeParagraphs = (): void => {
     setParaView(null);
     setParaEditing(false);
@@ -1772,15 +1789,7 @@ export default function Mindmap({
           <div
             className="mm-para-panel"
             tabIndex={-1}
-            ref={(el) => {
-              // Focus the panel automatically: that makes Esc work immediately and helps keyboard users scroll the content.
-              // Focus once only (el being null means unmount, which is skipped).
-              if (el && document.activeElement !== el) {
-                requestAnimationFrame(() => {
-                  if (el.isConnected) el.focus();
-                });
-              }
-            }}
+            ref={paraPanelRef}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 e.preventDefault();
