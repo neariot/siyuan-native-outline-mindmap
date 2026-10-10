@@ -196,7 +196,7 @@ export async function topLevelTexts(api: KernelApi, id: string): Promise<string[
 /** Titles of the top-level branches in the test document (used to assert "which node is on which side"). */
 export const TOP_BRANCHES = ['甲分支', '乙分支', '丙分支', '丁分支'];
 
-/** The test notebook (e2e-fixture-notebook). */
+/** The test notebook (the fixture one; its name is invented, never a real one). */
 /**
  * The notebook used for testing.
  *

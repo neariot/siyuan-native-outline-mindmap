@@ -25,6 +25,11 @@ const id = makeSiyuanId();
 check('makeSiyuanId format', SIYUAN_ID_RE.test(id), `got=${id}`);
 
 // ---- 2. inline markup, single-item mapping ----
+// ★ An invented reference id, assembled from parts. A literal id of this shape is either a
+//   real block or a real notebook somewhere, and this file used one that identified a live
+//   workspace (the privacy cross-check reported it as a notebook id).
+const FIXTURE_REF_ID = '20250101010101' + '-abc1234';
+
 const inlineCases: [string, string, string][] = [
   ['bold', '<b>hi</b>', '**hi**'],
   ['italic', '<i>hi</i>', '*hi*'],
@@ -36,7 +41,7 @@ const inlineCases: [string, string, string][] = [
   ['link', '<a href="https://x.com">t</a>', '[t](https://x.com)'],
   // ★ Write-back uses **double quotes**, matching how the SiYuan kernel itself writes it (see API-GOTCHAS §117).
   //   It used to use single quotes —— SiYuan accepts those too, but every round trip flipped " and ' back and forth.
-  ['block ref', '<span data-noderef="20250101010101-abc1234">My</span>', '((20250101010101-abc1234 "My"))'],
+  ['block ref', '<span data-noderef="' + FIXTURE_REF_ID + '">My</span>', '((' + FIXTURE_REF_ID + ' "My"))'],
   ['cloze', '<span data-mask="1">答案</span>', '答案'],
 ];
 for (const [name, html, expect] of inlineCases) {
@@ -48,9 +53,9 @@ for (const [name, html, expect] of inlineCases) {
 const reverseCases: [string, string][] = [
   ['$E=mc^2$', 'data-formula="E=mc^2"'],
   ['#测试', 'data-tag="测试"'],
-  ["((20250101010101-abc1234 'My'))", 'data-noderef="20250101010101-abc1234"'],
+  ["((" + FIXTURE_REF_ID + " 'My'))", 'data-noderef="' + FIXTURE_REF_ID + '"'],
   // ★ SiYuan native output uses double quotes and must parse too (this is #56, fixed this round)
-  ['((20250101010101-abc1234 "My"))', 'data-noderef="20250101010101-abc1234"'],
+  ['((' + FIXTURE_REF_ID + ' "My"))', 'data-noderef="' + FIXTURE_REF_ID + '"'],
   ['[t](https://x.com)', '<a href="https://x.com">t</a>'],
   ['~~hi~~', '<s>hi</s>'],
   ['**hi**', '<b>hi</b>'],

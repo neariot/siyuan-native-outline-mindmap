@@ -94,6 +94,15 @@ TEXT_SUFFIXES = {
 }
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", "coverage", ".venv", "venv"}
 
+#: Paths under the project that are a **nested installation or a build output**, not our content. The
+#: isolated SiYuan instance lives in `.tmp/test-instance` and is ~700 MB of someone else's program: a
+#: first version of this check walked it and took minutes to answer a question about ~200 files.
+SKIP_PATHS = (".tmp/test-instance", ".tmp/history-scrub", "dist-plugin")
+
+#: Files larger than this are not read. A 100 MB log or a media file is not where an identifier hides,
+#: and reading it costs more than the whole check.
+MAX_BYTES = 2_000_000
+
 
 #: A test file. An id-shaped token inside one is fixture data —— the tests need an opaque identifier
 #: and invent one —— so it is excused by category rather than by an entry, the way the language auditor
@@ -134,11 +143,21 @@ def local_artifacts():
         if not base.is_dir():
             continue
         for dirpath, dirnames, filenames in os.walk(base):
+            rel = os.path.relpath(dirpath, REPO_ROOT)
+            if any(rel == skip or rel.startswith(skip + os.sep) for skip in SKIP_PATHS):
+                dirnames[:] = []
+                continue
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for name in filenames:
                 path = Path(dirpath) / name
-                if path.suffix.lower() in TEXT_SUFFIXES:
-                    found.append(str(path.relative_to(REPO_ROOT)))
+                if path.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                try:
+                    if path.stat().st_size > MAX_BYTES:
+                        continue
+                except OSError:
+                    continue
+                found.append(str(path.relative_to(REPO_ROOT)))
     return sorted(found)
 
 
@@ -183,6 +202,52 @@ def check_patterns(paths, label):
     return findings, scanned, skipped, counts, excused
 
 
+def workspace_identifiers(base, token, limit=2000):
+    """Every **identifier the workspace itself carries**: notebook names, document titles and paths.
+
+    ★ Notebook names are not the whole story. A document title is just as pinpointing as a company name
+    —— a topic, a project, a person —— and a first version of this check only looked at notebooks. The
+    case that prompted it was a document's text used as a sample in a code comment, which had spread to
+    120 scratch copies before anyone looked.
+
+    Read-only SQL with an explicit LIMIT, per AGENTS.md section 1.
+    """
+    statements = (
+        "SELECT hpath, content FROM blocks WHERE type = 'd' LIMIT %d" % limit,
+        "SELECT name FROM boxes LIMIT 200",
+    )
+    terms = set()
+    for statement in statements:
+        request = urllib.request.Request(
+            base + "/api/query/sql", data=json.dumps({"stmt": statement}).encode(),
+            headers={"Authorization": "Token " + token, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                rows = json.load(response).get("data") or []
+        except (urllib.error.URLError, ValueError) as exc:
+            print("  -- a workspace query failed (%s) —— those identifiers were not checked"
+                  % type(exc).__name__)
+            continue
+        for row in rows:
+            for field in ("hpath", "content", "name"):
+                value = (row.get(field) or "").strip()
+                if not value:
+                    continue
+                if field == "name":
+                    # ★ A notebook name is a strong identifier at **any** length: it names a whole
+                    #   workspace, and the leak that prompted this rule was two characters long. There are
+                    #   only a handful of notebooks, so a short name is still pinpointing.
+                    if len(value) >= 2:
+                        terms.add(value)
+                elif len(value) >= 4:
+                    # ★ A document title or path is matched **whole**. Splitting it into components
+                    #   produced 9,913 hits in the first attempt, almost all of them generic two-character
+                    #   words ("document", "project") that mean nothing on their own.
+                    terms.add(value)
+    return terms
+
+
 def instance_notebooks():
     """The notebooks the configured instances actually report. Names are never printed by this tool."""
     import env  # noqa: E402  (imported lazily: --live is the only path that needs the config)
@@ -208,6 +273,57 @@ def instance_notebooks():
                             notebook.get("id", "")))
         print("  -- %s: %d notebook(s) cross-checked" % (label, len(notebooks)))
     return targets
+
+
+def is_distinctive(term):
+    """Whether this workspace string **points at something**, rather than being a word that matches anywhere.
+
+    ★ A workspace contains documents called `python`, `about` or `temp`, because people keep notes. Those
+    are identifiers in the database and they are not identifiers in a sentence: cross-checking them found
+    1,170 "leaks" that were all ordinary English. The first version of this rule reported every hit and was
+    therefore useless —— and the tempting fix, an allowlist of the benign ones, would write somebody's
+    document titles into the repository to do it.
+
+    ★ Only **non-ASCII** is judged. In a repository whose prose is English, a CJK title is a title rather
+    than a word, and both cases that prompted this rule were CJK (a notebook name, and a topic name used
+    as a sample text). ASCII cannot be judged this way: the first version treated any multi-word phrase as
+    pinpointing, and the hits were `Key point` (12 files), `Keyboard shortcuts` and `find and replace` ——
+    ordinary phrases, and two of them are this product's own vocabulary. A document may be called
+    `Key point`; so may a section heading. No rule separates those, and reporting them as leaks is how a
+    check becomes noise that people learn to ignore.
+
+    So ASCII identifiers are **listed for reading** (`--live` prints each position) and do not fail the
+    run. The tool says which class it can decide and which it cannot, rather than pretending to decide
+    both.
+    """
+    return any(ord(char) > 127 for char in term)
+
+
+def check_workspace_terms(terms, paths, label):
+    """Identifiers the workspace carries, over the given scopes. Values are never printed either way.
+
+    Distinctive terms produce **findings** (a failure); generic words are counted and reported with their
+    reason, so the distinction is visible rather than silently filtered.
+    """
+    findings, scanned, generic, listed = [], 0, 0, []
+    for relpath in paths:
+        if Path(relpath).suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        lines = read_lines(relpath)
+        scanned += 1
+        for number, line in enumerate(lines, 1):
+            for term in terms:
+                if term not in line:
+                    continue
+                if not is_distinctive(term):
+                    generic += 1
+                    listed.append((relpath, number, len(term)))
+                    continue
+                findings.append(Finding(
+                    relpath, number, "workspace-identifier",
+                    "%s carries an identifier from the workspace (%d character(s), value withheld)"
+                    % (label, len(term))))
+    return findings, scanned, generic, listed
 
 
 def check_notebooks(targets, paths):
@@ -286,13 +402,49 @@ def main():
     findings, scanned, skipped, counts, excused = check_patterns(tracked, "tracked")
 
     if args.live:
-        print("  --live: asking the configured instances for their notebooks")
+        import env  # noqa: E402  (lazily: only --live needs the configuration)
+
+        print("  --live: asking the configured instances what their workspaces contain")
         targets = instance_notebooks()
+        # Only the **user's** notebooks, for the same reason the document pass skips the isolated one:
+        # its notebooks are created by the fixtures, so their names belong in the fixtures and the specs.
+        user_targets = [t for t in targets if "user" in t[0]]
         if targets:
-            live_findings, live_scanned = check_notebooks(targets, tracked + artifacts)
+            live_findings, live_scanned = check_notebooks(user_targets, tracked + artifacts)
             findings += live_findings
-            print("  -- cross-checked %d notebook identity/identities over %d file(s)"
-                  % (len(targets), live_scanned))
+            # ★ counted, or the listing above would not affect the verdict —— the first version of the
+            #   document path had exactly that defect and printed "OK, exit 0" beneath its own findings.
+            counts[("<live>", "notebook-name")] = len(live_findings)
+            print("  -- cross-checked %d notebook identity/identities of the user's instance over %d "
+                  "file(s): %d finding(s) (the isolated instance's are the fixtures)"
+                  % (len(user_targets), live_scanned, len(live_findings)))
+
+        # ★ Notebook names are not the whole story: a document title is just as pinpointing, and it is
+        #   what leaked in the case that prompted this rule.
+        #
+        #   ★★ Only the **user's** instance is cross-checked. The isolated instance's documents are
+        #   created by the fixtures, so its titles *must* appear in the specs —— checking it reports the
+        #   test suite for being a test suite. That is a deliberate skip, stated here rather than left
+        #   for the next reader to wonder about.
+        print("  -- the isolated instance is not cross-checked: its documents are the fixtures, whose")
+        print("     titles belong in the specs by construction")
+        terms = workspace_identifiers(env.cfg.siyuan, env.cfg.token())
+        if not terms:
+            print("  -- the user instance reported no identifiers (check its token if that is unexpected)")
+        else:
+            live, live_scanned, generic, listed = check_workspace_terms(
+                terms, tracked + artifacts, "the user's workspace")
+            findings += live
+            counts[("<live>", "workspace-identifier")] = len(live)
+            distinctive = sum(1 for t in terms if is_distinctive(t))
+            print("  -- cross-checked %d identifier(s) from the user's workspace over %d file(s): "
+                  "%d pinpointing, %d finding(s)"
+                  % (len(terms), live_scanned, distinctive, len(live)))
+            if listed:
+                print("  -- %d hit(s) of **ASCII** identifiers are listed, not judged (a rule cannot tell"
+                      " an English phrase from a document title; read them):" % len(listed))
+                for relpath, number, length in listed[:PRINT_PER_FILE * 4]:
+                    print("       %s:%d  (%d character(s), value withheld)" % (relpath, number, length))
 
     if excused:
         print("audit-privacy: excused by rule: %s —— an id in a test file is fixture data, but a fixture "

@@ -7,7 +7,7 @@ E2E used to run against the instance the user is **actively using** (pointed at 
 a 6 GB workspace, 2158 documents, **sync enabled**. Two problems:
 
 1. **Data safety**: the tests really create and delete documents. Although there is an allowlist for
-   'only touching `e2e-fixture-notebook`', one environment variable bypasses it, and sync uploads the test garbage **to the cloud**.
+   'only touching the fixture notebook', one environment variable bypasses it, and sync uploads the test garbage **to the cloud**.
 2. **Uncontrollable configuration**: the tests depended on 'that machine happening to have SiYuan installed,
    the port happening to be 6806, the token being somewhere'—— it would not run on another machine.
 
