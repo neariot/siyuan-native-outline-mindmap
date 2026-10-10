@@ -688,3 +688,26 @@ so it must not touch the workspace the user is in" now has a tool instead of a m
 
 ★ **Lesson**: `code:0` on the deploy and a green final verdict say nothing about *where* the mutation
 landed. Read the target list, not just the exit code.
+
+### 6.23 A test filter that is not understood runs everything, silently
+
+**Symptom.** `python3 scripts/run-e2e.py mindmap` was meant to run one suite. It ran the whole suite —— 98
+tests in 12 files, 19.5 minutes —— and the three failures it reported belonged to `ctxmenu`, `outline`
+and `viewstate`. They were read as failures of the suite that was asked for.
+
+**Cause.** The runner appended the filter as a bare word (`npx playwright test mindmap`) and the word
+was ignored. Nothing said so: the run was green-ish, took a long time, and named real tests. The
+duration was the only clue, and a duration is easy to explain away ("E2E is slow").
+
+**Practice.** In tooling, an argument that is not understood must be an error —— this is section 5.1
+inside the test layer, the same shape as an environment variable that silently falls back:
+
+* **Resolve the filter to what will run, and print it.** The runner matches the substring against
+  `e2e/*.spec.ts`, prints `specs: e2e/mindmap.spec.ts`, and passes those paths to playwright. The output
+  is now evidence of what was selected rather than a hope.
+* **Refuse when nothing matches**, listing the available specs. "Ran everything because it did not
+  understand the argument" wastes half an hour and, worse, attributes other suites' failures to the one
+  that was asked for.
+* **A filter change is verified with `--list`**, which needs no browser: `run-e2e.py mindmap -- --list`
+  prints `Total: 23 tests in 1 file` before versus 98 after the fix. Cheap checks settle questions that
+  a 20-minute run only obscures.

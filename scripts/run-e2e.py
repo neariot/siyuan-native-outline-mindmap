@@ -17,6 +17,7 @@ and the target is pinned to the isolated test instance —— E2E really creates
 
 import argparse
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -70,8 +71,29 @@ def main():
     # what follows `--` goes to playwright; what precedes `--` is a file name filter
     cmd += list(extra)
     cmd += list(args.passthrough)
+
+    # ★ The filter is resolved to **spec paths** here rather than handed to playwright as a bare word.
+    # Passed as a word it was silently ignored: `run-e2e.py mindmap` and no filter at all both listed
+    # "98 tests in 12 files", so a "single suite" cost 19.5 minutes and three failures from other
+    # suites got attributed to the one being run. A filter that matches nothing is now an error —
+    # running everything because the argument was not understood is the silent-fallback failure mode
+    # (AGENTS.md section 5.1) inside the test tooling.
     if args.filter:
-        cmd.append(args.filter)
+        spec_dir = Path(ROOT) / "e2e"
+        if args.filter.endswith(".spec.ts") or "/" in args.filter:
+            matches = [args.filter] if (Path(ROOT) / args.filter).is_file() else []
+        else:
+            matches = sorted(
+                str(path.relative_to(ROOT)) for path in spec_dir.glob("*%s*.spec.ts" % args.filter)
+            )
+        if not matches:
+            print("❌ No spec file matches %r —— refusing to run the whole suite instead."
+                  % args.filter, file=sys.stderr)
+            print("   Available: " + ", ".join(
+                sorted(p.name for p in spec_dir.glob("*.spec.ts"))), file=sys.stderr)
+            return 2
+        print("  specs: " + ", ".join(matches))
+        cmd += matches
 
     print(f"  E2E target: {env['SIYUAN_URL']}  (isolated test instance)")
     print(f"  notebook: {env.get('SIYUAN_TEST_NOTEBOOK') or '(use the default allowlist)'}")
