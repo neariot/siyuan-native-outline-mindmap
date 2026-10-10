@@ -414,24 +414,43 @@ def enable_plugin():
 
 
 def deploy_plugin():
-    """Deploys the **current build artifacts** to the test instance.
+    """Deploy the **current build artifacts** to the test instance, and to nothing else.
 
     The instance is an empty workspace; without the plugin installed, E2E cannot even see `.om-dock`.
-    Reuses `scripts/deploy.py` (which already handles copying and verifying 'build artifacts → plugin directory'),
-    pointing the target at the test instance via `SIYUAN_WORKSPACE`.
+    Reuses `scripts/deploy.py`, which handles copying and verifying 'build artifacts → plugin directory'.
+
+    ★ `deploy.py` takes its targets from `PLUGIN_DIRS`, and on a development machine that list is the
+    plugin directories to sync —— the workspace the user works in among them. An earlier version of this
+    function set `SIYUAN_WORKSPACE` and its docstring asserted that this pointed the deploy at the test
+    instance; `deploy.py` never reads that variable, so it wrote to every target and the user's editor
+    received the same build. The target is narrowed with `PLUGIN_DIRS` (deploy.py's documented override)
+    and the outcome is **checked**: deploy.py prints how many targets it wrote to and which, and anything
+    other than exactly this instance's plugin directory is an error rather than a warning.
     """
     deploy = os.path.join(ROOT, "scripts", "deploy.py")
     if not os.path.exists(deploy):
         die("scripts/deploy.py not found")
 
-    env = dict(os.environ, SIYUAN_WORKSPACE=WORKSPACE_DIR)
+    plugin_dir = os.path.join(WORKSPACE_DIR, "data", "plugins", PLUGIN_NAME)
+    env = dict(os.environ, PLUGIN_DIRS=plugin_dir)
     r = subprocess.run([sys.executable, deploy, "--no-build"],
                        cwd=ROOT, env=env, capture_output=True, text=True)
     if r.returncode != 0:
         die("failed to deploy the plugin:\n%s%s" % (r.stdout, r.stderr))
-    for line in (r.stdout or "").strip().splitlines()[-2:]:
-        log(line.strip())
 
+    # ★ Check where it **wrote**, not what it was configured to write: deploy.py prints one
+    #   `✓ deployed ... → <dir>` line per target it copied into, and that is the evidence that the
+    #   narrowing worked. Expecting the configured list would pass on a run that ignored it.
+    out = r.stdout or ""
+    written = [l.split("\u2192", 1)[1].strip() for l in out.splitlines()
+               if "deployed" in l and "\u2192" in l]
+    if len(written) != 1:
+        die("deploy wrote to %d target(s); this instance must be the only one:\n%s" % (len(written), out))
+    if os.path.normpath(written[0]) != os.path.normpath(plugin_dir):
+        die("deploy wrote somewhere unexpected:\n  %s" % written)
+    log("deployed to the test instance only: %s" % plugin_dir)
+    if not re.search(r"checksum", out):
+        die("deploy did not report a checksum, so the copy is unverified:\n%s" % out)
 
 def start(port):
     if pid_of() and api_alive(port):
