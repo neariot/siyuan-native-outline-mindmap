@@ -60,7 +60,7 @@ def main():
 
     env = dict(os.environ)
     env["SIYUAN_URL"] = base
-    env["SIYUAN_TOKEN"] = cfg.test_token()   # ★ the test instance's own token
+    env["SIYUAN_TOKEN"] = cfg.test_token()   # ★ the test instance's own value, from .env
     env["CHROMIUM_PATH"] = cfg.chromium_path   # ★ the browser to launch; no default in the config
     # Notebook allowlist: E2E really creates and deletes documents, so it only works inside this notebook
     env.setdefault("SIYUAN_TEST_NOTEBOOK", os.environ.get("SIYUAN_TEST_NOTEBOOK", ""))
@@ -106,9 +106,9 @@ def main():
 def _sweep_traces(code):
     """Delete Playwright's artifacts when the run passed, keep them when it failed.
 
-    A trace records every request the browser made, **Authorization header included** —— that is, a
-    working copy of the isolated instance's token, in a file nobody thinks of as a credential. They are
-    gitignored, so this never reached a remote, but they accumulate on disk one directory per run.
+    A trace records every request the browser made, authorization headers included, so it is a file
+    nobody thinks of as sensitive but which holds live request data. It is gitignored, and it accumulates
+    on disk at one directory per run.
 
     Keeping them is only useful to debug a failure, so a green run sweeps them and a red run keeps them
     and says where they are. Doing this by hand would be one more thing to remember (section 8), and the
@@ -119,7 +119,7 @@ def _sweep_traces(code):
         return
     if code == 0:
         shutil.rmtree(target, ignore_errors=True)
-        print("  ✓ passing run: removed test-results/ (traces hold the token in an auth header)")
+        print("  ✓ passing run: removed test-results/ (its traces hold live request data)")
     else:
         print(f"  ✗ failing run: kept {os.path.relpath(target, ROOT)}/ for debugging —— it contains the "
               f"live request headers, so delete it once you are done with it")
