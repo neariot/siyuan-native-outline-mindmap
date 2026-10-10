@@ -19,7 +19,7 @@ a file nobody reads might as well not exist.
   Anything a run may throw away goes there; anything that must survive a `git clean` does not.
 - Back up before touching a script or config —— into `.tmp/<task>/`, never the project root, and delete
   it once the edit it protects is committed. `git commit` is the better backup. (`.tmp` reached 1,611
-  stale `*.bak` copies; a sample text that leaked into one source comment had spread across 120 of
+  stale `*.bak` copies; one sample text had spread across 120 of
   them —— `docs/pitfalls/privacy.md`.)
 - Where scripts live: reusable ones in `scripts/` (committed); one-offs in
   `.tmp/` (not committed). Never park something useful in `.tmp/`.
@@ -41,13 +41,12 @@ a file nobody reads might as well not exist.
   repository** —— no name, no id, no `hpath`, no document title, no content, no
   screenshot of their workspace. Not in code, comments, docs, tests, fixtures,
   examples, commit messages, or a log that gets committed. A real name is not a
-  convenient sample, it is personal data, and a comment is the easiest place to
-  leak it (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `分支一`).
+  convenient sample, it is personal data, and a comment is the easiest place for
+  a real name to end up in the repository (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `分支一`).
   `python3 scripts/audit-privacy.py` checks this —— id-shaped and credential-shaped literals, plus a
   fixture that was copied from a live instance rather than invented. With `--live` it asks the running
   instance what its notebooks, ids, document titles and paths actually are and searches the tree for
-  them, instead of trusting a pattern alone. That cross-check is what found a real notebook id sitting
-  in a tracked test file for the whole history.
+  them, instead of trusting a pattern alone.
 - **Screenshot before debugging UI.** Do not guess from the DOM —
   a DOM count will always hand you a number, and that number may describe
   an area the user cannot even see (case: `pitfalls/debug.md` 6.12).
@@ -184,8 +183,8 @@ machine. Check every line against it:
    machine. Never fall back from one to the other; when the working instance is unreachable, **fail and
    say how to start it** — do not pick another target.
 5. **Credentials come from the environment or a config file**, never from
-   source. A credential that was committed and then deleted still counts as
-   **leaked** (deleting code does not erase history — rotate the token).
+   source. A literal in the source is a finding whatever it equals, and a
+   credential in a fallback chain is the shape that hides one (5.1 #3).
 6. **"Empty means this machine does not have it" is an explicit absence**,
    which is not the same as "empty means guess one": the first is legal, the
    second is forbidden. Test: **would this empty value, or this failure, make

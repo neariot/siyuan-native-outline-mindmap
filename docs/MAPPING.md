@@ -312,4 +312,4 @@ The plugin keeps no extra ID mapping table — the block ID is the identity.
 
 Real-kernel E2E conclusions (v3.8.6): h1~h6 levels, to-dos, attachment paragraphs (including empty paragraphs), nesting levels,
 and inline rich text (color/background/font size/underline/superscript and subscript/highlight) are **all preserved exactly**;
-after writing, the DOM has no escaped source, no lost colors, and no IAL leakage.
+after writing, the DOM has no escaped source, no lost colors, and no stray IAL in the DOM.

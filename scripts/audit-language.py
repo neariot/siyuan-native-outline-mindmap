@@ -1046,7 +1046,29 @@ TEST_FILE = re.compile(r"(^|/)(e2e/|.*\.test\.tsx?$|.*\.spec\.tsx?$|.*\.test\.mt
 MANIFEST = "src/plugin/plugin.json"
 
 
-def excuse_rule(finding, product, fixtures=()):
+#: A **tool whose self-test holds its own fixtures**: a module-level table named `SELFTEST…`, `…CASES…` or
+#: `…FIXTURES…`. The reasoning behind `TEST_FILE` applies unchanged —— the literal is the text under test,
+#: not prose —— and it is decided by the file's own declaration, so no per-word entry is needed. A Chinese
+#: **comment or docstring** in such a script is still a finding.
+SELFTEST_DECL = re.compile(r"(?m)^[A-Z][A-Z0-9_]*(?:SELFTEST|CASES|FIXTURES)[A-Z0-9_]*\s*(?::[^=]+)?=")
+
+
+def selftest_files():
+    """Tracked Python scripts that declare a self-test table (read once, not per finding)."""
+    found = set()
+    for path in tracked_files():
+        if not path.endswith(".py"):
+            continue
+        try:
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as handle:
+                if SELFTEST_DECL.search(handle.read()):
+                    found.add(path)
+        except OSError:
+            continue
+    return found
+
+
+def excuse_rule(finding, product, fixtures=(), selftests=frozenset()):
     """The category that makes this finding legitimate, or None.
 
     Two categories are rules rather than allowlist entries, because they are decidable:
@@ -1061,6 +1083,9 @@ def excuse_rule(finding, product, fixtures=()):
         tests do (a pitfall doc quoting a Chinese fixture label) or a comment naming the fixture it moves.
         The quoted text must appear in a Chinese literal of a test file, so the rule decides it instead of
         a `fixture:` entry per identifier.
+      * `selftest-fixture` —— a Chinese **literal inside a script that declares a self-test table**: a
+        checker's cases are its own fixtures, which is the same situation as a test file. Decided by the
+        file's declaration, and a Chinese comment or docstring there is still reported.
       * `test-fixture` —— a Chinese **literal inside a test file**: the content under test is Chinese
         (block titles, CJK punctuation, full-width runs), and a fixture is data, not prose. Deciding it
         by file class and kind means ~190 `fixture:` entries are not needed, while a Chinese *comment*
@@ -1074,6 +1099,8 @@ def excuse_rule(finding, product, fixtures=()):
         return "product-text"
     if finding.kind == "string" and TEST_FILE.search(finding.path):
         return "test-fixture"
+    if finding.kind == "string" and finding.path in selftests:
+        return "selftest-fixture"
     if finding.kind in ("comment", "doc-prose", "assertion") and any(
         finding.text in fixture for fixture in fixtures
     ):
@@ -1114,10 +1141,13 @@ def audit():
     product = i18n_catalog()
     # Chinese literals that live in test files: prose quoting one of them is quoting fixture content.
     fixtures = [f.text for f in findings if f.kind == "string" and TEST_FILE.search(f.path)]
+    # Chinese literals in a tool's own self-test are that tool's fixtures, and so are the ones it quotes.
+    selftests = selftest_files()
+    fixtures += [f.text for f in findings if f.kind == "string" and f.path in selftests]
     by_rule = Counter()
     remaining = []
     for finding in findings:
-        rule = excuse_rule(finding, product, fixtures)
+        rule = excuse_rule(finding, product, fixtures, selftests)
         if rule:
             by_rule[rule] += 1
         else:

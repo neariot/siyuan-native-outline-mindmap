@@ -7,8 +7,8 @@ way for it to have been copied out of a document, because it does not *say* anyt
 
 This checks every Chinese string literal in the suite against `scripts/fixture-vocabulary.txt`: a fixture
 has to be composed entirely of those words (plus digits, CJK numerals and ordinary ASCII). Anything else
-is a finding, because "未收录词" or "未收录的句子" is *content* —— it reads like a real note, and a
-fixture that reads like a real note is one nobody can audit at a glance.
+is a finding, because a label like that is *content*: it reads like a real note, and a fixture that
+reads like a real note is one nobody can audit at a glance.
 
 Some literals are exempt, and each exemption names its rule:
 
@@ -156,7 +156,7 @@ SELFTEST_CASES = (
     ("a composed label passes", "第二段文本", True),
     ("a numbered label passes", "标题1", True),
     ("content is a finding", "未收录词", False),
-    ("a sentence is a finding", "这是项目背景介绍段落", False),
+    ("a sentence is a finding", "未收录的句子", False),
     ("semantics is exempt", "上，下", True),
     ("the product name is not a fixture", "原生大纲导图", True),
 )
@@ -175,10 +175,10 @@ def selftest():
         print("  %s %s%s" % ("PASS" if ok else "FAIL", name,
                              "" if ok else "  (expected %s)" % ("clean" if expected_clean else "a finding")))
         passed, failed = (passed + 1, failed) if ok else (passed, failed + 1)
-    # ★ The vocabulary has to be able to fail: a word it does not carry must be a finding.
-    findings, _ = evaluate([{"text": "'某个没见过的词'", "file": "t.test.ts", "line": 1}], tokens, set(), set())
+    # ★ The vocabulary has to be able to fail: a label it does not carry must be a finding.
+    findings, _ = evaluate([{"text": "'未收录词二'", "file": "t.test.ts", "line": 1}], tokens, set(), set())
     ok = bool(findings)
-    print("  %s a label built from unknown words is a finding" % ("PASS" if ok else "FAIL"))
+    print("  %s a label the list does not carry is a finding" % ("PASS" if ok else "FAIL"))
     passed, failed = (passed + 1, failed + 1 if not ok else failed)
     print("\nselftest: %s (%d case(s), %d failed)" % ("PASS" if not failed else "FAIL", passed + failed, failed))
     return 0 if not failed else 1

@@ -72,7 +72,7 @@ conclusion to draw from a complete-looking list of findings.
 ### plugin-code
 
 - **high · bug** `src/plugin/mount.ts:1173`  
-  A failed write-back leaks EchoGuard's applyingCount, after which isEcho() is true forever: reverse sync stops accepting every external edit and every later change is judged a conflict.
+  A failed write-back leaves EchoGuard's applyingCount set, after which isEcho() is true forever: reverse sync stops accepting every external edit and every later change is judged a conflict.
 - **high · bug** `src/plugin/mount.ts:55`  
   The three normalizations used for the same echo comparison disagree, because plainNodeText does not decode HTML entities while htmlFragmentToText does: a node whose text contains &, < or > mismatches its own echo and is reported as a conflict while a write-back is in flight.
 - **high · bug** `src/plugin/outline/Outliner.tsx:1413`  
@@ -564,7 +564,7 @@ conclusion to draw from a complete-looking list of findings.
 - **low · dead-code** `scripts/run-e2e.py:66`  
   `env.setdefault("SIYUAN_TEST_NOTEBOOK", os.environ.get("SIYUAN_TEST_NOTEBOOK", ""))` can never change anything: `env` is already a copy of os.environ, so the default value is the value it already holds (or '' when unset) - it reads as if the entry point injected the notebook when it only forwards it.
 - **low · docs** `scripts/run-e2e.py:62`  
-  The CI E2E job passes SIYUAN_URL / SIYUAN_TOKEN secrets, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
+  The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
 - **low · bug** `scripts/run-tests.py:83`  
   The --watch branch silently drops --test-concurrency=1, which the comment two lines above says is needed because the tests share paths such as .tmp - so watch mode reintroduces exactly the concurrency the normal mode avoids.
 - **low · dead-code** `scripts/script_log.py:124`  

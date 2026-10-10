@@ -23,7 +23,7 @@ Unconditional, so this can run as a gate on any machine:
     notebooks. (This paragraph used to carry an example, which meant the check reported its own
     source. Examples here are assembled from parts, like the fixtures in `--selftest`.)
   * **A credential-shaped literal.** A 16-character alphanumeric literal in a line that also
-    mentions a token, secret, password, or key. That is the shape of the value that leaked.
+    mentions a token, secret, password, or key. That is the shape such a value takes.
 
 The two rules above apply to **tracked files only**, because that is where a finding means something:
 an id in a repository is always wrong, while a Playwright trace or a fixture dump recording ids from
@@ -76,12 +76,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ID_PATTERN = re.compile(r"\b\d{14}-[0-9a-z]{7}\b")
 
 #: A credential-shaped literal: 16 alphanumerics on a line that also says token, secret, password, or
-#: key. Tuned to the leak that happened —— a spec whose fallback was a real token rather than a key
-#: name. A longer or shorter secret is not covered: this is a shape check, **not** a secret scanner,
-#: and its own summary says so rather than implying coverage it does not have.
+#: key. Tuned to the shape that hides one: a spec whose fallback chain holds a literal rather than a key
+#: name. A longer or shorter value is not covered: this is a shape check, **not** a secret scanner, and
+#: its own summary says so rather than implying coverage it does not have.
 #:
-#: The value that leaked is deliberately not written here. A check that repeats what it protects is a
-#: check that keeps leaking it, which is why this file's fixtures are assembled rather than typed.
+#: No credential appears here, not even as an example: a check that repeats what it protects is a check
+#: that publishes it, which is why this file's fixtures are assembled rather than typed.
 CREDENTIAL_PATTERN = re.compile(
     r"[\"']([A-Za-z0-9]{16})[\"'](?=[^\n]*$)", re.M
 )
@@ -237,7 +237,7 @@ def workspace_identifiers(base, token, limit=2000):
                     continue
                 if field == "name":
                     # ★ A notebook name is a strong identifier at **any** length: it names a whole
-                    #   workspace, and the leak that prompted this rule was two characters long. There are
+                    #   workspace, and a name needs to be no longer than that. There are
                     #   only a handful of notebooks, so a short name is still pinpointing.
                     if len(value) >= 2:
                         terms.add(value)
@@ -281,7 +281,7 @@ def is_distinctive(term):
 
     ★ A workspace contains documents called `python`, `about` or `temp`, because people keep notes. Those
     are identifiers in the database and they are not identifiers in a sentence: cross-checking them found
-    1,170 "leaks" that were all ordinary English. The first version of this rule reported every hit and was
+    1,170 hits that were all ordinary English. The first version of this rule reported every hit and was
     therefore useless —— and the tempting fix, an allowlist of the benign ones, would write somebody's
     document titles into the repository to do it.
 
@@ -290,7 +290,7 @@ def is_distinctive(term):
     as a sample text). ASCII cannot be judged this way: the first version treated any multi-word phrase as
     pinpointing, and the hits were `Key point` (12 files), `Keyboard shortcuts` and `find and replace` ——
     ordinary phrases, and two of them are this product's own vocabulary. A document may be called
-    `Key point`; so may a section heading. No rule separates those, and reporting them as leaks is how a
+    `Key point`; so may a section heading. No rule separates those, and reporting them as findings is how a
     check becomes noise that people learn to ignore.
 
     So ASCII identifiers are **listed for reading** (`--live` prints each position) and do not fail the
@@ -360,10 +360,10 @@ def selftest():
                   ID_PATTERN.search("created 2026-10-11 at 12:00") is None))
     cases.append(("a short fixture id is not an id",
                   ID_PATTERN.search("box=20210808180117") is None))
-    leak_line = 'const token = "' + token_fixture + '";'
+    token_line = 'const token = "' + token_fixture + '";'
     cases.append(("a credential on a token line is a finding",
-                  bool(list(CREDENTIAL_PATTERN.finditer(leak_line)))
-                  and bool(CREDENTIAL_CONTEXT.search(leak_line))))
+                  bool(list(CREDENTIAL_PATTERN.finditer(token_line)))
+                  and bool(CREDENTIAL_CONTEXT.search(token_line))))
     cases.append(("a 16-character literal with no credential context is not",
                   not bool(CREDENTIAL_CONTEXT.search('const slug = "' + token_fixture + '";'))))
     own = check_patterns(["scripts/audit-privacy.py"], "self")
@@ -421,7 +421,7 @@ def main():
                   % (len(user_targets), live_scanned, len(live_findings)))
 
         # ★ Notebook names are not the whole story: a document title is just as pinpointing, and it is
-        #   what leaked in the case that prompted this rule.
+        #   the shape this rule is tuned to.
         #
         #   ★★ Only the **user's** instance is cross-checked. The isolated instance's documents are
         #   created by the fixtures, so its titles *must* appear in the specs —— checking it reports the

@@ -11,7 +11,7 @@
 #   1. a *noun for a thing* the plugin deals with —— 节点, 段落, 标题, 列表项, 备注, 图片 …
 #   2. a *role or a number* that tells one such thing from another —— 子, 根, 同级, 空, 第二, 一 …
 # What it may not contain is a verb, a sentence, or a noun from somebody's subject matter
-# (答案, 问候, 方案, 焦点 …) —— a label like that is describing content, which is the thing to fix.
+# —— a label like that is describing content, which is the thing to fix.
 #
 # Exempt elsewhere, each by a stated rule, in scripts/check-fixture-text.py: catalogue values, semantics
 # (full-width punctuation, U+3000, zero-width characters, outside the BMP, CJK/ASCII mixes), the

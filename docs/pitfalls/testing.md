@@ -492,8 +492,7 @@ Two counter-intuitive points:
 1. Config missing -> **fail and name the key**, do not fill in a default.
 2. A target may have exactly one source (a config file or an explicit command-line argument): no probing, no downgrading, no `||`.
 3. The right reaction to "the target is not running" is to **tell the user how to start it**, not to pick another target.
-4. Credentials are read from the environment / a config file only. Anything that has been into git is a finding --
-   treat it as a finding (it is still in the history).
+4. Credentials are read from the environment / a config file only; a literal in the source is a finding whatever it equals.
 5. The self-check question: **would this empty value / this failure make the script connect to or write somewhere else?**
    If yes -> it is a guess; delete it.
 
