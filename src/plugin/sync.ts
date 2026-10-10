@@ -257,6 +257,23 @@ export class EchoGuard {
   }
 
   /**
+   * Write-back **failed**; give the guard window back without claiming anything was written.
+   *
+   * ★ Every `beginApply()` must be balanced, and a failure used to skip the balance entirely: the write
+   *   path called `beginApply()` and then `await writeLatest()`, so a rejected write jumped straight to
+   *   `catch` and the counter never came back down. `applyingCount` stayed above zero for the rest of the
+   *   session, `isApplying()` stayed true, and every later event was judged "our own echo" —— external
+   *   edits stopped arriving and local ones were reported as conflicts. One failed write disabled reverse
+   *   sync until a reload, silently.
+   *
+   *   Nothing is recorded here on purpose: a partial write may have landed, but this call cannot know
+   *   which part, and claiming blocks or values we did not finish writing would swallow a genuine echo.
+   */
+  abortApply(): void {
+    if (this.applyingCount > 0) this.applyingCount--;
+  }
+
+  /**
    * Whether the value is one **we just wrote out ourselves** (an echo) rather than an external change.
    *
    * Difference from `isEcho`: `isEcho` only answers "this block was written by us recently",
@@ -529,4 +546,41 @@ export function parseSiyuanDrop(dt: DataTransfer | null): DroppedBlocks | null {
     return { ids, type, payload };
   }
   return null;
+}
+
+/**
+ * Run one write-back inside the echo window, and **balance the guard whatever happens**.
+ *
+ * ★ The balance is the point of this function. The write path used to call `beginApply()`, then
+ *   `await writeLatest()`, then `endApply(...)`, so a rejected write jumped to `catch` and the count
+ *   never came back down: `isApplying()` stayed true for the rest of the session and every later event
+ *   was treated as our own echo —— external edits stopped being applied and local ones were reported as
+ *   conflicts. One failed write disabled reverse sync until a reload, with no message.
+ *
+ *   A `try/finally` at the call site would work too, and it is what the next person would have to
+ *   remember at every call site (AGENTS.md section 8: prefer a tool over a remembered procedure). Here
+ *   the invariant lives with the counter it protects, so it can be tested: feed `run` a rejection and
+ *   check `isApplying()` is false again.
+ *
+ * `writtenIds`/`writtenValues` are read **after** the write finishes, because what we wrote is only
+ * known then —— the same ordering the call sites used by hand.
+ *
+ * On failure nothing is recorded: a partial write may have landed, but this call cannot know which part,
+ * and claiming blocks or values we did not finish writing would swallow a real echo.
+ */
+export async function withEchoGuard<T>(
+  guard: EchoGuard,
+  writtenIds: () => Iterable<string>,
+  writtenValues: () => Map<string, string>,
+  run: () => Promise<T>,
+): Promise<T> {
+  guard.beginApply();
+  try {
+    const result = await run();
+    guard.endApply(writtenIds(), writtenValues());
+    return result;
+  } catch (error) {
+    guard.abortApply();
+    throw error;
+  }
 }

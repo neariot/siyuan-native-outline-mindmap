@@ -16,7 +16,7 @@ import type { OutlineNode } from '../model/types';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
-import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker } from './sync';
+import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard } from './sync';
 import { makeSiyuanId } from '../core/map';
 import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } from './tree-ops';
 import type { IEventBus } from 'siyuan';
@@ -1165,12 +1165,20 @@ function OmTabApp({
       setSaving(true);
       setErr('');
       try {
-        guardRef.current.beginApply();
-        conflictRef.current.noteAllSynced(treeToWrite);
-        await writeLatest();
-        // ★ Reuse the reverse tables the store has already updated, so each write-back avoids an extra full SQL scan
-        const allKnownIds = [curDocId, ...store.blockToNode().keys()];
-        guardRef.current.endApply(allKnownIds, collectWrittenValues(nodesRef.current ?? []));
+        // ★ withEchoGuard opens and closes the echo window, so a **failed** write cannot leave the apply
+        //   count above zero. Called by hand, a rejection skipped endApply and `isApplying()` stayed true
+        //   for the rest of the session —— external edits stopped arriving and local ones were reported as
+        //   conflicts, with no message.
+        await withEchoGuard(
+          guardRef.current,
+          // ★ Reuse the reverse tables the store has already updated, so each write-back avoids an extra full SQL scan
+          () => [curDocId, ...store.blockToNode().keys()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            conflictRef.current.noteAllSynced(treeToWrite);
+            await writeLatest();
+          },
+        );
         lastCommittedRef.current = snapshot(treeToWrite);
       } catch (e) {
         setErr(describeWriteError(e));
