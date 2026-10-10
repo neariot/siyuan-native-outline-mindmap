@@ -32,6 +32,17 @@ By category: test-quality 72, docs 54, bug 42, dead-code 39, fallback 11, type-e
 
 **high** first, then medium, then low.
 
+## What this file does not carry
+
+The reports each also recorded their own coverage: the files they read, and **what they did not check**,
+which is the part a reader should be most suspicious about. Those fields were in the JSON reports under
+`.tmp/audit/`, and the reports were deleted once the *findings* were absorbed here —— so the coverage is
+gone, and it is not recoverable from this file. Re-running an area brings it back; the area names in the
+table above are the scopes it would run over.
+
+Recorded rather than quietly omitted, because "the audit covered everything" is exactly the wrong
+conclusion to draw from a complete-looking list of findings.
+
 ## Findings
 
 ### e2e-helpers
