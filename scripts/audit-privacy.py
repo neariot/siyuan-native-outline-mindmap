@@ -94,10 +94,11 @@ TEXT_SUFFIXES = {
 }
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", "coverage", ".venv", "venv"}
 
-#: Paths under the project that are a **nested installation or a build output**, not our content. The
-#: isolated SiYuan instance lives in `.tmp/test-instance` and is ~700 MB of someone else's program: a
-#: first version of this check walked it and took minutes to answer a question about ~200 files.
-SKIP_PATHS = (".tmp/test-instance", ".tmp/history-scrub", "dist-plugin")
+#: Paths under the project that are a **build output**, not our content. The isolated SiYuan instance used
+#: to be listed here: it lived in `.tmp/`, which is inside the tree, and walking ~700 MB of someone else's
+#: program took minutes to answer a question about ~200 files. It lives outside the repository now
+#: (`TEST_INSTANCE_DIR`), so there is nothing to skip.
+SKIP_PATHS = ("dist-plugin",)
 
 #: Files larger than this are not read. A 100 MB log or a media file is not where an identifier hides,
 #: and reading it costs more than the whole check.

@@ -8,8 +8,11 @@ a file nobody reads might as well not exist.
 
 ## 1. Hard rules
 
-- No `/tmp`. Scratch files go in `.tmp/<task>/` inside the project (gitignored).
-  Logs go in `.logs/`.
+- No `/tmp`. Scratch files go in `.tmp/<task>/` inside the project (gitignored). Logs go in `.logs/`.
+- **State lives outside the repository; scratch lives in `.tmp/`.** The isolated test instance —— a
+  kernel plus a workspace, hundreds of megabytes, addressed by `.env`'s `TEST_INSTANCE_DIR` —— is
+  state: inside `.tmp/` it made that directory impossible to delete, which is what `.tmp/` is for.
+  Anything a run may throw away goes there; anything that must survive a `git clean` does not.
 - Back up before touching a script or config —— into `.tmp/<task>/`, never the project root, and delete
   it once the edit it protects is committed. `git commit` is the better backup. (`.tmp` reached 1,611
   stale `*.bak` copies; a sample text that leaked into one source comment had spread across 120 of

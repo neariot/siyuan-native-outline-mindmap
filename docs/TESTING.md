@@ -57,7 +57,7 @@ if the instance is not running it errors out immediately and tells you how to st
 
 **Why isolation**: your own instance has sync enabled (`sync.enabled: true`),
 while E2E **creates documents, deletes documents and modifies blocks** -- that is a real data risk.
-The isolated instance has its own workspace (`.tmp/test-instance/workspace`) and token,
+The isolated instance has its own workspace (from `.env`'s `TEST_INSTANCE_DIR`, outside the repository) and token,
 cannot see any of your notebooks, and has `sync.enabled` false.
 
 > One measured side conclusion: **the size of the workspace barely affects test speed**.

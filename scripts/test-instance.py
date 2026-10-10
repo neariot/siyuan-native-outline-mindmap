@@ -30,7 +30,8 @@ download the kernel from the official Release, extract it into the project, and 
     python3 scripts/test-instance.py stop     # stop it
     python3 scripts/test-instance.py status   # show the status
 
-Downloads and the workspace both live in `.tmp/test-instance/` (gitignored) and are not committed.
+Downloads and the workspace both live in `.env`'s `TEST_INSTANCE_DIR` —— **outside the repository**,
+because this is state rather than scratch: inside `.tmp/` it made that directory undeletable.
 """
 
 import argparse
