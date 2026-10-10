@@ -30,7 +30,7 @@
  */
 export {};
 
-import { htmlFragmentToText } from './sync';
+import { htmlFragmentToText, visibleText } from './sync';
 
 let pass = 0;
 let fail = 0;
@@ -139,6 +139,29 @@ console.log('\nreverse check: without stripping the zero-width space they do not
     plainNodeText('<span></span>') !== legacy(kernelEcho),
     `map=${JSON.stringify(plainNodeText('<span></span>'))} legacy=${JSON.stringify(legacy(kernelEcho))}`,
   );
+}
+
+
+// ── entities: the two sides must agree on the same node ──
+// A node whose text contains &, < or > comes back from the kernel as &amp;/&lt;/&gt;. When mount.ts had
+// its own normalizer that decoded only &nbsp;, that node never matched its own echo and every write-back
+// raised a conflict on text nobody had touched.
+{
+  const same = (label: string, plain: string, fragmentBody: string): void => {
+    const fromKernel = htmlFragmentToText(`<div contenteditable="true">${fragmentBody}</div>`);
+    check(label, fromKernel !== null && fromKernel === visibleText(plain));
+  };
+  same('an ampersand agrees on both sides', 'a & b', 'a &amp; b');
+  // Both sides receive **HTML** in real use (the kernel's fragment, and the node's stored content), so a
+  // literal `<tag>` here would be testing the wrong thing: `visibleText` would strip it as a tag. That is
+  // correct for HTML and is why this normalizer must not be handed decoded text.
+  same('angle brackets agree on both sides', '&lt;tag&gt;', '&lt;tag&gt;');
+  same('a quote agrees on both sides', '&quot;q&quot; and &#39;s&#39;', '&quot;q&quot; and &#39;s&#39;');
+  check('a tag-like span in HTML is dropped, as a tag is', visibleText('a <b>bold</b> c') === 'a bold c');
+  same('a non-breaking space agrees on both sides', 'a b', 'a&nbsp;b');
+  same('a line break agrees on both sides', 'a b', 'a<br>b');
+  check('an entity is decoded, not left as text', visibleText('a &amp; b') === 'a & b');
+  check('an unknown entity is left alone rather than eaten', visibleText('&weird;') === '&weird;');
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

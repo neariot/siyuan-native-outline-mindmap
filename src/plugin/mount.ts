@@ -16,7 +16,7 @@ import type { OutlineNode } from '../model/types';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
-import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard } from './sync';
+import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText } from './sync';
 import { makeSiyuanId } from '../core/map';
 import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } from './tree-ops';
 import type { IEventBus } from 'siyuan';
@@ -52,13 +52,9 @@ import '../styles.css';
    *   That normalizes away the listItem's leading space, zero-width placeholders and `<br>`/`<p>` placeholders,
    *   leaving only the text the user actually sees in the comparison.
    */
-  const plainNodeText = (html: string | undefined): string =>
-    (html ?? '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\u200b/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  // ★ One authority with sync.ts. A second copy here disagreed about HTML entities, so a node containing
+  //   `&`, `<` or `>` never matched its own echo and raised a conflict during every write-back.
+  const plainNodeText = (html: string | undefined): string => visibleText(html ?? '');
 
 /** Each tab instance owns one React root; remember to unmount it on teardown */
 const roots = new WeakMap<HTMLElement, ReturnType<typeof ReactDOM.createRoot>>();

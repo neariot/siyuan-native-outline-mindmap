@@ -127,7 +127,29 @@ function parseTransactions(raw: unknown): ITransaction[] {
 export function htmlFragmentToText(html: string): string | null {
   const m = /<div[^>]*contenteditable="true"[^>]*>([\s\S]*?)<\/div>/.exec(html);
   if (!m) return null;
-  return m[1]
+  return visibleText(m[1]);
+}
+
+/**
+ * The text of an HTML fragment **as the user sees it**: tags dropped, entities decoded, whitespace
+ * collapsed. The one authority for comparing our node text against the kernel's.
+ *
+ * ★ There used to be two of these, and they disagreed. `mount.ts` had its own `plainNodeText` that
+ *   stripped tags and replaced `&nbsp;` but decoded no other entity, while this function decoded them
+ *   all. A node whose text contains `&`, `<` or `>` therefore never matched its own echo —— the kernel
+ *   sends it back as `&amp;`/`&lt;`/`&gt;` —— so a write-back in flight reported a conflict on a node
+ *   nobody had touched. Two normalizations for one comparison can only be equal by luck; one function
+ *   cannot disagree with itself.
+ *
+ * ★ Zero-width spaces must be removed: they are the **placeholder** we write when writing back an empty
+ *   node, not user-visible content. Keeping them makes the two sides disagree —— the mind map strips
+ *   them, the kernel keeps them —— so an empty node is forever judged as "has external changes".
+ *   Measured: pressing Enter 3 times to create empty nodes makes the banner accumulate to
+ *   "⚠ 3 conflicting change(s)", with the diagnostic log showing
+ *   `incoming="\u200b\u200b"  current=""  ownVals=[""]`.
+ */
+export function visibleText(html: string): string {
+  return html
     .replace(/<br\s*\/?>/g, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&lt;/g, '<')
@@ -136,16 +158,6 @@ export function htmlFragmentToText(html: string): string | null {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
-    // ★★★ zero-width spaces must be removed: they are the **placeholder** we write when writing back an empty node,
-    //   not user-visible content. Keeping them makes the two sides disagree —— the mind map strips them, the kernel keeps them,
-    //   so an empty node is forever judged as "has external changes".
-    //
-    //   Measured: pressing Enter 3 times to create empty nodes makes the banner accumulate to
-    //   "⚠ 3 conflicting change(s)", diagnostic log:
-    //     incoming="\u200b\u200b"  current=""  ownVals=[""]
-    //   i.e. the echo of an empty node carries two zero-width spaces, while the mind map side is an empty string.
-    //
-    //   Note it must follow the same rule as mount.ts's plainNodeText.
     .replace(/\u200b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
