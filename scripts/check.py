@@ -65,6 +65,15 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "audit-language.py").is_file(),
     },
     {
+        # ★ The auditor's own self-test. It was red — its source carried a Chinese example its own
+        #   scanner flags — and no gate ran it, so nothing noticed for as long as it had been that way.
+        #   A tool whose failure path nothing exercises is a tool that reports whatever it likes.
+        "name": "language-selftest",
+        "command": "python3 scripts/audit-language.py --selftest",
+        "why": "the language auditor still decides each category the way its cases pin down",
+        "requires": lambda: (REPO_ROOT / "scripts" / "audit-language.py").is_file(),
+    },
+    {
         "name": "i18n-keys",
         # UI text has exactly one home (the catalogues) since the fallback arguments were removed, so
         # "a key that does not exist" is now the failure mode that used to be papered over.

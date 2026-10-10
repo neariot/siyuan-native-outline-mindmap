@@ -1058,7 +1058,7 @@ def excuse_rule(finding, product, fixtures=()):
         when it matches a catalogue value: hardcoding UI text is the thing i18n exists to prevent, and
         the fix is `t('<key>')`, not an exemption.
       * `test-fixture-quote` —— **prose that quotes** Chinese fixture content: a doc explaining what the
-        tests do (`docs/pitfalls/data.md` quoting `测试连线`) or a comment naming the fixture it moves.
+        tests do (a pitfall doc quoting a Chinese fixture label) or a comment naming the fixture it moves.
         The quoted text must appear in a Chinese literal of a test file, so the rule decides it instead of
         a `fixture:` entry per identifier.
       * `test-fixture` —— a Chinese **literal inside a test file**: the content under test is Chinese
