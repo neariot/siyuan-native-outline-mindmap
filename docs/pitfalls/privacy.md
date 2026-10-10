@@ -59,3 +59,36 @@ carefully is what failed here three times in one day:
   reachable by exact SHA until they are pruned: `git reflog expire --expire=now --all && git gc
   --prune=now`, then `git cat-file --batch-all-objects --batch` and search it —— reading
   `git log`/`git grep` alone misses what is still in `.git/objects`.
+
+## The instance the user works in is reference only
+
+**Symptom.** Development claims to verify on the isolated instance, yet the plugin in the workspace the
+user actually works in keeps changing —— and can hold a build taken mid-edit, with whatever was broken at
+that moment in it.
+
+**Cause.** The build tool takes its targets from `PLUGIN_DIRS`, and the template listed the user's
+workspace first, on the reasoning that "the main instance and the test instance each hold a plugin copy,
+and deploying only one makes the tests run against old code". A helper then set `SIYUAN_WORKSPACE` and its
+docstring asserted that this redirected the deploy at the test instance —— the tool never read that
+variable. Isolation was a sentence in a comment, so every deploy wrote into the editor the user was
+working in. Measured: two targets, the user's copy 9.5 h old and a **different** build (349,645 bytes)
+from the one under test (340,555).
+
+**Practice.**
+
+* **Two names, two roles.** The **working** instance is the isolated test instance: the only target for a
+  build, a deploy, a test document or a mutation. The **reference** instance is the workspace the user
+  works in: read it to check a claim, and never write to it —— not even to "fix" what an earlier deploy
+  left there, which is their decision, not a development step.
+* **Enforce it where the write happens.** `scripts/deploy.py` refuses a target inside the reference
+  instance unless `--include-reference-instance` is passed, and prints the refusing list. Measured: exit 2
+  with the default configuration, exit 0 narrowed to the working instance, and the user's 11 files
+  byte-identical afterwards.
+* **A red proof that needs a deploy deploys to the working instance.** A deliberately broken plugin must
+  never be installed anywhere the user will open it.
+* **Do not let a helper's comment be the isolation.** Check what the tool actually reads; the variable that
+  "redirects" it may not exist.
+* **Reading it is not free either.** The reference instance may be read, and what is read does not travel:
+  no name, id, `hpath`, title, content or screenshot of their workspace leaves it (§1, and the live
+  cross-check in `scripts/audit-privacy.py --live` exists to catch what does).
+

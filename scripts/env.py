@@ -280,7 +280,9 @@ class Config:
 
     @property
     def plugin_dir(self):
-        """Deployment directory of the plugin inside the SiYuan workspace."""
+        """**The reference instance** —— the workspace the user works in, and the installation the plugin
+        ships to. Read-only for development: nothing is deployed, tested or mutated here.
+        """
         return os.path.join(self.workspace, "data", "plugins", self.plugin_name)
 
     # ---- Isolated test instance ----
@@ -300,7 +302,10 @@ class Config:
 
     @property
     def test_instance_plugin_dir(self):
-        """Plugin directory inside the isolated test instance."""
+        """**The working instance** —— the only place a build is deployed, a test mutates a document, or an
+        E2E suite runs. The two roles are separate on purpose: they were one list once, and every deploy
+        during development went into the workspace the user was working in (`docs/pitfalls/privacy.md`).
+        """
         return os.path.join(self.test_instance_workspace, "data", "plugins",
                             self.plugin_name)
 

@@ -40,6 +40,7 @@ import os
 import platform
 import shutil
 import signal
+import re
 import subprocess
 import sys
 import tarfile

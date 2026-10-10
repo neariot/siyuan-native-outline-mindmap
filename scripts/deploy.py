@@ -72,6 +72,9 @@ def main():
                     help="skip the build, only deploy the existing output")
     ap.add_argument("--target", action="append", default=[], metavar="DIR",
                     help="add one extra deploy target (repeatable). Regular targets come from PLUGIN_DIRS in .env.")
+    ap.add_argument("--include-reference-instance", action="store_true",
+                    help="also deploy into the workspace the user works in (off by default: that "
+                         "installation is reference-only, see AGENTS.md 5.1)")
     ap.add_argument("--list", action="store_true",
                     help="only print which directories this run would deploy to, doing nothing else")
     args = ap.parse_args()
@@ -101,11 +104,32 @@ def main():
             uniq.append(d)
     dsts = uniq
 
+    # ★ The test instance is the only target a build may be deployed to; the workspace the user works in
+    #   is **reference only**. This used to be a docstring claim in another script, which passed an
+    #   unrelated variable and so deployed into the user's editor on every run. A rule that matters is a
+    #   check here, not a note there.
+    reference = os.path.normpath(cfg.plugin_dir)
+    blocked = [d for d in dsts if os.path.normpath(d) == reference]
+
     if args.list:
         print(f"  Deploy targets ({len(dsts)}, from PLUGIN_DIRS in .env):")
         for d in dsts:
-            print(f"    · {d}" + ("" if os.path.isdir(d) else "   (does not exist yet, will be created)"))
+            note = ""
+            if not os.path.isdir(d):
+                note = "   (does not exist yet, will be created)"
+            if os.path.normpath(d) == reference:
+                note = "   ← the instance the user works in (reference only)"
+            print(f"    · {d}" + note)
+        if blocked and not args.include_reference_instance:
+            print("  ⛔ a deploy would refuse this list; pass --include-reference-instance to include it")
         return 0
+
+    if blocked and not args.include_reference_instance:
+        for d in blocked:
+            print(f"  ⛔ {d}\n     is the instance the user works in —— reference only.")
+        print("  ⛔ refusing to deploy. Deploy to the test instance (PLUGIN_DIRS=<its plugin dir>), or pass")
+        print("     --include-reference-instance if you really mean to install into their workspace.")
+        return 2
 
     ok = True
     for dst in dsts:
