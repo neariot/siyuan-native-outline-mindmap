@@ -35,5 +35,27 @@ carefully is what failed here three times in one day:
   commits; be aware it leaves the *objects* reachable by exact SHA until the host garbage-collects, and
   that forks, CI artifacts, caches, and run logs are outside a rewrite's reach —— closing those means
   deleting the repository, so the check looks at the objects, not only the commits.
-* **Say what the check cannot see.** A paraphrase, an id embedded in other prose, or text inside a
-  binary all pass the tool. Its own summary says so.
+* **A pinpointing name is a leak at any length.** A topic, a project, a person: two characters are
+  enough, because "specific" is what matters, not "long". One was used as a sample text in a code
+  comment, which is enough to identify a workspace to anyone who reads it.
+* **A stale backup multiplies a leak.** §1's `cp file file.bak` had accumulated **1,611** copies in
+  `.tmp`, and that one sample text had spread across **120** of them. A backup is a copy of a file as it
+  was, including whatever was wrong with it; delete it once the edit it protects is committed, or let
+  `git commit` be the backup.
+* **A check that lists findings and passes anyway is worse than none.** The `--live` pass collected its
+  findings *after* the totals were computed, so it printed a real notebook id in a tracked file and then
+  announced `OK no finding (exit 0)` underneath. Both passes now count toward the verdict, and
+  `--live` is what exercises it —— the fast gate runs the pattern rules only.
+* **Expect the workspace to contain ordinary words, and do not store them to silence them.** A first
+  version of the title check reported 1,170 "leaks" that were all `python`, `about`, `temp`, and a
+  two-word English phrase that is also a section heading. An allowlist of those would have written
+  document titles into the repository to protect document titles. The rule decides what it can
+  (non-ASCII: two characters of a CJK title is a title, not a word) and **lists** the rest for reading.
+* **A default name is still a name.** The e2e allowlist used SiYuan's own default notebook name, which
+  the user's instance also reports. It is an invented name now (`e2e-fixture-notebook`), and the
+  isolated instance's notebooks and documents are no longer cross-checked at all: their content *is*
+  the fixtures, so their names belong in the specs.
+* **Verify a scrub at the object level, not by reading files.** A rewrite leaves the old objects
+  reachable by exact SHA until they are pruned: `git reflog expire --expire=now --all && git gc
+  --prune=now`, then `git cat-file --batch-all-objects --batch` and search it —— reading
+  `git log`/`git grep` alone misses what is still in `.git/objects`.

@@ -10,7 +10,10 @@ a file nobody reads might as well not exist.
 
 - No `/tmp`. Scratch files go in `.tmp/<task>/` inside the project (gitignored).
   Logs go in `.logs/`.
-- Back up before touching a script or config: `cp file file.bak`.
+- Back up before touching a script or config —— into `.tmp/<task>/`, never the project root, and delete
+  it once the edit it protects is committed. `git commit` is the better backup. (`.tmp` reached 1,611
+  stale `*.bak` copies; a sample text that leaked into one source comment had spread across 120 of
+  them —— `docs/pitfalls/privacy.md`.)
 - Where scripts live: reusable ones in `scripts/` (committed); one-offs in
   `.tmp/` (not committed). Never park something useful in `.tmp/`.
 - SQL is read-only: `SELECT` only, always with an explicit `LIMIT`.
@@ -23,8 +26,11 @@ a file nobody reads might as well not exist.
   examples, commit messages, or a log that gets committed. A real name is not a
   convenient sample, it is personal data, and a comment is the easiest place to
   leak it (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `甲分支`).
-  `python3 scripts/audit-privacy.py` checks this; with `--live` it cross-checks
-  the names against the running instance instead of trusting a pattern alone.
+  `python3 scripts/audit-privacy.py` checks this —— id-shaped and credential-shaped literals, plus a
+  fixture that was copied from a live instance rather than invented. With `--live` it asks the running
+  instance what its notebooks, ids, document titles and paths actually are and searches the tree for
+  them, instead of trusting a pattern alone. That cross-check is what found a real notebook id sitting
+  in a tracked test file for the whole history.
 - **Screenshot before debugging UI.** Do not guess from the DOM —
   a DOM count will always hand you a number, and that number may describe
   an area the user cannot even see (case: `pitfalls/debug.md` 6.12).
@@ -169,9 +175,10 @@ npm run typecheck   # tsc --noEmit
 npm run check       # every fast gate in one command (typecheck + unit + docs index + language +
                     #   i18n keys + privacy + css scope)
 npm run i18n        # every `t('<key>')` exists in both catalogues; no entry is dead text
-npm run privacy     # no id-shaped literal or credential in tracked files (--live: also cross-checks
-                    #   the notebook names this machine's instances report, over tracked files and the
-                    #   local .logs/ test-results/ .tmp/ artifacts)
+npm run privacy     # no id-shaped literal or credential in tracked files (--live: also asks the user's
+                    #   instance for its notebooks, ids, document titles and paths and searches tracked
+                    #   files **and** the local .logs/ test-results/ .tmp/ artifacts for them; the
+                    #   isolated instance is skipped —— its content is the fixtures)
 npm run env         # the effective configuration (deploy targets included)
 npm run language    # the section 2 language policy over every file type at once
 npm run timings     # how long each script actually takes (reads .logs/script-usage.log)
