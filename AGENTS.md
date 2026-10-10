@@ -16,6 +16,10 @@ a file nobody reads might as well not exist.
   them —— `docs/pitfalls/privacy.md`.)
 - Where scripts live: reusable ones in `scripts/` (committed); one-offs in
   `.tmp/` (not committed). Never park something useful in `.tmp/`.
+- **Before deleting scratch, name what is in it, and confirm each part is in the repository.** A digest
+  of a data set is not the data set —— an audit's 237 findings were absorbed into `docs/` while the
+  reports' coverage fields (what each area had *not* checked) went out with them. Absorb first, then
+  delete, and only the part you can point at.
 - SQL is read-only: `SELECT` only, always with an explicit `LIMIT`.
   Mutations go through the kernel block / document API.
 - Locate things by block or doc ID. Never guess from a title or hpath.
