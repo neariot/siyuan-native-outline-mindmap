@@ -357,6 +357,7 @@ Rules that follow from the above:
 | Document | What it covers |
 |---|---|
 | [`docs/PITFALLS.md`](docs/PITFALLS.md) -> [`docs/pitfalls/`](docs/pitfalls/) | **Pitfall ledger** (one file per topic): symptom -> cause -> practice |
+| [`docs/AUDIT-FINDINGS.md`](docs/AUDIT-FINDINGS.md) | **Audit work queue**: every finding from the one whole-repository review, high first |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test and verification strategy: how to test, the layers of verification, the case list |
 | [`docs/kernel-api.md`](docs/kernel-api.md) | What the SiYuan kernel API actually does (holds for other projects too) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Module layout and data flow |
