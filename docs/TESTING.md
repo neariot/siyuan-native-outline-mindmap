@@ -248,7 +248,7 @@ A new E2E case likewise has to "break the implementation and confirm it goes red
 | stub out the localStorage write | all 5 cases in `viewstate.spec.ts` | ✅ all went red |
 | remove the menu clamping logic | "the context menu does not run outside the viewport" | ✅ went red (reported how many px each of the 12 nodes overflowed by)|
 | remove the `window.confirm` gate | "cancelling the confirm dialog does not delete the node" | ✅ went red (reported `5 → 3`)|
-| change references to "concatenate" when expanding | "expand as sub-document… the text is not duplicated" | ✅ went red (reported "measured 2 times (text: 甲分支 甲分支)")|
+| change references to "concatenate" when expanding | "expand as sub-document… the text is not duplicated" | ✅ went red (reported "measured 2 times (text: 分支一 分支一)")|
 | make the `child` drop target have no effect | "a drop in the middle of a row makes a child…" | ✅ went red (reported "it should become a child (indented deeper than the target row)")|
 | remove the "cannot drop into a descendant" guard | "an ancestor cannot be dragged into its own descendant" | ✅ went red (reported the garbled shape of the tree)|
 | same as above | "dropping a node onto itself changes nothing" | ⚠️ **still green** -- it only covers the other guard (hence two cases are needed)|
@@ -310,7 +310,7 @@ The `RichText` component runs through `renderToStaticMarkup`, and we assert the 
 const out = renderToStaticMarkup(
   React.createElement(RichText, { runs: htmlToRuns(html), fallbackFill: '#000' })
 );
-// → '<tspan fill="var(--b3-font-color8)">未收录词</tspan>'
+// → '<tspan fill="var(--b3-font-color8)">段落一</tspan>'
 ```
 
 This is **stricter** than `querySelector` + `getComputedStyle` in a browser:

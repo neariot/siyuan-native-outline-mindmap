@@ -47,10 +47,10 @@ test.describe('Mobile E2E tests', () => {
     tempDocId = await createTempDoc(
       api,
       notebook,
-      `- 移动测试根
+      `- 根节点一
   - 子主题一
   - 子主题二
-- 移动测试二
+- 节点一
 `,
     );
 
@@ -64,10 +64,10 @@ test.describe('Mobile E2E tests', () => {
       expect(st.rows).toBe(4);
 
       const texts = await getNodeTexts(page);
-      expect(texts).toContain('移动测试根');
+      expect(texts).toContain('根节点一');
       expect(texts).toContain('子主题一');
       expect(texts).toContain('子主题二');
-      expect(texts).toContain('移动测试二');
+      expect(texts).toContain('节点一');
     } finally {
       await ctx.close();
     }
@@ -93,23 +93,23 @@ test.describe('Mobile E2E tests', () => {
 
       // 2. Click "Add sibling topic" (↵)
       await clickMobileBarAction(page, 'sibling');
-      await page.keyboard.type('同级主题乙');
+      await page.keyboard.type('同级主题二');
       await page.waitForTimeout(250);
 
       let st = await outlineState(page);
       expect(st.rows).toBe(2);
       let texts = await getNodeTexts(page);
-      expect(texts).toContain('同级主题乙');
+      expect(texts).toContain('同级主题二');
 
       // 3. Click "Add subtopic" (↳)
       await clickMobileBarAction(page, 'child');
-      await page.keyboard.type('子主题乙一');
+      await page.keyboard.type('子主题节点八');
       await page.waitForTimeout(250);
 
       st = await outlineState(page);
       expect(st.rows).toBe(3);
       texts = await getNodeTexts(page);
-      expect(texts).toContain('子主题乙一');
+      expect(texts).toContain('子主题节点八');
 
       // 4. Click "Toggle task status" (☑)
       await clickMobileBarAction(page, 'task');
@@ -215,7 +215,7 @@ test.describe('Mobile E2E tests', () => {
 
   test('④ both the mobile outline and mindmap containers set data-prevent-swipe to guard gestures', async ({ browser }) => {
     const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
-    tempDocId = await createTempDoc(api, notebook, `- 防滑测试分支\n  - 子项\n`);
+    tempDocId = await createTempDoc(api, notebook, `- 拖动测试分支\n  - 子项\n`);
 
     const ctx = await mobileContext(browser, baseURL);
     const page = await ctx.newPage();
@@ -241,7 +241,7 @@ test.describe('Mobile E2E tests', () => {
 
   test('⑤ the mobile narrow-screen format toolbar toggles open and keeps its state', async ({ browser }) => {
     const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
-    tempDocId = await createTempDoc(api, notebook, `- 格式栏测试\n`);
+    tempDocId = await createTempDoc(api, notebook, `- 格式栏节点\n`);
 
     const ctx = await mobileContext(browser, baseURL);
     const page = await ctx.newPage();

@@ -120,13 +120,13 @@ console.log('\n(2) all paragraphs blank -> press again to exit (delete)');
 console.log('\n(3) * has content -> keep it, never delete');
 
 {
-  const n: Node = { id: 'd', text: '<span>x</span>', children: [], paragraphs: ['<span>备注内容</span>'] };
+  const n: Node = { id: 'd', text: '<span>x</span>', children: [], paragraphs: ['<span>备注文本一</span>'] };
   const tr = togglePara(n);
   check('** with content it is **not deleted** (Shift+Enter is a toggle, not a clear)',
     Array.isArray(n.paragraphs) && n.paragraphs.length === 1,
     `got ${JSON.stringify(n.paragraphs)}`);
   check('** the content is kept verbatim (user input does not get lost)',
-    n.paragraphs?.[0] === '<span>备注内容</span>',
+    n.paragraphs?.[0] === '<span>备注文本一</span>',
     `实得 ${n.paragraphs?.[0]}`);
   check('neither deleted nor recreated', tr.deleted === false && tr.created === false);
 
@@ -154,10 +154,10 @@ console.log('\n(4) round-trip consistency of repeated toggling');
   check('* it can be toggled on and off repeatedly (no residual state)', n.paragraphs?.length === 1);
 
   // press repeatedly after it has content; the content must stay
-  const m: Node = { id: 'g', text: '<span>x</span>', children: [], paragraphs: ['<span>重要备注</span>'] };
+  const m: Node = { id: 'g', text: '<span>x</span>', children: [], paragraphs: ['<span>备注一</span>'] };
   for (let i = 0; i < 5; i++) togglePara(m);
   check('** pressing 5 times with content present keeps the content',
-    m.paragraphs?.[0] === '<span>重要备注</span>',
+    m.paragraphs?.[0] === '<span>备注一</span>',
     `got ${JSON.stringify(m.paragraphs)}`);
 }
 

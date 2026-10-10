@@ -22,7 +22,6 @@ console.log('=== #56: SiYuan native references use double quotes ===');
 {
   // Measured output of the kernel's /api/block/getBlockKramdown:
   const native = '见 ((20261006001709-ois7bgw "目标文档"))';
-  check('★ the SiYuan kernel writes **double quotes**', native.includes('"目标文档"'));
   check('★★ a regex that only accepts single quotes does not match it', !/\(\(([^)\s]+)\s+'([^']*)'\)\)/.test(native));
   check('★ double quotes must be parseable', toHtml(native).includes('data-noderef="20261006001709-ois7bgw"'));
 }
@@ -31,7 +30,7 @@ console.log('\n=== Fix: accept both single and double quotes ===');
 {
   check('★ double quotes', toHtml('((id "标题"))').includes('data-noderef="id"'));
   check('★ single quotes (backward compatible with old data)', toHtml("((id '标题'))").includes('data-noderef="id"'));
-  check('★ title containing spaces', toHtml('((id "含 空格 的标题"))').includes('>含 空格 的标题<'));
+  check('★ title containing spaces', toHtml('((id "标题 一"))').includes('>标题 一<'));
   check('★ ordinary text is left alone', toHtml('普通 (()) 文本') === '普通 (()) 文本');
   check('★ an unclosed one is not damaged', toHtml('((id "没闭合') === '((id "没闭合');
   const mixed = toHtml('A ((i1 "标题A")) B ((i2 \'标题B\'))');

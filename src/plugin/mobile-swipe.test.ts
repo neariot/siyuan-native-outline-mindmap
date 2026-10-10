@@ -66,7 +66,7 @@ function findPreventSwipeAttr(html: string, containerClass: string): boolean {
 
 test('mind map canvas declares data-prevent-swipe (blocks the mobile sidebar swipe gesture)', () => {
   const node = {
-    id: 'n1', text: '测试节点', children: [],
+    id: 'n1', text: '节点测试', children: [],
     paragraphs: [], summaryData: [], linkLines: [],
   };
   const html = renderToStaticMarkup(
@@ -84,7 +84,7 @@ test('mind map canvas declares data-prevent-swipe (blocks the mobile sidebar swi
 
 test('outline container declares data-prevent-swipe', () => {
   const node = {
-    id: 'n1', text: '测试节点', children: [], paragraphs: [],
+    id: 'n1', text: '节点测试', children: [], paragraphs: [],
   };
   const html = renderToStaticMarkup(
     React.createElement(Outliner as never, {

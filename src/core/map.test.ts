@@ -42,7 +42,7 @@ const inlineCases: [string, string, string][] = [
   // ★ Write-back uses **double quotes**, matching how the SiYuan kernel itself writes it (see API-GOTCHAS §117).
   //   It used to use single quotes —— SiYuan accepts those too, but every round trip flipped " and ' back and forth.
   ['block ref', '<span data-noderef="' + FIXTURE_REF_ID + '">My</span>', '((' + FIXTURE_REF_ID + ' "My"))'],
-  ['cloze', '<span data-mask="1">答案</span>', '答案'],
+  ['cloze', '<span data-mask="1">文本一</span>', '文本一'],
 ];
 for (const [name, html, expect] of inlineCases) {
   const got = htmlToKramdown(html);
@@ -82,7 +82,7 @@ const tree: OutlineNode[] = [
   { id: 'n2', modified: 1, text: '<span>根节点B</span>', children: [] },
 ];
 
-const kd = treeToKramdown(tree, { docTitle: '测试导图' });
+const kd = treeToKramdown(tree, { docTitle: '导图测试' });
 console.log('--- generated Kramdown ---');
 console.log(kd);
 console.log('--- end ---');
@@ -129,7 +129,7 @@ check('round trip: bold text', !!n12out && /<b>子2粗<\/b>/.test(n12out.text), 
 
 
 // ---- 5. SiYuan native export format round trip (inline attributes + trailing attribute line) ----
-const siyuanNative = `# 未收录的句子
+const siyuanNative = `# 数据导入验证
 {: id="20261004021333-dee0755" updated="20261004021333"}
 
 - {: id="20261004021333-yi4bki0" updated="20261004021333"}test1
@@ -164,7 +164,7 @@ const richTree: OutlineNode[] = [
     id: 'r1',
     modified: 1,
     text: '<span>源节点</span>',
-    paragraphs: ['这是备注', '第二行'],
+    paragraphs: ['备注文本', '第二行'],
     summaryData: [{ id: 's1', memberIds: ['r2'], text: '概要' }],
     linkLines: [{ id: 'l1', toNodeId: 'r2' }],
     children: [],
@@ -177,7 +177,7 @@ const r1 = flatten(richBack).find((n) => /源节点/.test(n.text))!;
 // The parser wraps plain text in `<span>` (isomorphic with the `text` field), so strip tags when comparing
 const plainParas = (a?: string[]): string[] => (a ?? []).map((x) => x.replace(/<[^>]*>/g, ''));
 check('★ attachment paragraph round trip (native NodeParagraph)',
-  JSON.stringify(plainParas(r1?.paragraphs)) === JSON.stringify(['这是备注', '第二行']),
+  JSON.stringify(plainParas(r1?.paragraphs)) === JSON.stringify(['备注文本', '第二行']),
   `got=${JSON.stringify(r1?.paragraphs)}`);
 check('★ the memo attribute is no longer written', !/memo=/.test(richKd), richKd);
 check('★ paragraphs produce no custom-* attribute', !/custom-/.test(richKd), richKd);
@@ -189,7 +189,7 @@ check('★ linkLines is no longer written (no native counterpart)', !r1?.linkLin
 // ★ Now that the note no longer travels as an attribute, these characters appear in the **body**, so there is no attribute-escaping problem;
 //   but they still must not break the paragraph structure (e.g. by being mistaken for list-item syntax).
 const tricky: OutlineNode[] = [
-  { id: 't1', modified: 1, text: '<span>x</span>', paragraphs: ['含"引号"和}花括号'], children: [] },
+  { id: 't1', modified: 1, text: '<span>x</span>', paragraphs: ['含"符号一"和}符号二'], children: [] },
 ];
 // Locate the node by **text** (the ID is now assigned by SiYuan; the original ID is not kept).
 const trickyKd = treeToKramdown(tricky, { docTitle: 'T' });
@@ -197,7 +197,7 @@ check('★ special characters produce no custom-* attribute', !/custom-/.test(tr
 check('★ special characters produce no memo attribute', !/memo=/.test(trickyKd), trickyKd);
 const trickyBack = flatten(kramdownToTree(trickyKd)).find((n) => /(^|>)x($|<)/.test(n.text))!;
 check('attachment paragraph with special characters round trips',
-  trickyBack?.paragraphs?.[0]?.includes('含"引号"和}花括号') === true,
+  trickyBack?.paragraphs?.[0]?.includes('含"符号一"和}符号二') === true,
   `got=${JSON.stringify(trickyBack?.paragraphs)}`);
 
 // ---- results ----
@@ -210,13 +210,13 @@ const withProse = [
   '- 根节点',
   '  - 子节点',
   '',
-  '这是一段正文说明。',
+  '正文说明。',
   '',
 ].join('\n');
 const proseTree = kramdownToTree(withProse);
 const flatProse: OutlineNode[] = [];
 (function w(l: OutlineNode[]) { for (const n of l) { flatProse.push(n); if (n.children?.length) w(n.children); } })(proseTree);
-check('★ a body paragraph does not become a node', !flatProse.some((n) => (n.text ?? '').includes('这是一段正文说明')),
+check('★ a body paragraph does not become a node', !flatProse.some((n) => (n.text ?? '').includes('正文说明')),
   JSON.stringify(flatProse.map((n) => n.text)));
 check('★ list items are still parsed into nodes correctly', flatProse.length === 2 && flatProse[0].text.includes('根节点'),
   JSON.stringify(flatProse.map((n) => n.text)));
@@ -232,7 +232,7 @@ const plainTree: OutlineNode[] = [
     { id: '20261004021333-bbb2222', text: '<span>子</span>', modified: 0, children: [] },
   ] },
 ];
-const plainKd = treeToKramdown(plainTree, { docTitle: '零属性' });
+const plainKd = treeToKramdown(plainTree, { docTitle: '属性一' });
 check('★ no custom-om-* attribute is written', !/custom-om-/.test(plainKd), plainKd);
 check('★ no custom-* attribute is written (zero private traces)', !/custom-/.test(plainKd), plainKd);
 check('★ the default still outputs a list structure', plainKd.includes('- ') && plainKd.includes('根'), plainKd);
@@ -282,7 +282,7 @@ const hKd = [
   '# 文档标题',
   '{: id="20261006120000-doc0001"}',
   '',
-  '## 顶格标题',
+  '## 标题一',
   '{: id="20261006120000-h000001"}',
   '',
   '- {: id="20261006120000-p000001"}普通节点',
@@ -390,20 +390,20 @@ check('★★ an h1 node still has level 1 after the round trip (kept exactly)',
 
 // The document title must still be excluded (keeping h1 must not pull the title in as well)
 const withTitle = [
-  '# 文档题目', '{: id="20261006120000-doc0001"}', '',
-  '# 真一级标题', '{: id="20261006120000-h100001"}', '',
+  '# 文档标题', '{: id="20261006120000-doc0001"}', '',
+  '# 一级标题', '{: id="20261006120000-h100001"}', '',
   '- 列表项', '{: id="20261006120000-l000001"}',
 ].join('\n');
 const wtTree = kramdownToTree(withTitle);
-check('★ the document title (first block) is excluded', !wtTree.some((n) => n.text.includes('文档题目')),
+check('★ the document title (first block) is excluded', !wtTree.some((n) => n.text.includes('文档标题')),
   JSON.stringify(wtTree.map((n) => n.text)));
-check('★ a real h1 that is not the first block is kept and has level 1', wtTree[0]?.heading === 1 && wtTree[0]?.text.includes('真一级标题'),
+check('★ a real h1 that is not the first block is kept and has level 1', wtTree[0]?.heading === 1 && wtTree[0]?.text.includes('一级标题'),
   JSON.stringify(wtTree.map((n) => [n.text.replace(/<[^>]*>/g, ''), n.heading])));
 
 // When the document has **no** title (the first block is body text), the h1 right after it is a node and must be kept
 const noTitleDoc = [
-  '正文开头', '{: id="20261006120000-p000001"}', '',
-  '# 一个真h1', '{: id="20261006120000-h100002"}', '',
+  '正文一', '{: id="20261006120000-p000001"}', '',
+  '# 真值一h1', '{: id="20261006120000-h100002"}', '',
   '- 列表', '{: id="20261006120000-l000002"}',
 ].join('\n');
 check('★ the first h1 is kept when the document has no title',
@@ -485,13 +485,13 @@ check('DOM: an existing data-type is not added again',
 //   style outside → kramdown keeps only style, bold is lost
 //   semantic outside → kramdown keeps only **, the colour is lost
 //   merged       → `**bold-red**{: style="…"}`, both are there
-const mergeOuter = htmlToSiyuanDom('<b><span style="color:red">粗红</span></b>');
+const mergeOuter = htmlToSiyuanDom('<b><span style="color:red">粗体文本四</span></b>');
 check('DOM: semantic outside→merged',
-  mergeOuter === '<span data-type="strong" style="color:red">粗红</span>', mergeOuter);
+  mergeOuter === '<span data-type="strong" style="color:red">粗体文本四</span>', mergeOuter);
 
-const mergeInner = htmlToSiyuanDom('<span style="color:red"><b>红粗</b></span>');
+const mergeInner = htmlToSiyuanDom('<span style="color:red"><b>红字粗体</b></span>');
 check('DOM: style outside→merged',
-  mergeInner === '<span data-type="strong" style="color:red">红粗</span>', mergeInner);
+  mergeInner === '<span data-type="strong" style="color:red">红字粗体</span>', mergeInner);
 
 const mergeMulti = htmlToSiyuanDom('<b><span style="color:red;background-color:yellow">多</span></b>');
 check('DOM: multiple styles merged',
@@ -519,7 +519,7 @@ check('DOM: empty input', htmlToSiyuanDom('') === '', htmlToSiyuanDom(''));
 
 // The markdown path can express these → it must not switch to DOM (the DOM path is more fragile; the smaller its surface the better)
 for (const plain of ['<b>粗</b>', '<i>斜</i>', '<s>删</s>', '<code>码</code>',
-                     '<u>划</u>', '<sup>上</sup>', '<sub>下</sub>', '==亮==', '纯文本']) {
+                     '<u>划</u>', '<sup>上</sup>', '<sub>下</sub>', '==亮==', '文本二']) {
   check(`richStyle:${plain.slice(0, 12)} → no`, hasRichStyle(plain) === false, plain);
 }
 // These can only be expressed by the DOM path → it must switch
@@ -546,12 +546,12 @@ check('richStyle: mixed content → yes',
 //
 // Measured before the fix: `<font color="#dc2a2a">red text</font>` → `red text` (the colour is gone)
 const fontCases: [string, string, string][] = [
-  ['font:十六进制', '<font color="#dc2a2a">红字</font>',
-    '<span data-type="text" style="color: #dc2a2a;">红字</span>'],
-  ['font:颜色名', '<font color="red">红字</font>',
-    '<span data-type="text" style="color: red;">红字</span>'],
-  ['font:rgb()', '<font color="rgb(220,42,42)">红字</font>',
-    '<span data-type="text" style="color: rgb(220,42,42);">红字</span>'],
+  ['font:十六进制', '<font color="#dc2a2a">文本四</font>',
+    '<span data-type="text" style="color: #dc2a2a;">文本四</span>'],
+  ['font:颜色名', '<font color="red">文本四</font>',
+    '<span data-type="text" style="color: red;">文本四</span>'],
+  ['font:rgb()', '<font color="rgb(220,42,42)">文本四</font>',
+    '<span data-type="text" style="color: rgb(220,42,42);">文本四</span>'],
   ['font:大写属性', '<FONT COLOR="#dc2a2a">大写</FONT>',
     '<span data-type="text" style="color: #dc2a2a;">大写</span>'],
 ];
@@ -561,9 +561,9 @@ for (const [name, input, want] of fontCases) {
 }
 // A semantic tag + a colour must merge into one tag (a hard SiYuan requirement; see the htmlToSiyuanDom comment)
 {
-  const got = htmlToSiyuanDom('<b><font color="#dc2a2a">粗红</font></b>');
+  const got = htmlToSiyuanDom('<b><font color="#dc2a2a">粗体文本四</font></b>');
   check('font: merged with bold',
-    got === '<span data-type="strong" style="color: #dc2a2a;">粗红</span>', `got=${got}`);
+    got === '<span data-type="strong" style="color: #dc2a2a;">粗体文本四</span>', `got=${got}`);
 }
 // Several fonts on one line: each keeps its own colour; they must not be merged into one
 {
@@ -616,7 +616,7 @@ for (const kd of richFixed) {
 
 // Rich text introduces no private attribute (a hard user requirement: the information survives uninstalling the plugin)
 const richNoCustom = htmlToKramdown(
-  '<span style="color:var(--b3-font-color1);"><b>粗红</b></span><u>划</u><sup>上</sup>==亮==',
+  '<span style="color:var(--b3-font-color1);"><b>粗体文本四</b></span><u>划</u><sup>上</sup>==亮==',
 );
 check('★ rich text has zero custom attributes', !/custom-/.test(richNoCustom), richNoCustom);
 
@@ -651,39 +651,39 @@ function rtParas(name: string, tree: OutlineNode[]) {
   check(`${name}: round trip stable`, kd1 === kd2);
 }
 
-rtParas('attachment-single', [{ id: 'a', modified: 1, text: '节点', paragraphs: ['附一'], children: [] }]);
-rtParas('attachment-multiple', [{ id: 'a', modified: 1, text: '节点', paragraphs: ['附一', '附二', '附三'], children: [] }]);
+rtParas('attachment-single', [{ id: 'a', modified: 1, text: '节点', paragraphs: ['附属段一'], children: [] }]);
+rtParas('attachment-multiple', [{ id: 'a', modified: 1, text: '节点', paragraphs: ['附属段一', '附属段二', '附属段三'], children: [] }]);
 rtParas('attachment-empty', [{ id: 'a', modified: 1, text: '节点', paragraphs: [''], children: [] }]);
 rtParas('attachment-empty-node-with-attachment', [{ id: 'a', modified: 1, text: '', paragraphs: ['附'], children: [] }]);
 rtParas('attachment-empty-node-empty-attachment', [{ id: 'a', modified: 1, text: '', paragraphs: [''], children: [] }]);
 rtParas('attachment-todo', [{ id: 'a', modified: 1, text: '待办', taskStatus: 1, paragraphs: ['说明'], children: [] }]);
 rtParas('attachment-with-child', [
-  { id: 'a', modified: 1, text: '节点', paragraphs: ['附一', '附二'],
+  { id: 'a', modified: 1, text: '节点', paragraphs: ['附属段一', '附属段二'],
     children: [{ id: 'b', modified: 1, text: '子', children: [] }] },
 ]);
 rtParas('attachment-three-levels', [
-  { id: 'a', modified: 1, text: '根', paragraphs: ['根附'],
-    children: [{ id: 'b', modified: 1, text: '子', paragraphs: ['子附'],
+  { id: 'a', modified: 1, text: '根', paragraphs: ['根附属'],
+    children: [{ id: 'b', modified: 1, text: '子', paragraphs: ['子附属'],
       children: [{ id: 'c', modified: 1, text: '孙', children: [] }] }] },
 ]);
 
 // ★ Regression: after the last node of a child list ends, an "empty node with attachment" follows ——
 //   this is the only shape that triggers attachment-paragraph drift (hanging under the previous sibling subtree).
 const serialLayout = treeToKramdown([
-  { id: 'a', modified: 1, text: '根节点', paragraphs: ['根附'], children: [
-    { id: 'b', modified: 1, text: '子节点', paragraphs: ['子附'], children: [
-      { id: 'c', modified: 1, text: '孙节点', children: [] },
+  { id: 'a', modified: 1, text: '根节点', paragraphs: ['根附属'], children: [
+    { id: 'b', modified: 1, text: '子节点', paragraphs: ['子附属'], children: [
+      { id: 'c', modified: 1, text: '孙节点一', children: [] },
     ] },
-    { id: 'd', modified: 1, text: '', paragraphs: ['空节点附属'], children: [] },
+    { id: 'd', modified: 1, text: '', paragraphs: ['空节点附属段'], children: [] },
   ] },
 ], { docTitle: 'T' });
 const backLayout = kramdownToTree(serialLayout);
-check('★ drift regression: root attachment', JSON.stringify(backLayout[0]?.paragraphs) === JSON.stringify(['<span>根附</span>']),
+check('★ drift regression: root attachment', JSON.stringify(backLayout[0]?.paragraphs) === JSON.stringify(['<span>根附属</span>']),
   `got=${JSON.stringify(backLayout[0]?.paragraphs)}`);
-check('★ drift regression: child attachment', JSON.stringify(backLayout[0]?.children?.[0]?.paragraphs) === JSON.stringify(['<span>子附</span>']),
+check('★ drift regression: child attachment', JSON.stringify(backLayout[0]?.children?.[0]?.paragraphs) === JSON.stringify(['<span>子附属</span>']),
   `got=${JSON.stringify(backLayout[0]?.children?.[0]?.paragraphs)}`);
 check('★ drift regression: an empty node attachment does not drift to a sibling',
-  JSON.stringify(backLayout[0]?.children?.[1]?.paragraphs) === JSON.stringify(['<span>空节点附属</span>']),
+  JSON.stringify(backLayout[0]?.children?.[1]?.paragraphs) === JSON.stringify(['<span>空节点附属段</span>']),
   `got=${JSON.stringify(backLayout[0]?.children?.[1]?.paragraphs)}`);
 check('★ drift regression: the child node still has only one child',
   backLayout[0]?.children?.[0]?.children?.length === 1);
@@ -824,11 +824,11 @@ const trailingEmpty = [
 console.log('=== blank-line rules ===');
 {
   const tree: OutlineNode[] = [
-    { id: 'a', modified: 1, text: '根', paragraphs: ['根附'], children: [
-      { id: 'b', modified: 1, text: '子', paragraphs: ['子附'], children: [
+    { id: 'a', modified: 1, text: '根', paragraphs: ['根附属'], children: [
+      { id: 'b', modified: 1, text: '子', paragraphs: ['子附属'], children: [
         { id: 'c', modified: 1, text: '孙', children: [] },
       ]},
-      { id: 'd', modified: 1, text: '空', paragraphs: ['空附'], children: [] },
+      { id: 'd', modified: 1, text: '空', paragraphs: ['空附属'], children: [] },
     ]},
   ];
   const kd = treeToKramdown(tree, { docTitle: 'T' });
@@ -837,10 +837,10 @@ console.log('=== blank-line rules ===');
   // ① there is a blank line before the attachment paragraph
   const iRoot = lines.findIndex((l) => l.includes('- 根'));
   check('★ there is a blank line before the attachment paragraph', lines[iRoot + 1] === '', JSON.stringify(lines[iRoot + 1]));
-  check('the attachment paragraph follows the blank line (indent 2)', lines[iRoot + 2] === '  根附', JSON.stringify(lines[iRoot + 2]));
+  check('the attachment paragraph follows the blank line (indent 2)', lines[iRoot + 2] === '  根附属', JSON.stringify(lines[iRoot + 2]));
 
   // ② a blank line before a child list is **no longer** required (compact format)
-  const iAttach = lines.findIndex((l) => l === '  根附');
+  const iAttach = lines.findIndex((l) => l === '  根附属');
   check(
     '★ there is no longer a blank line before a child list (compact)',
     lines[iAttach + 1].includes('- 子'),
@@ -851,9 +851,9 @@ console.log('=== blank-line rules ===');
   const back = kramdownToTree(kd);
   const strip = (a?: string[]) => (a ?? []).map((p) => p.replace(/<\/?span[^>]*>/g, ''));
   const root = back[0];
-  check('drift regression: root attachment', JSON.stringify(strip(root?.paragraphs)) === JSON.stringify(['根附']));
-  check('drift regression: child attachment', JSON.stringify(strip(root?.children?.[0]?.paragraphs)) === JSON.stringify(['子附']));
-  check('drift regression: empty attachment', JSON.stringify(strip(root?.children?.[1]?.paragraphs)) === JSON.stringify(['空附']));
+  check('drift regression: root attachment', JSON.stringify(strip(root?.paragraphs)) === JSON.stringify(['根附属']));
+  check('drift regression: child attachment', JSON.stringify(strip(root?.children?.[0]?.paragraphs)) === JSON.stringify(['子附属']));
+  check('drift regression: empty attachment', JSON.stringify(strip(root?.children?.[1]?.paragraphs)) === JSON.stringify(['空附属']));
   check('drift regression: the grandchild has no attachment', (root?.children?.[0]?.children?.[0]?.paragraphs ?? []).length === 0);
   check('drift regression: the root still has 2 children', root?.children?.length === 2, `got=${root?.children?.length}`);
 
@@ -903,16 +903,16 @@ console.log('=== blank-line rules ===');
 // ------------------------------------------------------------
 {
   const kd = [
-    '- {: id="li1" }录制视频',
-    '打开截图软件',            // top-level paragraph —— should belong to li1
-    '- {: id="li2" }录制优化建议',
+    '- {: id="li1" }录制说明',
+    '菜单项三',            // top-level paragraph —— should belong to li1
+    '- {: id="li2" }优化建议',
   ].join('\n');
   const t = kramdownToTree(kd);
 
   check('a top-level paragraph produces no new node', t.length === 2, `got=${t.length}`);
   check(
     'a top-level paragraph belongs to the node above it',
-    (t[0]?.paragraphs?.[0] ?? '').includes('打开截图软件'),
+    (t[0]?.paragraphs?.[0] ?? '').includes('菜单项三'),
     `got=${JSON.stringify(t[0]?.paragraphs)}`,
   );
   check(
@@ -923,21 +923,21 @@ console.log('=== blank-line rules ===');
   check('nothing is discarded here', takeDroppedParagraphs() === 0, 'should be 0');
 
   // A paragraph appearing before any node belongs to the title node (the document root) instead of being ignored
-  const kd2 = ['开场说明', '- {: id="a" }甲', '- {: id="b" }乙'].join('\n');
+  const kd2 = ['说明文本', '- {: id="a" }甲', '- {: id="b" }乙'].join('\n');
   const t2 = kramdownToTree(kd2);
   check('a leading paragraph produces no separate list node', t2.length === 2, `got=${t2.length}`);
   const titleParas = takeTitleParagraphs();
   check(
     '★ a leading paragraph belongs to the title node (no longer ignored)',
-    titleParas.length === 1 && titleParas[0].includes('开场说明'),
+    titleParas.length === 1 && titleParas[0].includes('说明文本'),
     `got=${JSON.stringify(titleParas)}`,
   );
   check('a leading paragraph no longer counts as discarded', takeDroppedParagraphs() === 0, 'should be 0');
 
   // Round trip of title-node leading paragraphs
   const kdRoundTrip = treeToKramdown(t2, {
-    docTitle: '文档题目',
-    titleParagraphs: ['这是第一段前置说明', '这是第二段前置说明'],
+    docTitle: '文档标题',
+    titleParagraphs: ['第一段说明', '第二段说明'],
   });
   const t3 = kramdownToTree(kdRoundTrip);
   check('the list node count is unchanged after the round trip', t3.length === 2);
@@ -945,8 +945,8 @@ console.log('=== blank-line rules ===');
   check(
     '★ title-node leading paragraphs survive the round trip intact',
     backTitleParas.length === 2 &&
-      backTitleParas[0].includes('这是第一段前置说明') &&
-      backTitleParas[1].includes('这是第二段前置说明'),
+      backTitleParas[0].includes('第一段说明') &&
+      backTitleParas[1].includes('第二段说明'),
     `got=${JSON.stringify(backTitleParas)}`,
   );
   check('the round trip discards nothing', takeDroppedParagraphs() === 0);
@@ -977,13 +977,13 @@ console.log('=== blank-line rules ===');
   //     So on read the angle brackets of **non-whitelisted tags** must be escaped —— which is exactly this case.
   check(
     'a literal <T> is escaped (consistent with what the SiYuan DOM does)',
-    literal('用 <T> 表示泛型') === '<span>用 &lt;T&gt; 表示泛型</span>',
-    literal('用 <T> 表示泛型'),
+    literal('用 <T> 代码示例') === '<span>用 &lt;T&gt; 代码示例</span>',
+    literal('用 <T> 代码示例'),
   );
   check(
     '★ a literal <T> is not lost on write-back either',
-    htmlToKramdown('用 <T> 表示泛型') === '用 <T> 表示泛型',
-    htmlToKramdown('用 <T> 表示泛型'),
+    htmlToKramdown('用 <T> 代码示例') === '用 <T> 代码示例',
+    htmlToKramdown('用 <T> 代码示例'),
   );
   check('★ x < y is escaped', literal('x < y') === '<span>x &lt; y</span>', literal('x < y'));
   // ★★★  Reversed: this assertion used to require the `<b>` in `a<b>c` to be escaped.
@@ -1017,8 +1017,8 @@ console.log('=== blank-line rules ===');
   // Real tags on the list must still be kept as-is, otherwise the whole inline style is lost
   check(
     'a whitelisted tag is kept as-is (the SiYuan inline style depends on it)',
-    literal('<u>下划线</u>') === '<u>下划线</u>',
-    literal('<u>下划线</u>'),
+    literal('<u>下划线一线</u>') === '<u>下划线一线</u>',
+    literal('<u>下划线一线</u>'),
   );
   check('a bare & is escaped into &amp;', literal('A & B') === '<span>A &amp; B</span>', literal('A & B'));
   check(
@@ -1060,7 +1060,7 @@ console.log('=== blank-line rules ===');
   };
 
   // The inline-style form that really exists in SiYuan —— exactly the one escaping destroyed
-  const siyuanInline = '<span data-type="text" style="color: red;">红字</span>';
+  const siyuanInline = '<span data-type="text" style="color: red;">文本四</span>';
   check(
     '★ an inline-style span does not grow over 6 round trips',
     !grows(siyuanInline),
@@ -1097,7 +1097,7 @@ console.log('=== blank-line rules ===');
   const mustKeep = [
     '<span data-type="text">X</span>',
     '<span data-type="text" style="color: red;">红</span>',
-    '<u>下划线</u>',
+    '<u>下划线一线</u>',
     'H<sub>2</sub>O',
     'x<sup>2</sup>',
   ];
@@ -1107,7 +1107,7 @@ console.log('=== blank-line rules ===');
   // Literal angle brackets must **not be treated as tags** (this is the guard against a too-wide list)
   const mustEscape: Array<[string, string]> = [
     ['a<b>c', '<span>a&lt;b&gt;c</span>'],
-    ['用 <T> 表示泛型', '<span>用 &lt;T&gt; 表示泛型</span>'],
+    ['用 <T> 代码示例', '<span>用 &lt;T&gt; 代码示例</span>'],
     ['x < y', '<span>x &lt; y</span>'],
     ['<i>斜</i>', '<span>&lt;i&gt;斜&lt;/i&gt;</span>'],
     ['<div>x</div>', '<span>&lt;div&gt;x&lt;/div&gt;</span>'],
@@ -1119,8 +1119,8 @@ console.log('=== blank-line rules ===');
   check('★ the display layer shows a<b>c', htmlToText(kramdownToHtml('a<b>c')) === 'a<b>c', htmlToText(kramdownToHtml('a<b>c')));
   check(
     '★ the display layer shows "use <T> for generics"',
-    htmlToText(kramdownToHtml('用 <T> 表示泛型')) === '用 <T> 表示泛型',
-    htmlToText(kramdownToHtml('用 <T> 表示泛型')),
+    htmlToText(kramdownToHtml('用 <T> 代码示例')) === '用 <T> 代码示例',
+    htmlToText(kramdownToHtml('用 <T> 代码示例')),
   );
 }
 
@@ -1142,14 +1142,14 @@ console.log('=== blank-line rules ===');
   };
   const stable: Array<[string, string]> = [
     ['literal a<b>c', 'a<b>c'],
-    ['literal <T>', '用 <T> 表示泛型'],
+    ['literal <T>', '用 <T> 代码示例'],
     ['literal x < y', 'x < y'],
     ['literal &', '& 和 &'],
     [
       'inline style (real kernel form, with data-type)',
-      '<span data-type="text" style="color:var(--b3-font-color1);">红字</span>',
+      '<span data-type="text" style="color:var(--b3-font-color1);">文本四</span>',
     ],
-    ['underline', '<u>下划线</u>'],
+    ['underline', '<u>下划线一线</u>'],
     ['subscript', 'H<sub>2</sub>O'],
     ['superscript', 'x<sup>2</sup>'],
     ['bold', '**粗体**'],
@@ -1172,18 +1172,18 @@ console.log('=== blank-line rules ===');
 {
   // 1. with a document title + several leading paragraphs
   const kdWithTitleAndParas = [
-    '# 项目方案设计',
+    '# 说明一',
     '{: id="20261006120000-doc0001"}',
     '',
-    '这是项目背景介绍段落。',
+    '第一段文本。',
     '{: id="20261006120000-p000001"}',
     '',
-    '这是核心目标说明段落。',
+    '第二段文本。',
     '{: id="20261006120000-p000002"}',
     '',
-    '- {: id="20261006120000-n000001"}阶段一：需求分析',
-    '  - {: id="20261006120000-n000002"}用户调研',
-    '- {: id="20261006120000-n000003"}阶段二：架构设计',
+    '- {: id="20261006120000-n000001"}阶段一：需求说明',
+    '  - {: id="20261006120000-n000002"}段落二',
+    '- {: id="20261006120000-n000003"}阶段二：架构说明',
   ].join('\n');
 
   const tree = kramdownToTree(kdWithTitleAndParas);
@@ -1192,41 +1192,41 @@ console.log('=== blank-line rules ===');
   check('the leading paragraph count is correct', paras.length === 2, `got=${paras.length}`);
   check(
     'the leading paragraph contains the background introduction',
-    paras[0].includes('这是项目背景介绍段落。'),
+    paras[0].includes('第一段文本。'),
     `got=${paras[0]}`,
   );
   check(
     'the leading paragraph contains the core objective',
-    paras[1].includes('这是核心目标说明段落。'),
+    paras[1].includes('第二段文本。'),
     `got=${paras[1]}`,
   );
   check('no paragraph was discarded as unattachable', takeDroppedParagraphs() === 0);
 
   // Write-back and read-out round trip
   const writtenKd = treeToKramdown(tree, {
-    docTitle: '项目方案设计',
+    docTitle: '说明一',
     titleParagraphs: paras,
   });
-  check('the written kramdown contains the title line', writtenKd.startsWith('# 项目方案设计\n\n'), writtenKd);
-  check('the written kramdown contains the background introduction', writtenKd.includes('这是项目背景介绍段落。'), writtenKd);
-  check('the written kramdown contains the core objective', writtenKd.includes('这是核心目标说明段落。'), writtenKd);
+  check('the written kramdown contains the title line', writtenKd.startsWith('# 说明一\n\n'), writtenKd);
+  check('the written kramdown contains the background introduction', writtenKd.includes('第一段文本。'), writtenKd);
+  check('the written kramdown contains the core objective', writtenKd.includes('第二段文本。'), writtenKd);
 
   const backTree = kramdownToTree(writtenKd);
   const backParas = takeTitleParagraphs();
   check('the node structure is identical after the round trip', backTree.length === 2 && backTree[0].children.length === 1);
   check('the title-node leading paragraph count is identical after the round trip', backParas.length === 2);
-  check('leading paragraph one is identical after the round trip', backParas[0].includes('这是项目背景介绍段落。'));
-  check('leading paragraph two is identical after the round trip', backParas[1].includes('这是核心目标说明段落。'));
+  check('leading paragraph one is identical after the round trip', backParas[0].includes('第一段文本。'));
+  check('leading paragraph two is identical after the round trip', backParas[1].includes('第二段文本。'));
 
   // 2. a document with no top-level # heading block: leading paragraphs still belong to the title node
   const kdNoTitleDoc = [
-    '这是无标题文档的前置说明。',
+    '前置说明。',
     '',
     '- 独立任务项',
   ].join('\n');
   const treeNoTitle = kramdownToTree(kdNoTitleDoc);
   const parasNoTitle = takeTitleParagraphs();
-  check('leading paragraphs of a title-less document are extracted successfully', parasNoTitle.length === 1 && parasNoTitle[0].includes('这是无标题文档的前置说明。'));
+  check('leading paragraphs of a title-less document are extracted successfully', parasNoTitle.length === 1 && parasNoTitle[0].includes('前置说明。'));
   check('the list node count of a title-less document is correct', treeNoTitle.length === 1);
 
   // 3. round trip of leading paragraphs that contain an empty paragraph
@@ -1241,7 +1241,7 @@ console.log('=== blank-line rules ===');
 
   // 4. a document of pure paragraphs with no list node
   const kdOnlyParas = [
-    '# 纯文档',
+    '# 文档一',
     '',
     '段落一',
     '',

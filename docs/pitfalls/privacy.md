@@ -20,7 +20,7 @@ looks for one. Three separate failures came from the same root:
 titles, content, screenshots —— and make the checks structural rather than attentive, because reading
 carefully is what failed here three times in one day:
 
-* **Invent the example.** `Notebook A`, `甲分支`, `<node-id>`. A fixture that looks like data is data.
+* **Invent the example.** `Notebook A`, `分支一`, `<node-id>`. A fixture that looks like data is data.
 * **A formatter-independent rule, enforced by a tool.** `scripts/audit-privacy.py` refuses an id-shaped
   literal in tracked files and a credential-shaped literal on a line about tokens; `--live` cross-checks
   the notebook names the configured instances actually report, over tracked files *and* the local

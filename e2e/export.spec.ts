@@ -95,7 +95,7 @@ test('the exported PNG size follows the content', async ({ page }) => {
 /** The exported PNG file name comes from the document title —— the user relies on it to tell which image this is. */
 test('the exported PNG is named after the document title', async ({ page }) => {
   const png = await exportAndRead(page, '导出图片');
-  expect(png.name, 'the file name should be "<document title>.png"').toBe('E2E-导图结构测试.png');
+  expect(png.name, 'the file name should be "<document title>.png"').toBe('E2E-结构节点测试.png');
 });
 
 /**
@@ -107,7 +107,7 @@ test('the exported .mm contains every node and its structure matches the documen
   const mm = await exportAndRead(page, '导出 .mm');
   const xml = mm.buf.toString('utf8');
 
-  expect(mm.name, '.mm file name should be "<document title>.mm"').toBe('E2E-导图结构测试.mm');
+  expect(mm.name, '.mm file name should be "<document title>.mm"').toBe('E2E-结构节点测试.mm');
   expect(xml, 'it should be FreeMind format').toContain('<map version="1.0.1">');
   expect(xml, 'the XML should be closed').toContain('</map>');
 
@@ -116,7 +116,7 @@ test('the exported .mm contains every node and its structure matches the documen
     expect(xml, `"${branch}" should be in the export`).toContain(`TEXT="${branch}"`);
   }
   // The child nodes are there too (the top level alone does not count as "every node")
-  for (const child of ['甲一', '甲二', '乙一', '乙二', '丙一', '丙二', '丁一', '丁二']) {
+  for (const child of ['节点一', '节点二', '节点八', '节点九', '节点十', '节点十一', '节点十二', '节点十三']) {
     expect(xml, `"${child}" should be in the export`).toContain(`TEXT="${child}"`);
   }
 });
@@ -149,7 +149,7 @@ test('after collapsing the PNG shrinks but the .mm is still the whole tree', asy
   const mmBefore = (await exportAndRead(page, '导出 .mm')).buf.toString('utf8');
   const nodesBefore = await page.locator('.mm-node').count();
 
-  expect(mmBefore, 'precondition: the .mm has child nodes while expanded').toContain('TEXT="甲一"');
+  expect(mmBefore, 'precondition: the .mm has child nodes while expanded').toContain('TEXT="节点一"');
 
   // Collapse the first branch.
   // ★ You cannot just `click('.mm-badge')` —— the badge is **covered** by the node's own rect,
@@ -175,7 +175,7 @@ test('after collapsing the PNG shrinks but the .mm is still the whole tree', asy
   // ③ The `.mm` **stays the same** —— it is a data snapshot, not a screenshot
   const mmAfter = (await exportAndRead(page, '导出 .mm')).buf.toString('utf8');
   expect(mmAfter, 'collapsing should not affect the .mm: its purpose is data interchange, not WYSIWYG').toBe(mmBefore);
-  expect(mmAfter, 'the collapsed subtree should still be complete in the .mm').toContain('TEXT="甲一"');
+  expect(mmAfter, 'the collapsed subtree should still be complete in the .mm').toContain('TEXT="节点一"');
 });
 
 /**
@@ -279,7 +279,7 @@ test('XML special characters in nodes are escaped', async ({ page }) => {
     }, xml);
     expect(texts, 'parsing it back should restore the original text').toContain('SVR<alpha> & 阈值');
     expect(texts, 'a child node containing < > & should be restored too').toContain('x > 10 & y < 20');
-    expect(texts, 'the quoted node should be restored').toContain('引号 "测试"');
+    expect(texts, 'the quoted node should be restored').toContain('符号 "测试"');
   } finally {
     await removeDoc(api, tempId);
   }

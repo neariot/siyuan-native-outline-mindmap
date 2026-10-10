@@ -203,7 +203,7 @@ test('characters edited in the outline are written back to SiYuan', async ({ pag
     await openDoc(page, tempId);
     await toOutlineView(page);
 
-    const marker = '写回验证';
+    const marker = '节点五';
     const target = page.locator('.node-text').nth(1);
     await target.click();
     await page.waitForTimeout(300);
@@ -298,7 +298,7 @@ test('★ Empty document: a clickable placeholder row; the panel follows once a 
     // ① An empty document should show a **clickable placeholder row** (this is by design, do not "fix" it as a bug)
     const placeholder = page.locator('.node-row-empty').last();
     await expect(placeholder).toBeVisible({ timeout: 15_000 });
-    await expect(placeholder).toContainText(/点击或按 Enter/);
+    await expect(placeholder).toContainText(/菜单项一或按 Enter/);
     // And the notice page should **not** be there any more (removed by the new design)
     expect(
       await page.locator('.om-mm-empty__title').count(),
@@ -313,7 +313,7 @@ test('★ Empty document: a clickable placeholder row; the panel follows once a 
     // ② Type a **list item** in the SiYuan body (not a bare paragraph —— a bare paragraph does not enter the outline)
     await page.locator('.protyle-wysiwyg').first().click();
     await page.waitForTimeout(300);
-    await page.keyboard.type('- 空文档后加的第一项');
+    await page.keyboard.type('- 项一');
 
     // ③ The panel must follow.
     //    Poll instead of sleeping for a fixed duration: reverse sync has debounce + a kernel round trip.
@@ -326,7 +326,7 @@ test('★ Empty document: a clickable placeholder row; the panel follows once a 
       .toBeGreaterThan(0);
 
     // ④ And it has to be **that row**, not just any row that showed up
-    await expect(page.locator('.node-text').first()).toContainText('空文档后加的第一项', {
+    await expect(page.locator('.node-text').first()).toContainText('项一', {
       timeout: 10_000,
     });
     // ⑤ The placeholder row should be gone —— "placeholder row + real row" must not both hang there.
@@ -373,7 +373,7 @@ test('★ adding several list items in a row must make the panel follow **all** 
     await page.locator('.protyle-wysiwyg').first().click();
     await page.waitForTimeout(400);
     for (let i = 1; i <= N; i += 1) {
-      await page.keyboard.type(`- 连打${i}`);
+      await page.keyboard.type(`- 输入${i}`);
       await page.waitForTimeout(250);
       await page.keyboard.press('Enter');
       await page.waitForTimeout(250);
@@ -393,7 +393,7 @@ test('★ adding several list items in a row must make the panel follow **all** 
     // Check once more: every node text is there (not just enough rows, the content must be right too)
     const texts = (await page.locator('.node-text').allTextContents()).join('|');
     for (let i = 1; i <= N; i += 1) {
-      expect(texts, `the panel should contain "连打${i}"`).toContain(`连打${i}`);
+      expect(texts, `the panel should contain "输入${i}"`).toContain(`输入${i}`);
     }
   } finally {
     if (tempId) await removeDoc(api, tempId).catch(() => {});
@@ -570,7 +570,7 @@ test.describe('multi-select and batch operations', () => {
     try {
       docId = await createTempDoc(
         api, notebook || (await resolveTestNotebook(api)),
-        '- 甲\n  - 甲一\n  - 甲二\n- 乙\n',
+        '- 甲\n  - 节点一\n  - 节点二\n- 乙\n',
       );
       await openDoc(page, docId);
       await toOutlineView(page);
@@ -591,9 +591,9 @@ test.describe('multi-select and batch operations', () => {
         await page.waitForTimeout(250);
       };
 
-      // ① Siblings below the top (甲一 + 甲二, the parent is 甲) → summary **available**
-      await ctrl('甲一');
-      await ctrl('甲二');
+      // ① Siblings below the top (节点一 + 节点二, the parent is 甲) → summary **available**
+      await ctrl('节点一');
+      await ctrl('节点二');
       await expect(
         page.locator('.selbar button', { hasText: '概要' }),
         'two sibling children should be able to take a summary (the summary hangs on the parent topic 甲)',

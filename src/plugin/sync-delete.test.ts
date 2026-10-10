@@ -53,7 +53,7 @@ const tx = (ops: unknown[]): unknown => ({ transactions: [{ doOperations: ops }]
 // ── mixed transaction ──
 {
   const raw = tx([
-    { action: 'update', data: '<div contenteditable="true">甲改</div>', id: 'p1' },
+    { action: 'update', data: '<div contenteditable="true">节点七</div>', id: 'p1' },
     { action: 'delete', data: null, id: 'i1' },
     { action: 'insert', data: '<div>新</div>', id: 'n1' },
   ]);

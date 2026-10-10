@@ -55,7 +55,7 @@ const check = (name: string, cond: boolean, detail = ''): void => {
 
 console.log('=== ① the memo goes through native paragraphs, not attributes ===');
 {
-  const n: Node = { id: 'n1', text: '甲', paragraphs: ['备注内容ABC'] };
+  const n: Node = { id: 'n1', text: '甲', paragraphs: ['备注文本一ABC'] };
   check('memo non-empty → no attribute write at all', Object.keys(attrsToWrite(n)).length === 0);
   check('memo cleared → still no attribute write', Object.keys(attrsToWrite({ ...n, paragraphs: [] })).length === 0);
   check('with a memo the model stores an array', Array.isArray(n.paragraphs));
@@ -73,7 +73,7 @@ console.log('\n=== ③ the write-back path produces no attribute transaction at 
 {
   const cases: Node[] = [
     { id: 'n1', text: '甲' },
-    { id: 'n2', text: '乙', paragraphs: ['附属1', '附属2'] },
+    { id: 'n2', text: '乙', paragraphs: ['附属段1', '附属段2'] },
     { id: 'n3', text: '丙', summaryData: [{ id: 's1', memberIds: [], text: '' }] },
     { id: 'n4', text: '丁', linkLines: [{ id: 'l1', toNodeId: 'n2' }] },
     { id: 'n5', text: '戊', paragraphs: [''], summaryData: [{}], linkLines: [{}] },
@@ -85,10 +85,10 @@ console.log('\n=== ④ the memo content really lands in the "body", not in attri
 {
   // kramdown is "the final form written into the document" — a paragraph must be an **independent body line**
   const kd: string = treeToKramdown(
-    [{ id: 'n1', modified: 0, text: '<span>甲</span>', paragraphs: ['备注内容'], children: [] }],
+    [{ id: 'n1', modified: 0, text: '<span>甲</span>', paragraphs: ['备注文本一'], children: [] }],
     { docTitle: 'T' },
   );
-  check('★ the paragraph is written as a body line', kd.includes('备注内容'), kd);
+  check('★ the paragraph is written as a body line', kd.includes('备注文本一'), kd);
   check('★ it is not written as any attribute', !/memo=|custom-/.test(kd), kd);
 
   const back: OutlineNode[] = kramdownToTree(kd);
@@ -102,7 +102,7 @@ console.log('\n=== ④ the memo content really lands in the "body", not in attri
   const got = flat.find((n) => (n.text ?? '').includes('甲'))?.paragraphs;
   // the parser wraps plain text in `<span>` (isomorphic to the `text` field), so strip the tags before comparing
   const plain = (a?: string[]): string[] => (a ?? []).map((x) => x.replace(/<[^>]*>/g, ''));
-  check('★ the paragraph survives the round trip', JSON.stringify(plain(got)) === JSON.stringify(['备注内容']), JSON.stringify(got));
+  check('★ the paragraph survives the round trip', JSON.stringify(plain(got)) === JSON.stringify(['备注文本一']), JSON.stringify(got));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

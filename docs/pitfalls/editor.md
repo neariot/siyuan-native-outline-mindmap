@@ -185,8 +185,8 @@ when you add a field, grep for whether it is passed while you are there.
 
 ### 6.9g After "Expand as sub-document" the node text is duplicated
 
-**Symptom** (2026-10-08): after expanding "甲分支" the mind map node shows
-**"甲分支 甲分支"**; the line in the SiYuan body reads `甲分支 ((id '甲分支'))`.
+**Symptom** (2026-10-08): after expanding "分支一" the mind map node shows
+**"分支一 分支一"**; the line in the SiYuan body reads `分支一 ((id '分支一'))`.
 
 **Cause**: both places **concatenate** instead of **replacing**.
 
@@ -276,10 +276,10 @@ then Ctrl, and only last set the new anchor.
 ### 6.9w A plain click does not clear the selection -- the caret and "N selected" say two different things
 
 **Symptom** (2026-10-08): after Ctrl-selecting "甲" and "乙", **plain-clicking "丁"**
-(to edit it) -- 甲乙 **are still highlighted** and the batch toolbar still says "2 selected",
+(to edit it) -- 节点一/节点二 **are still highlighted** and the batch toolbar still says "2 selected",
 while the caret is already inside 丁. Confirmed by screenshot (`.tmp/stale-after-click.png`).
 
-The user sees **a set of self-contradictory states**: I want to edit 丁 while the UI says 甲乙 are selected.
+The user sees **a set of self-contradictory states**: I want to edit 丁 while the UI says 节点一/节点二 are selected.
 
 **Cause**: the plain-click branch of `onRowClick` only does `setAnchor(id)` and **does not clear `selected`**.
 (this is the branch added along with the `anchor` fix in the previous round -- back then I only thought "let Shift have an anchor to use",

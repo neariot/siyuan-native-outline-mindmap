@@ -39,10 +39,10 @@ check('empty text does not carry the ariaLabel class (so SiYuan does not run a p
 check('empty text gives an empty aria-label', c['aria-label'] === '');
 
 // ── rich-text tooltip ──────────────────────────────────────────────
-const h = tooltipWithHint('点击', '打开菜单');
+const h = tooltipWithHint('菜单项一', '菜单项二');
 check('the hint is wrapped in the grey span SiYuan expects',
-  h === "点击 <span class='ft__on-surface'>打开菜单</span>", h);
-check('with no hint it returns the text unchanged', tooltipWithHint('点击', '') === '点击');
+  h === "菜单项一 <span class='ft__on-surface'>菜单项二</span>", h);
+check('with no hint it returns the text unchanged', tooltipWithHint('菜单项一', '') === '菜单项一');
 
 // ── class is not overwritten: an existing composite class is passed in ───────────────────────
 const d = tooltip('x', 'dock-btn add-btn');

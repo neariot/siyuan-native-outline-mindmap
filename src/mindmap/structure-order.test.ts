@@ -109,9 +109,9 @@ console.log('\n⑤ no two options may render identically (measured: treeRight �
     ({ id, text: `<span>${text}</span>`, children, modified: 0 });
   const tree: OutlineNode[] = [
     N('root', '根', [
-      N('a', '甲', [N('a1', '甲一'), N('a2', '甲二')]),
+      N('a', '甲', [N('a1', '节点一'), N('a2', '节点二')]),
       N('b', '乙'),
-      N('c', '丙', [N('c1', '丙一'), N('c2', '丙二')]),
+      N('c', '丙', [N('c1', '节点十'), N('c2', '节点十一')]),
     ]),
   ];
 

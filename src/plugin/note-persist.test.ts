@@ -75,7 +75,7 @@ console.log('=== Defect 3: the write-merge fingerprint must include attached par
 {
   // only the attached paragraphs change, the body stays the same -- before the fix the fingerprints matched and the catch-up write was skipped
   const before: Node[] = [{ id: 'n1', text: '甲', paragraphs: ['备'] }];
-  const after: Node[] = [{ id: 'n1', text: '甲', paragraphs: ['备注内容ABC'] }];
+  const after: Node[] = [{ id: 'n1', text: '甲', paragraphs: ['备注文本一ABC'] }];
 
   check(
     '★ the fingerprint includes paragraphs → a "only the paragraphs changed" difference is detected',

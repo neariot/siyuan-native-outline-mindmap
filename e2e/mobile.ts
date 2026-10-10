@@ -137,7 +137,7 @@ export async function clickMobileBarAction(page: Page, action: MobileBarAction):
       selector = "button[title*='切换待办状态'], button[aria-label*='切换待办状态']";
       break;
     case 'note':
-      selector = "button[title*='添加/切换备注'], button[aria-label*='添加/切换备注']";
+      selector = "button[title*='添加/切换备注一'], button[aria-label*='添加/切换备注一']";
       break;
     case 'h1':
       selector = "button[title*='标题1'], button[aria-label*='标题1']";

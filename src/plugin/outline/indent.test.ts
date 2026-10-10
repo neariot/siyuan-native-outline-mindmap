@@ -129,7 +129,7 @@ console.log('top-level filtering (nested items in a multi-selection must not be 
 {
   const t = [N('A')];
   check('empty selection -> empty', topLevelSelected(t, []).length === 0);
-  check('nonexistent id -> empty', topLevelSelected(t, ['不存在']).length === 0);
+  check('nonexistent id -> empty', topLevelSelected(t, ['空节点一']).length === 0);
 }
 
 // ──────────────────────────────────────────────────────────────────

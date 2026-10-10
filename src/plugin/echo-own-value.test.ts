@@ -37,19 +37,19 @@ console.log('Intermediate-state echoes of incremental typing:');
   g.endApply([BLOCK], vals);
   // the UI has already moved on to 'Fast1', but the echo brings back the earlier 'Fast'
   check("our own earlier intermediate state '快' → recognised as an echo", g.isOwnValue(BLOCK, '快'), true);
-  check("someone else's value '被外部改了' → not an echo", g.isOwnValue(BLOCK, '被外部改了'), false);
+  check("someone else's value '外部节点二' → not an echo", g.isOwnValue(BLOCK, '外部节点二'), false);
 }
 
 console.log('\nIntermediate states accumulated over several write-backs:');
 {
   const g = new EchoGuard(1500);
-  for (const v of ['快', '快速', '快速一']) {
+  for (const v of ['快', '节点三', '节点四']) {
     g.beginApply();
     g.endApply([BLOCK], new Map([[BLOCK, v]]));
   }
   check("the 1st intermediate state '快' is still recognised", g.isOwnValue(BLOCK, '快'), true);
-  check("the 2nd intermediate state '快速' is still recognised", g.isOwnValue(BLOCK, '快速'), true);
-  check("the final value '快速一' is recognised", g.isOwnValue(BLOCK, '快速一'), true);
+  check("the 2nd intermediate state '节点三' is still recognised", g.isOwnValue(BLOCK, '节点三'), true);
+  check("the final value '节点四' is recognised", g.isOwnValue(BLOCK, '节点四'), true);
   check("the external value 'XYZ' is not an echo", g.isOwnValue(BLOCK, 'XYZ'), false);
 }
 
@@ -68,10 +68,10 @@ console.log('\nnoteWrittenValues (registered **before** the write-back is sent):
   g.noteWrittenValues(new Map([[BLOCK, '快']]));
   check("a value registered before the request is sent is recognised as soon as the echo arrives", g.isOwnValue(BLOCK, '快'), true);
   // afterwards the UI moves on again and a new value is registered
-  g.noteWrittenValues(new Map([[BLOCK, '快速一']]));
+  g.noteWrittenValues(new Map([[BLOCK, '节点四']]));
   check('the earlier intermediate state is still recognised (nothing is cleared)', g.isOwnValue(BLOCK, '快'), true);
-  check('the new value is recognised too', g.isOwnValue(BLOCK, '快速一'), true);
-  check('an external value is still not recognised', g.isOwnValue(BLOCK, '外部改的'), false);
+  check('the new value is recognised too', g.isOwnValue(BLOCK, '节点四'), true);
+  check('an external value is still not recognised', g.isOwnValue(BLOCK, '外部节点一'), false);
 }
 
 console.log('\nWith no values passed (the old calling style) nothing should be misjudged:');
@@ -79,7 +79,7 @@ console.log('\nWith no values passed (the old calling style) nothing should be m
   const g = new EchoGuard(1500);
   g.beginApply();
   g.endApply([BLOCK]); // no values given
-  check('no value registered → nothing counts as an echo', g.isOwnValue(BLOCK, '任意'), false);
+  check('no value registered → nothing counts as an echo', g.isOwnValue(BLOCK, '示例一'), false);
 }
 
 console.log('\nAfter expiry it is no longer treated as an echo:');

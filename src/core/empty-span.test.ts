@@ -64,8 +64,8 @@ const buildParagraphDom = (html: string): string =>
 {
   check(
     '★ a span with text is kept as-is',
-    htmlToSiyuanDom('<span>橙子</span>') === '<span>橙子</span>',
-    `got=${JSON.stringify(htmlToSiyuanDom('<span>橙子</span>'))}`,
+    htmlToSiyuanDom('<span>标签一</span>') === '<span>标签一</span>',
+    `got=${JSON.stringify(htmlToSiyuanDom('<span>标签一</span>'))}`,
   );
   check(
     '★ a styled span gains data-type="text" and keeps its style',

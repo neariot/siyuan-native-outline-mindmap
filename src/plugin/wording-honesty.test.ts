@@ -144,7 +144,7 @@ console.log('\nthe criterion itself is valid (proving it can fail, rather than a
     const hasEn = /full\s*screen|fullscreen/i.test(val);
     return hasZh || hasEn;
   };
-  check('★ the detection logic recognises the bad wording', probe('适应全屏画布'));
+  check('★ the detection logic recognises the bad wording', probe('全屏画布'));
   check('★ the detection logic recognises "Full screen"', probe('Full screen'));
   check('the detection logic does not false-positive on normal wording', !probe('适应画布（缩放至刚好显示全部节点）'));
   check('the detection logic does not false-positive on Fit to canvas', !probe('Fit to canvas'));

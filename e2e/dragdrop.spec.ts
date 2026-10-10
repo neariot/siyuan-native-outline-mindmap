@@ -37,9 +37,9 @@ import {
  *   is used as the criterion, before and after are **identical**, the test still passes, and it looks like "the drag did nothing".
  *   The criterion has to be the level, not the text. The drop point must also be at the row's upper or lower edge, never dead center.
  *
- *   Measured control case (甲/甲一/乙/丙, dragging "丙" onto the exact middle of "甲"):
- *     before x: 甲=1161 甲一=1188 乙=1161 丙=1161
- *     after  x: 甲=1161 甲一=1188 乙=1188 丙=1161   ← 乙 moved one level deeper
+ *   Measured control case (甲/节点一/乙/丙, dragging "丙" onto the exact middle of "甲"):
+ *     before x: 甲=1161 节点一=1188 乙=1161 丙=1161
+ *     after  x: 甲=1161 节点一=1188 乙=1188 丙=1161   ← 乙 moved one level deeper
  *     SiYuan's kramdown confirms that "乙" moved under "甲" as well.
  *
  *   **Lesson**: when asserting a change in a tree structure, a flat text list is **blind** ——
@@ -226,7 +226,7 @@ test('dropping a node onto itself changes nothing', async ({ page }) => {
    * As measured: **"drop onto itself" only reaches ①**,
    * delete ② entirely and that test **stays green** —— it never touches ② at all.
    * And ② is the only guard that blocks "ancestor → descendant": once it is deleted,
-   * dragging "甲" onto "甲一" turns the tree into `乙 / 甲 / 甲一`
+   * dragging "甲" onto "节点一" turns the tree into `乙 / 甲 / 节点一`
    * (甲 jumps to the top level together with its child), and **a cycle really is created**.
    *
    * ⇒ Each guard needs **its own test**, otherwise deleting one makes no test complain.
@@ -254,7 +254,7 @@ test('dropping a node onto itself changes nothing', async ({ page }) => {
     // The kernel must not move either —— a UI that stays put while the data changes is just as bad
     const kd = await api.call('/api/block/getBlockKramdown', { id: docId });
     const body = String((kd.data as { kramdown?: string })?.kramdown ?? '');
-    expect(body, 'the content in the kernel should not be lost').toContain('甲一');
+    expect(body, 'the content in the kernel should not be lost').toContain('节点一');
   });
 
 /**

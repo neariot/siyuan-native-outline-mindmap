@@ -9,6 +9,10 @@ a file nobody reads might as well not exist.
 ## 1. Hard rules
 
 - No `/tmp`. Scratch files go in `.tmp/<task>/` inside the project (gitignored). Logs go in `.logs/`.
+- **Never `pkill -f <pattern>` from a command that contains the pattern.** `-f` matches the whole
+  command line, so the shell running it matches too and kills itself before doing anything ——
+  `pkill -f "run-e2e.py"` did exactly that, and the follow-up `pgrep -f` "still running" was the
+  same trap reporting itself. Check a log's age, or match a path only the target has.
 - **State lives outside the repository; scratch lives in `.tmp/`.** The isolated test instance —— a
   kernel plus a workspace, hundreds of megabytes, addressed by `.env`'s `TEST_INSTANCE_DIR` —— is
   state: inside `.tmp/` it made that directory impossible to delete, which is what `.tmp/` is for.
@@ -38,7 +42,7 @@ a file nobody reads might as well not exist.
   screenshot of their workspace. Not in code, comments, docs, tests, fixtures,
   examples, commit messages, or a log that gets committed. A real name is not a
   convenient sample, it is personal data, and a comment is the easiest place to
-  leak it (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `甲分支`).
+  leak it (`docs/pitfalls/privacy.md`). Invent examples (`Notebook A`, `分支一`).
   `python3 scripts/audit-privacy.py` checks this —— id-shaped and credential-shaped literals, plus a
   fixture that was copied from a live instance rather than invented. With `--live` it asks the running
   instance what its notebooks, ids, document titles and paths actually are and searches the tree for
@@ -90,6 +94,21 @@ quoting a product string; a fixture literal in a test file; prose quoting one), 
 `scripts/language-allowlist.txt` entries remain, for values observed from a running kernel that no static
 rule can decide. A **literal** in shipped code stays a finding even when it equals a catalogue value:
 hardcoding UI text is what i18n exists to prevent, so the fix is `t('<key>')`, never an exemption.
+
+**Chinese fixture text is a function label, never content.** A fixture names what a thing *is* —— a node,
+the second paragraph, a bold run —— so it cannot be mistaken for somebody's material and has nothing to
+copy. It may contain a noun for a thing the plugin deals with, or a role that tells two such things apart,
+and nothing else: not a verb, not a sentence, not a noun from somebody's subject matter. A label meaning
+"user interview" or "project background paragraph" is *content*, whatever language it is written in, and
+so is one meaning "the answer" or "the greeting" —— those are the fixtures to rename.
+
+`scripts/check-fixture-text.py` requires every Chinese fixture to be spelled with the words in
+`scripts/fixture-vocabulary.txt` —— which is where the words live, so this file does not repeat them ——
+exempts only by a stated rule (catalogue values, semantics, the language allowlist, one-character labels),
+and fails on a vocabulary entry nothing uses. ★ **A fixture that does not fit is renamed to fit; the
+vocabulary is never extended to make a finding go away.** Extending it turns that list into a description
+of whatever the tests happen to say, which is the same as having no rule at all (the same reasoning as
+"the fix is `t('<key>')`, never an exemption").
 
 **The agent speaks English to the user, always**, whatever language the user writes in —— replies,
 plans, progress notes, commit messages, and explanations. The only Chinese that may appear is the

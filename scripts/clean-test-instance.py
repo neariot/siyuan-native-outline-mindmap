@@ -6,7 +6,7 @@
 Every E2E case and every probe creates real documents and deletes them afterwards, but a case that
 fails, is interrupted, or is written before its cleanup exists leaves its document behind. After a day
 of experiments the isolated instance held **126** leftovers (`rp1-1791549676673`,
-`test-sql-lag-…`, `f6-…`, `E2E-导图结构测试`), which makes the instance a bad place to measure anything:
+`test-sql-lag-…`, `f6-…`, `E2E-结构节点测试`), which makes the instance a bad place to measure anything:
 "the index is slow" and "this query returns nothing" both get harder to interpret when 126 stale
 documents are in the same notebook, and the next run's cleanup becomes manual again.
 

@@ -37,7 +37,7 @@ const count = (html: string, t: string): number =>
 
 console.log('=== blank-line rule: never produce a blank line ===');
 {
-  const dom = treeToBlockDom([n('a', '根', ['附一', '附二'])]);
+  const dom = treeToBlockDom([n('a', '根', ['附属段一', '附属段二'])]);
   // ★ This is the core promise of this module: the DOM must not contain blank lines used for separation
   check('DOM contains no consecutive newlines (no blank line)', !/\n\s*\n/.test(dom), JSON.stringify(dom.slice(0, 120)));
   check('DOM contains no newline at all', !dom.includes('\n'));
@@ -45,9 +45,9 @@ console.log('=== blank-line rule: never produce a blank line ===');
 
 console.log('=== paragraphs map one to one ===');
 {
-  const dom = treeToBlockDom([n('a', '根', ['附一', '附二', '附三'])]);
+  const dom = treeToBlockDom([n('a', '根', ['附属段一', '附属段二', '附属段三'])]);
   check('1 first paragraph + 3 attachment paragraphs = 4 NodeParagraph', count(dom, 'NodeParagraph') === 4, String(count(dom, 'NodeParagraph')));
-  check('paragraph order is correct', dom.indexOf('根') < dom.indexOf('附一') && dom.indexOf('附一') < dom.indexOf('附二') && dom.indexOf('附二') < dom.indexOf('附三'));
+  check('paragraph order is correct', dom.indexOf('根') < dom.indexOf('附属段一') && dom.indexOf('附属段一') < dom.indexOf('附属段二') && dom.indexOf('附属段二') < dom.indexOf('附属段三'));
 }
 
 console.log('=== hierarchy is complete (NodeList > NodeListItem > NodeParagraph) ===');
@@ -74,7 +74,7 @@ console.log('=== empty paragraph / empty node ===');
   check('an empty attachment paragraph still produces NodeParagraph', count(emptyPara, 'NodeParagraph') === 2);
   check('an empty paragraph is filled with a zero-width placeholder', emptyPara.includes('\u200b'));
 
-  const emptyNode = treeToBlockDom([n('a', '', ['空节点附'])]);
+  const emptyNode = treeToBlockDom([n('a', '', ['空节点附属'])]);
   check('an empty node still produces NodeParagraph', count(emptyNode, 'NodeParagraph') === 2);
   check('an empty first paragraph is also filled with a placeholder', (emptyNode.match(/\u200b/g) ?? []).length >= 1);
 }
@@ -82,14 +82,14 @@ console.log('=== empty paragraph / empty node ===');
 console.log('=== nesting ===');
 {
   const dom = treeToBlockDom([
-    n('a', '根', ['根附'], [n('b', '子', ['子附'], [n('c', '孙', ['孙附'])])]),
+    n('a', '根', ['根附属'], [n('b', '子', ['子附属'], [n('c', '孙', ['孙附属'])])]),
   ]);
   check('3 levels of nesting → 3 NodeList', count(dom, 'NodeList') === 3, String(count(dom, 'NodeList')));
   check('3 levels of nesting → 3 NodeListItem', count(dom, 'NodeListItem') === 3);
   check('3 levels of nesting → 6 NodeParagraph', count(dom, 'NodeParagraph') === 6, String(count(dom, 'NodeParagraph')));
   check('order: root → root-attachment → child → child-attachment → grandchild → grandchild-attachment',
-    dom.indexOf('根附') < dom.indexOf('子') &&
-    dom.indexOf('子附') < dom.indexOf('孙'));
+    dom.indexOf('根附属') < dom.indexOf('子') &&
+    dom.indexOf('子附属') < dom.indexOf('孙'));
 }
 
 console.log('=== sibling nodes ===');

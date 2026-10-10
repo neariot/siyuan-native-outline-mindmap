@@ -22,9 +22,9 @@ const check = (name: string, cond: boolean): void => {
 
   // 2. b was edited in the mind map (the local value changed but the write-back has not finished → the baseline is still the old value)
   //    meanwhile the outside edited b too
-  const isConflict = c.check('b', '导图侧的乙', '思源的乙');
+  const isConflict = c.check('b', '导图侧节点', '内核侧节点');
   check('★ local diverged from the baseline + external change → conflict', isConflict);
-  c.record({ nodeId: 'b', blockId: 'bb', mine: '导图侧的乙', theirs: '思源的乙', at: 1 });
+  c.record({ nodeId: 'b', blockId: 'bb', mine: '导图侧节点', theirs: '内核侧节点', at: 1 });
   check('★ the conflict is recorded and the UI would show "1 item"', c.list().length === 1);
 
   // 3. The user deletes the conflicting node
@@ -48,9 +48,9 @@ const check = (name: string, cond: boolean): void => {
   c.noteAllSynced([{ id: 'a', text: '甲' }, { id: 'b', text: '乙' }]);
   c.forget(['b']);
   // a still has a baseline → the external change is accepted
-  check('forget does not affect the baseline of other nodes', !c.check('a', '甲', '外部甲'));
+  check('forget does not affect the baseline of other nodes', !c.check('a', '甲', '外部节点三'));
   // b has no baseline → the local value no longer equals the baseline → treated as a conflict
-  check('after forget the node has no baseline, so the local value counts as diverged', c.check('b', '乙', '外部乙'));
+  check('after forget the node has no baseline, so the local value counts as diverged', c.check('b', '乙', '外部节点二'));
 }
 
 // ══ forgetting a node that does not exist is safe ══
@@ -99,7 +99,7 @@ const check = (name: string, cond: boolean): void => {
   );
 
   // t1: an external value arrives while the write-back is in flight (writeInFlight=true)
-  const isConflict = c.check('b', '导图', '外部改的', true);
+  const isConflict = c.check('b', '导图', '外部节点一', true);
   check('★★ write-back in flight + external change → judged a conflict (otherwise it is silently overwritten)', isConflict);
 
   // Control: with the write-back **not in flight**, the same values must be judged "no local intent, accept the external change"
@@ -108,7 +108,7 @@ const check = (name: string, cond: boolean): void => {
   c2.noteSynced('b', '导图');
   check(
     'control: write-back not in flight → the external change is accepted (no false positive)',
-    c2.check('b', '导图', '外部改的', false) === false,
+    c2.check('b', '导图', '外部节点一', false) === false,
   );
 }
 

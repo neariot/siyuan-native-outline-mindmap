@@ -54,9 +54,6 @@ console.log('\n=== §115 padding makes auto-scroll overshoot ===');
   check('★★★ at the very bottom **no node can take the drop** ⇒ the drop hint disappears', trace.every((x) => x.b < 40 + 1) === false || trace[trace.length - 1].b < 0);
 
   // root cause: padding-bottom reserves room for the keyboard bar
-  const padding = 'max(380px, 60vh)';
-  check(`★ root cause: .outline has padding-bottom: ${padding}`, padding.includes('380px'));
-
   // ★ the decision uses the last node's position **before scrolling**, under the condition `lastBottom < bottomLimit`
   //   —— "the last node is already **above** the bottom line (pushed out)" means bounce back.
   const guard = (dy: number, lastBottom: number, bottomLimit: number, before: number): number =>

@@ -36,7 +36,7 @@ function enterZoom(props: OutlinerProps, id: string): void {
 
 /** Simulates whether mount.ts passes zoom props when rendering Outliner */
 function renderOutliner(withZoomProps: boolean): OutlinerProps {
-  const p: OutlinerProps = { nodes: ['甲', '甲一', '甲二', '乙'] };
+  const p: OutlinerProps = { nodes: ['甲', '节点一', '节点二', '乙'] };
   if (withZoomProps) {
     p.zoomId = null;
     p.onZoomChange = () => {};
@@ -69,7 +69,7 @@ console.log('=== §96 zoom silently fails when props are not passed ===');
     const zoomNode = zoomId ? all.find((x) => x === zoomId) : null;
     return zoomNode ? [zoomNode] : all;
   };
-  const all = ['甲', '甲一', '甲二', '乙'];
+  const all = ['甲', '节点一', '节点二', '乙'];
   check('not wired (zoomId=undefined) -> always shows all nodes', displayed(undefined, all).length === 4);
   check('wired and zoomId="甲" -> shows only the "甲" subtree', displayed('甲', all).join(',') === '甲');
   check('wired and zoomId=null -> shows everything', displayed(null, all).length === 4);
@@ -109,16 +109,16 @@ function changeTitleNew(d: DocState, next: string): DocState {
 
 console.log('\n=== §97 The title must be synced in both places ===');
 {
-  const init: DocState = { docName: '标题焦点', heading: '标题焦点' };
+  const init: DocState = { docName: '标题二', heading: '标题二' };
   check('initially the two agree', init.docName === init.heading);
 
-  const old1 = changeTitleOld(init, '标题焦点XYZ');
-  check('★ before the fix: looks fine right after the change (the UI reads state)', old1.docName === '标题焦点XYZ');
-  check('★ before the fix: after reopening, the heading block overwrites it with the old value -> the title is "lost"', titleOnLoad(old1) === '标题焦点');
+  const old1 = changeTitleOld(init, '标题二XYZ');
+  check('★ before the fix: looks fine right after the change (the UI reads state)', old1.docName === '标题二XYZ');
+  check('★ before the fix: after reopening, the heading block overwrites it with the old value -> the title is "lost"', titleOnLoad(old1) === '标题二');
   check('★ before the fix: the two diverge permanently', old1.docName !== old1.heading);
 
-  const nu = changeTitleNew(init, '标题焦点XYZ');
-  check('after the fix: reopening still keeps the new title', titleOnLoad(nu) === '标题焦点XYZ');
+  const nu = changeTitleNew(init, '标题二XYZ');
+  check('after the fix: reopening still keeps the new title', titleOnLoad(nu) === '标题二XYZ');
   check('after the fix: the two stay consistent', nu.docName === nu.heading);
 }
 {

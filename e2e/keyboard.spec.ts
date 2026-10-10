@@ -84,7 +84,7 @@ test('editing the text in the editor and saving really changes the node content'
   const editor = page.locator('.mm-edit-input');
   await expect(editor).toBeVisible({ timeout: 5_000 });
 
-  const marker = '改过的名字';
+  const marker = '标题三';
   await editor.fill(marker);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(900);

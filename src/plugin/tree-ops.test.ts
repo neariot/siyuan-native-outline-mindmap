@@ -246,7 +246,7 @@ const ids = (...xs: string[]): Set<string> => new Set(xs);
   console.log('collapse: nothing changes when the target is not found');
   const t = [N('a', [N('a1')])];
   const before = JSON.stringify(t);
-  const n = toggleCollapse(t, '不存在', true);
+  const n = toggleCollapse(t, '空节点一', true);
   check('returns 0', n === 0);
   check('★ the tree is completely unchanged (no node is touched by mistake)', JSON.stringify(t) === before);
 }

@@ -110,13 +110,6 @@ console.log('\n=== Methodology: every probe is green but the store changed → s
     '★★ yet the 子T block **completely vanished** from the store ⇒ the culprit is inside the kernel',
     pluginIsInnocent && allGreen.deletions === false,
   );
-
-  // The reverse: the wrong investigation direction must be recorded too, to avoid repeating it
-  const wrongHypothesis = 'dump blockMap 看两个节点是否指向同一个块';
-  check(
-    '★ the mistaken hypothesis this round disproved: the two block IDs are actually **indeed different**',
-    wrongHypothesis.includes('同一个块'),
-  );
 }
 
 console.log('\n=== The trade-off: the insert only has to avoid data loss, the position is left to moveNodes ===');

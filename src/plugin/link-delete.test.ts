@@ -59,11 +59,11 @@ console.log('\n=== Fix: filter by id, drop the field when empty ===');
 
 console.log('\n=== Write-back attribute format (measured) ===');
 {
-  const raw = '[{"id":"EMeWnSFiRi","toNodeId":"20261006001246-qsv4jv1","dashed":true,"label":"测试连线"}]';
+  const raw = '[{"id":"EMeWnSFiRi","toNodeId":"20261006001246-qsv4jv1","dashed":true,"label":"分支测试"}]';
   const parsed: LinkLine[] = JSON.parse(raw);
   check('★ the value is a JSON array', Array.isArray(parsed));
   check('★ each entry has id / toNodeId / dashed', !!parsed[0].id && !!parsed[0].toNodeId && parsed[0].dashed === true);
-  check('★ label is written only when present (an empty label does not stuff in an empty string)', parsed[0].label === '测试连线');
+  check('★ label is written only when present (an empty label does not stuff in an empty string)', parsed[0].label === '分支测试');
   check('★ toNodeId is in **SiYuan block ID format**', /^\d{14}-[0-9a-z]{7}$/.test(parsed[0].toNodeId));
 }
 

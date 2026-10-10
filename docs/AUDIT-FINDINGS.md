@@ -88,7 +88,7 @@ conclusion to draw from a complete-looking list of findings.
 ### scripts-gates
 
 - **high · test-quality** `scripts/audit-language.py:1061`  
-  The auditor's own selftest is RED: its source carries a CJK literal ('测试连线' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
+  The auditor's own selftest is RED: its source carries a CJK literal ('分支测试' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
 
 ### scripts-infra
 

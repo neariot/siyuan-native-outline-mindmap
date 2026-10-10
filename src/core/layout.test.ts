@@ -292,7 +292,7 @@ console.log('\nshapes: 7 of them, and unknown input has a definite fallback');
   // The fallback value is underline (following the official globalShape), not roundedRect.
   // This does not hardcode the concrete value; it asserts that "the fallback result is itself a valid shape and is stable" ——
   // which one exactly is a product decision (it may change again), but it **must be definite and valid**.
-  const fallback = normalizeShape('不存在的形状');
+  const fallback = normalizeShape('空节点二');
   check('★ an unknown shape has a definite fallback (not undefined)', typeof fallback === 'string' && fallback.length > 0);
   check('★ the fallback value itself is a valid shape', normalizeShape(fallback) === fallback);
   check('undefined falls back the same way as an unknown value', normalizeShape(undefined) === fallback);
@@ -309,7 +309,7 @@ console.log('\nshapes: 7 of them, and unknown input has a definite fallback');
 console.log('\nlayout: all 6 structures produce valid coordinates');
 
 {
-  const tree = [N('root', '根', [N('a', '甲'), N('b', '乙', [N('b1', '乙一')])])];
+  const tree = [N('root', '根', [N('a', '甲'), N('b', '乙', [N('b1', '节点八')])])];
   const structures: MmStructure[] = ['balanced', 'right', 'left', 'org', 'timeline'];
 
   for (const s of structures) {
@@ -353,7 +353,7 @@ console.log('\nlayout: all 6 structures produce valid coordinates');
 
 {
   console.log('  a collapsed subtree does not appear in the layout');
-  const tree = [N('root', '根', [N('a', '甲', [N('a1', '甲一')])])];
+  const tree = [N('root', '根', [N('a', '甲', [N('a1', '节点一')])])];
   const open = layoutHorizontal(tree, 'right', new Set<string>());
   const collapsed = layoutHorizontal(tree, 'right', new Set(['a']));
   check('★ collapsing yields fewer nodes', collapsed.boxes.length < open.boxes.length);
@@ -471,7 +471,7 @@ console.log('\ntext measurement and runsOf');
 }
 
 {
-  const r = runsOf(N('x', '纯文本'));
+  const r = runsOf(N('x', '文本二'));
   check('runsOf returns an array', Array.isArray(r));
   check('plain text produces at least one run', r.length >= 1);
   check('does not throw: empty text', Array.isArray(runsOf(N('x', ''))));

@@ -20,21 +20,21 @@ import { request, type APIRequestContext } from '@playwright/test';
  * not just the set of coordinates, otherwise the two cannot be told apart (this pitfall was hit too).
  */
 
-const TEST_DOC_TITLE = 'E2E-导图结构测试';
+const TEST_DOC_TITLE = 'E2E-结构节点测试';
 
 /** 4 branches × 2 child nodes —— balanced and alternating assign them differently. */
-const TEST_DOC_MD = `- 甲分支
-  - 甲一
-  - 甲二
-- 乙分支
-  - 乙一
-  - 乙二
-- 丙分支
-  - 丙一
-  - 丙二
-- 丁分支
-  - 丁一
-  - 丁二
+const TEST_DOC_MD = `- 分支一
+  - 节点一
+  - 节点二
+- 分支二
+  - 节点八
+  - 节点九
+- 分支三
+  - 节点十
+  - 节点十一
+- 分支四
+  - 节点十二
+  - 节点十三
 `;
 
 export interface KernelApi {
@@ -70,7 +70,7 @@ export async function kernelApi(baseURL: string, token: string): Promise<KernelA
  *
  * ## Why it is not "reuse it if it exists"
  *
- * "Reuse it if it exists" gets polluted by probe scripts: a probe typed text into the shared document (`甲一XZZZ`),
+ * "Reuse it if it exists" gets polluted by probe scripts: a probe typed text into the shared document (`节点一XZZZ`),
  * and from then on every test that depends on the document's shape runs against a **document that has already been modified**.
  * The failures look all sorts of ways (wrong row count, wrong structure), while the real cause (the document is dirty)
  * is completely invisible —— which makes investigating extremely expensive.
@@ -194,7 +194,7 @@ export async function topLevelTexts(api: KernelApi, id: string): Promise<string[
 }
 
 /** Titles of the top-level branches in the test document (used to assert "which node is on which side"). */
-export const TOP_BRANCHES = ['甲分支', '乙分支', '丙分支', '丁分支'];
+export const TOP_BRANCHES = ['分支一', '分支二', '分支三', '分支四'];
 
 /** The test notebook (the fixture one; its name is invented, never a real one). */
 /**
@@ -255,9 +255,9 @@ export async function removeDoc(api: KernelApi, id: string): Promise<void> {
 
 /** Initial content of a temp document: a root + 2 branches, enough to test add/delete/edit. */
 export const TEMP_DOC_MD = `- 甲
-  - 甲一
+  - 节点一
 - 乙
-  - 乙一
+  - 节点八
 `;
 
 /**
@@ -270,7 +270,7 @@ export const TEMP_DOC_MD = `- 甲
  */
 export const SPECIAL_DOC_MD = `- SVR<alpha> & 阈值
   - x > 10 & y < 20
-  - 引号 "测试"
+  - 符号 "测试"
 - 正常分支
   - 普通子节点
 `;

@@ -103,7 +103,7 @@ After adding `page.on('dialog', d => d.accept())` everything was normal.
 
 Stepped on while writing the case above. SiYuan puts a listItem's block attributes **on the same line**:
 
-    - {: id="20261008212051-…" updated="…"}((20261008212051-… '甲分支'))
+    - {: id="20261008212051-…" updated="…"}((20261008212051-… '分支一'))
 
 My filter only stripped the "the whole line is an attribute" case, so the assertion saw the `{: id=…}` prefix,
 misread it as "there is still original text before the reference", and reported a **false failure** (the code was in fact right).
@@ -116,10 +116,10 @@ In the same probe, "the subdocument was not created" was also my misjudgement --
 looks "wrong" only relative to whether my expectation is right:
 
 - the parent document is at the notebook root (`hpath = /父文档`) -> `lastIndexOf('/') === 0`
-  -> `cut > 0` does not hold -> `dir = '/'` -> the subdocument lands at `/甲分支`.
+  -> `cut > 0` does not hold -> `dir = '/'` -> the subdocument lands at `/分支一`.
   **This is correct**: the parent is at the root, so the subdocument is naturally at the root too.
 - the parent document is in a subdirectory (`hpath = /目录/父文档`) -> `dir = '/目录/'`
-  -> the subdocument lands at `/目录/甲分支`, a sibling of the parent. Confirmed by measurement ✅.
+  -> the subdocument lands at `/目录/分支一`, a sibling of the parent. Confirmed by measurement ✅.
 
 **Lesson**: before reporting "some feature had no effect", first confirm that your **expectation** is right.
 A probe hardcoding an expectation does not mean the product has to satisfy it.

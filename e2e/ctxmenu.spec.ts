@@ -120,7 +120,7 @@ test('deleting a node also deletes its children and writes back to SiYuan', asyn
     // Verify the write back too: watching the UI change is not enough, the SiYuan document is the only source of truth
     const kd = await api.call('/api/block/getBlockKramdown', { id });
     const body = String((kd.data as { kramdown?: string })?.kramdown ?? '');
-    expect(body, 'the deleted branch should no longer be in the SiYuan document').not.toContain('甲分支');
+    expect(body, 'the deleted branch should no longer be in the SiYuan document').not.toContain('分支一');
     expect(body, 'the branch that was not deleted should still be there').toContain('乙');
   } finally {
     if (id) await removeDoc(api, id);
@@ -189,12 +189,12 @@ test('"Expand as sub-document" moves the child nodes away and does not duplicate
   try {
     // This one really creates a child document and really moves nodes, so it must use a temp document
     // It uses its own markdown: a branch "with 2 child nodes" is needed to move
-    id = await createTempDoc(api, notebook, '- 甲分支\n  - 甲一\n  - 甲二\n- 乙分支\n');
+    id = await createTempDoc(api, notebook, '- 分支一\n  - 节点一\n  - 节点二\n- 分支二\n');
     await openDoc(page, id);
     await toMindmapView(page);
 
     const before = await mindmapState(page);
-    await openCtxMenu(page, 1); // "甲分支", which has 2 child nodes
+    await openCtxMenu(page, 1); // "分支一", which has 2 child nodes
 
     // ★ A confirm handler is required (see the file header: headless browsers cancel by default)
     const dialogs: string[] = [];
@@ -217,21 +217,21 @@ test('"Expand as sub-document" moves the child nodes away and does not duplicate
 
     // ★★ The node text must **not be duplicated**.
     //   This pins down a real defect: the original implementation **appended** the reference after the original text,
-    //   and the reference rendered its own title, so the node showed up as "甲分支 甲分支".
+    //   and the reference rendered its own title, so the node showed up as "分支一 分支一".
     const nodeText = await page.evaluate(() => {
       const n = [...document.querySelectorAll('.mm-node')].find((x) =>
-        (x.textContent || '').includes('甲分支'),
+        (x.textContent || '').includes('分支一'),
       );
       if (!n) return null;
       const tspans = [...n.querySelectorAll('tspan')].map((t) => (t.textContent || '').trim());
       return { joined: tspans.join(''), count: tspans.length };
     });
-    expect(nodeText, 'the "甲分支" node should be found').not.toBeNull();
+    expect(nodeText, 'the "分支一" node should be found').not.toBeNull();
     const shown = nodeText!.joined;
-    const occurrences = shown.split('甲分支').length - 1;
+    const occurrences = shown.split('分支一').length - 1;
     expect(
       occurrences,
-      `"甲分支" should appear exactly 1 time in the node text, actual ${occurrences} (text: "${shown}")`,
+      `"分支一" should appear exactly 1 time in the node text, actual ${occurrences} (text: "${shown}")`,
     ).toBe(1);
 
     // What is written back to SiYuan must be right too: it should be a **pure reference**, not "original text + reference"
@@ -252,18 +252,18 @@ test('"Expand as sub-document" moves the child nodes away and does not duplicate
       refLine,
       `after stripping the block attributes, that reference line should be **only the reference**, and must not repeat the original text before it. Actual: "${refLine}"`,
     ).toMatch(/^-\s*\(\(/);
-    expect(body, 'the child nodes should no longer remain in the original document').not.toContain('甲一');
+    expect(body, 'the child nodes should no longer remain in the original document').not.toContain('节点一');
 
     // The child document was really created, and its **content was moved over** (not deleted without moving)
     const docs = await api.sql(
-      "SELECT id, hpath FROM blocks WHERE type='d' AND hpath LIKE '%甲分支%' LIMIT 5",
+      "SELECT id, hpath FROM blocks WHERE type='d' AND hpath LIKE '%分支一%' LIMIT 5",
     );
     expect(docs.length, 'a child document should have been created').toBeGreaterThan(0);
     for (const d of docs) created.push(String((d as { id: string }).id));
     const subKd = await api.call('/api/block/getBlockKramdown', { id: created[0] });
     const subBody = String((subKd.data as { kramdown?: string })?.kramdown ?? '');
-    expect(subBody, 'the child document should contain "甲一"').toContain('甲一');
-    expect(subBody, 'the child document should contain "甲二"').toContain('甲二');
+    expect(subBody, 'the child document should contain "节点一"').toContain('节点一');
+    expect(subBody, 'the child document should contain "节点二"').toContain('节点二');
   } finally {
     for (const c of created) await removeDoc(api, c);
     if (id) await removeDoc(api, id);

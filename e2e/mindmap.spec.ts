@@ -128,18 +128,18 @@ test('balanced structure splits the child nodes in half by weight', async ({ pag
   expect(left.length, JSON.stringify(sides)).toBe(2);
   expect(right.length, JSON.stringify(sides)).toBe(2);
   // Half by weight = the first half on the right, the second half on the left (split in document order)
-  expect(right).toEqual(['甲分支', '乙分支']);
-  expect(left).toEqual(['丙分支', '丁分支']);
+  expect(right).toEqual(['分支一', '分支二']);
+  expect(left).toEqual(['分支三', '分支四']);
 });
 
 test('alternate structure puts child nodes on both sides by parity', async ({ page }) => {
   await setStructure(page, 'timeline');
   const sides = await sidesByBranch(page);
   // Index 0/2 on the right, 1/3 on the left
-  expect(sides['甲分支']).toBe('right');
-  expect(sides['乙分支']).toBe('left');
-  expect(sides['丙分支']).toBe('right');
-  expect(sides['丁分支']).toBe('left');
+  expect(sides['分支一']).toBe('right');
+  expect(sides['分支二']).toBe('left');
+  expect(sides['分支三']).toBe('right');
+  expect(sides['分支四']).toBe('left');
 });
 
 /** Control group: applying the same structure twice must give a stable result —— proof the differences above are not jitter. */
@@ -204,10 +204,10 @@ test('fit button fits under every document shape', async ({ page }) => {
     siyuanToken(),
   );
   const shapes: Array<{ name: string; md: string; note: string }> = [
-    { name: 'wide and shallow', md: '- 甲\n  - 甲一\n  - 甲二\n  - 甲三\n  - 甲四\n- 乙\n  - 乙一\n- 丙\n', note: 'width hits the limit first' },
-    { name: 'narrow and deep', md: '- 甲\n  - 甲一\n    - 甲二\n      - 甲三\n        - 甲四\n          - 甲五\n', note: 'height hits the limit first' },
+    { name: 'wide and shallow', md: '- 甲\n  - 节点一\n  - 节点二\n  - 节点三\n  - 节点四\n- 乙\n  - 节点八\n- 丙\n', note: 'width hits the limit first' },
+    { name: 'narrow and deep', md: '- 甲\n  - 节点一\n    - 节点二\n      - 节点三\n        - 节点四\n          - 节点五\n', note: 'height hits the limit first' },
     { name: 'single node', md: '- 只有一个\n', note: 'very loose, tests the min(1,…) cap' },
-    { name: 'multi-level and multi-branch', md: '- 甲\n  - 甲一\n    - 甲一a\n    - 甲一b\n  - 甲二\n- 乙\n  - 乙一\n', note: 'there is volume in both directions' },
+    { name: 'multi-level and multi-branch', md: '- 甲\n  - 节点一\n    - 节点一a\n    - 节点一b\n  - 节点二\n- 乙\n  - 节点八\n', note: 'there is volume in both directions' },
   ];
 
   const failures: string[] = [];
@@ -943,7 +943,7 @@ test('a long node label wraps onto more lines instead of being elided', async ({
   const nb = await resolveTestNotebook(api);
   // A short literal repeated: the auditor caps fixture tokens at 12 characters, and the point here is
   // a label long enough to wrap, not the wording.
-  const long = '这是一个很长的节点标题'.repeat(2);
+  const long = '长节点标题'.repeat(2);
   const id = await createTempDoc(api, nb, `- ${long}\n  - 短标题\n`);
   try {
     await openDoc(page, id);

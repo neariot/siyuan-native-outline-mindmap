@@ -49,9 +49,9 @@ function render(html: string, fallback = '#000', maxWidth = 10000): string {
 // ---- basics: the color must land on the tspan fill ----
 // Original bug: red in SiYuan, still black in the mind map
 {
-  const out = render('<span data-type="text" style="color: var(--b3-font-color8);">未收录词</span>');
+  const out = render('<span data-type="text" style="color: var(--b3-font-color8);">段落一</span>');
   check('color → tspan fill', out.includes('fill="var(--b3-font-color8)"'), out);
-  check('colored node keeps its text', out.includes('未收录词'), out);
+  check('colored node keeps its text', out.includes('段落一'), out);
   // Key point: there must not be only a single plain-text node (that would mean falling back to one color)
   check('colored node is not bare text', out.includes('<tspan'), out);
 }
@@ -77,7 +77,7 @@ function render(html: string, fallback = '#000', maxWidth = 10000): string {
 }
 // bold + color must both take effect (inheritance stack)
 {
-  const out = render('<b><span style="color:red">粗红</span></b>');
+  const out = render('<b><span style="color:red">粗体文本四</span></b>');
   check('bold + color together', out.includes('font-weight="bold"') && out.includes('fill="red"'), out);
 }
 
@@ -117,7 +117,7 @@ function render(html: string, fallback = '#000', maxWidth = 10000): string {
 
 // ---- `<font color>` (execCommand output) must be colored too ----
 {
-  const out = render('<font color="#dc2a2a">红字</font>');
+  const out = render('<font color="#dc2a2a">文本四</font>');
   check('font color → fill', out.includes('fill="#dc2a2a"'), out);
 }
 
@@ -126,10 +126,10 @@ function render(html: string, fallback = '#000', maxWidth = 10000): string {
 //  cut, so a reader could not see the node's text at all.)
 {
   // 4 CJK characters at the layout's 15px each = 60px per line, so ten of them need three lines
-  const out = render('一二三四五六七八九十', '#000', 60);
+  const out = render('第一节点第二节点第三节点', '#000', 60);
   const shown = [...out.matchAll(/>([^<]+)</g)].map((m) => m[1]);
   check('a long label is broken into several lines', shown.length >= 3, out);
-  check('wrapping loses no character', shown.join('') === '一二三四五六七八九十', out);
+  check('wrapping loses no character', shown.join('') === '第一节点第二节点第三节点', out);
   check(
     'each line after the first repeats the anchor x (otherwise SVG continues inline)',
     (out.match(/x="0"/g) ?? []).length === shown.length - 1,
@@ -138,7 +138,7 @@ function render(html: string, fallback = '#000', maxWidth = 10000): string {
 }
 {
   // A run crossing a line break must keep its style on every line it appears on
-  const out = render('<span style="color:red">一二三四五六七八</span>', '#000', 30);
+  const out = render('<span style="color:red">第一到第八</span>', '#000', 30);
   check('a run crossing a line break keeps its color', (out.match(/fill="red"/g) ?? []).length >= 2, out);
 }
 {

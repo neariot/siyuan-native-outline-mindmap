@@ -56,7 +56,7 @@ function paraTitle(n: Pick<OutlineNode, 'paragraphs'>): string {
 console.log('=== when the indicator appears ===');
 check('no paragraphs field → not shown', !showParaBadge({}));
 check('empty array → not shown', !showParaBadge({ paragraphs: [] }));
-check('one paragraph → shown', showParaBadge({ paragraphs: ['有内容'] }));
+check('one paragraph → shown', showParaBadge({ paragraphs: ['内容一'] }));
 check('★ empty-string paragraph → still shown (otherwise the user cannot see that it exists)',
   showParaBadge({ paragraphs: [''] }));
 check('several paragraphs including an empty one → shown', showParaBadge({ paragraphs: ['甲', '', '丙'] }));
@@ -73,8 +73,8 @@ console.log('=== popover content ===');
   const r3 = paraLineText('\u200b');
   check('★ zero-width placeholder → treated as an empty paragraph', r3.isEmpty, `got=${JSON.stringify(r3.plain)}`);
 
-  const r4 = paraLineText('<span style="color:red">红</span>字');
-  check('rich text is reduced to plain text', r4.plain === '红字', `got=${JSON.stringify(r4.plain)}`);
+  const r4 = paraLineText('<span style="color:red">文本五</span>文本六');
+  check('rich text is reduced to plain text', r4.plain === '文本五文本六', `got=${JSON.stringify(r4.plain)}`);
 
   const r5 = paraLineText('  <b>粗</b>  ');
   check('leading and trailing whitespace is trimmed', r5.plain === '粗');
@@ -90,8 +90,8 @@ console.log('=== hover tooltip ===');
   const t2 = paraTitle({ paragraphs: [''] });
   check('★ an empty paragraph is shown as (empty), not as a blank line', t2.includes('1. (empty)'), JSON.stringify(t2));
 
-  const t3 = paraTitle({ paragraphs: ['', '有内容'] });
-  check('empty and non-empty paragraphs mixed', t3.includes('1. (empty)') && t3.includes('2. 有内容'), t3);
+  const t3 = paraTitle({ paragraphs: ['', '内容一'] });
+  check('empty and non-empty paragraphs mixed', t3.includes('1. (empty)') && t3.includes('2. 内容一'), t3);
 }
 
 // ---------------------------------------------------------------- ④ order preserved
@@ -115,7 +115,7 @@ console.log('=== order ===');
 console.log('=== hard-requirement regression: zero custom attributes ===');
 {
   const n: OutlineNode = {
-    id: 'a', modified: 1, text: '节点', paragraphs: ['附一', '附二'], children: [],
+    id: 'a', modified: 1, text: '节点', paragraphs: ['附属段一', '附属段二'], children: [],
   };
   const kd = treeToKramdown([n], { docTitle: 'T' });
   check('★ attached paragraphs introduce no custom-*', !/custom-/.test(kd), kd);
@@ -131,7 +131,7 @@ console.log('=== hard-requirement regression: zero custom attributes ===');
 
   // The first paragraph itself must also be native list-item text, not degraded into an attribute
   check('attached paragraphs land in the list-item body position (not an attribute)',
-    kd.includes('附一') && !/\{: [^}]*附一/.test(kd), kd);
+    kd.includes('附属段一') && !/\{: [^}]*附属段一/.test(kd), kd);
 }
 
 // ---------------------------------------------------------------- ⑥ draft conversion
@@ -264,7 +264,7 @@ console.log('=== insertion position and order regression ===');
     JSON.stringify(planOrder(['a','b'],['甲','','乙'])));
 
   check('0→2 paragraphs', JSON.stringify(planOrder([], ['甲', '乙'])) === JSON.stringify(['甲', '乙']));
-  check('3→1 paragraphs (truncation)', JSON.stringify(planOrder(['a','b','c'], ['只剩'])) === JSON.stringify(['只剩']));
+  check('3→1 paragraphs (truncation)', JSON.stringify(planOrder(['a','b','c'], ['内容二'])) === JSON.stringify(['内容二']));
   check('2→2 paragraphs (updated in place)', JSON.stringify(planOrder(['a','b'], ['甲','乙'])) === JSON.stringify(['甲','乙']));
 }
 

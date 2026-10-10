@@ -112,7 +112,7 @@ console.log('\nboth sides must give the same result for the same logical content
   // non-empty must agree too (fixing empty nodes must not break normal text)
   const textPairs: Array<[string, string]> = [
     ['<span>甲</span>', '<div contenteditable="true">甲</div>'],
-    ['<span>快速一</span>', '<div contenteditable="true">快速一</div>'],
+    ['<span>节点四</span>', '<div contenteditable="true">节点四</div>'],
   ];
   for (const [m, k] of textPairs) {
     const a = plainNodeText(m);
