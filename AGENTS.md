@@ -106,7 +106,9 @@ Without the user's explicit consent, do not:
 
 A local `git commit` during development is fine.
 
-**The source is not published.** The plugin is distributed as a packaged build attached to a Release
+**The source is not published.** The text of the distribution repository's README is kept at
+`docs/DISTRIBUTION-README.md`, so it is versioned rather than parked in scratch. The plugin is
+distributed as a packaged build attached to a Release
 (see the hard rule in section 1: nothing about a notebook the user works in may be published, and the
 safest way to keep that true is to publish the *build*, not the source). A distribution repository
 therefore holds a README and the packaged asset and nothing else, and the development checkout keeps
