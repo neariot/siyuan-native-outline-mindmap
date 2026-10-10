@@ -689,7 +689,7 @@ so it must not touch the workspace the user is in" now has a tool instead of a m
 ★ **Lesson**: `code:0` on the deploy and a green final verdict say nothing about *where* the mutation
 landed. Read the target list, not just the exit code.
 
-### 6.23 A test filter that is not understood runs everything, silently
+### 6.25 A test filter that is not understood runs everything, silently
 
 **Symptom.** `python3 scripts/run-e2e.py mindmap` was meant to run one suite. It ran the whole suite —— 98
 tests in 12 files, 19.5 minutes —— and the three failures it reported belonged to `ctxmenu`, `outline`

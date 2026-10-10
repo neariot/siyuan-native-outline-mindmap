@@ -468,7 +468,7 @@ Three separate traps, each of which fakes a verification:
 - Do not add a second, weaker criterion (a hand-written lint) for the same defect: it will disagree with
   the engine exactly where it matters, e.g. on `[data-theme=...]` appearing inside an attribute *value*.
 
-### 6.22 A character-count cap is not a layout: the label was elided while the box had room
+### 6.24 A character-count cap is not a layout: the label was elided while the box had room
 
 **Symptom.** Mind-map node labels were cut short and ended in `…`, so a reader could not see the node's
 text — including labels whose box was wide enough to show them.

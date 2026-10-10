@@ -1,6 +1,6 @@
 # Privacy: what must never reach this repository
 
-## 6.23 A real notebook name, used as a friendly example
+## 6.26 A real notebook name, used as a friendly example
 
 **Symptom.** A comment in `e2e/testdoc.ts` explained that a notebook the user is actually working in
 must not be a test target, and named one: *"a notebook the user is working in (such as X)"*. It read as
