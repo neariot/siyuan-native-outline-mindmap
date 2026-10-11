@@ -233,12 +233,12 @@ Measured after the fix: only **1** `同E`, the nesting `子T > 孙X` correct, st
 
 ### 1.10 Connector lines: no native carrier means no attribute is written —— and a reload is the only proof that a write-back landed
 
-**Observation** (measured, desktop instance, kernel 3.8.6): while connector lines were still being written out, the round trip was: select 2 nodes (`Shift+↓` in the outline) -> "+ Link" -> label `分支测试` -> written back. The outline then showed the 🔗 marker **2 times** (source and target), the mind map drew **1** dashed line with that label, and after a **full page reload** both the line and its attribute were still there (`custom-mubu-linklines` on the **source node's** listItem). After deleting the line: **0** dashed lines, the field dropped entirely, and it was still empty 8 seconds later.
+**Observation** (measured, desktop instance, kernel 3.8.6): while connector lines were still being written out, the round trip was: select 2 nodes (`Shift+↓` in the outline) -> "+ Link" -> label `分支一` -> written back. The outline then showed the 🔗 marker **2 times** (source and target), the mind map drew **1** dashed line with that label, and after a **full page reload** both the line and its attribute were still there (`custom-mubu-linklines` on the **source node's** listItem). After deleting the line: **0** dashed lines, the field dropped entirely, and it was still empty 8 seconds later.
 
-**Current state**: **no attribute is written for connector lines at all**. SiYuan has no native carrier for "a connection between two nodes", so the field is **session-local** view semantics —— neither read nor written (`MAPPING.md` 3.3, `ARCHITECTURE.md` §8); documents that still hold the old attribute remain readable.
+**Current state**: the private attribute is gone, and so is the feature. SiYuan has no native carrier for "a connection between two nodes", so the field was **removed from the model and the UI** (`MAPPING.md` 3.3, `ARCHITECTURE.md` §8) rather than left as a control whose result could not outlive the session; documents that still hold the old attribute remain readable.
 
 **Practice**: before adding an attribute, ask "is there a native carrier for this" (`PITFALLS.md` A1) —— a home-made attribute is invisible to search and backlinks and shows up only as an icon you have to open. When there is none, keep the value session-local and say so instead of inventing a carrier. ★★★ And verify every "it was written into SiYuan" claim by **reloading the page**: the in-memory tree survives no reload, so a UI-only check cannot tell the two apart —— the reload is the only evidence that a value is really in the document.
 
-**Test**: `src/plugin/link-delete.test.ts`
+**Test**: `e2e/outline.spec.ts` (the absence check —— no link control is offered, no `.mm-link` renders)
 
 ---

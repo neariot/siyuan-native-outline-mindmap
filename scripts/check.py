@@ -63,6 +63,15 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-unsaved-fields.py").is_file(),
     },
     {
+        # ★ A doc citing a test that no longer exists advertises coverage nothing provides (three entries
+        #   pointed at a deleted file), and a test that imports nothing cannot go red. The first fails, the
+        #   second prints -- see the module docstring for why it is a lower bound.
+        "name": "vacuous-tests",
+        "command": "python3 scripts/check-vacuous-tests.py",
+        "why": "every test a doc cites exists, and the tests that cannot go red are named",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-vacuous-tests.py").is_file(),
+    },
+    {
         "name": "docs-index",
         "command": "python3 scripts/check-docs-index.py",
         "why": "every entry docs/PITFALLS.md advertises really exists",

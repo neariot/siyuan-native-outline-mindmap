@@ -566,6 +566,42 @@ test.describe('multi-select and batch operations', () => {
     ).toHaveCount(1);
   });
 
+  test('★ a completed task survives reopening the document', async ({ page }) => {
+    // `taskStatus` is stored as SiYuan's native task marker, and *done* is the state at risk: creating a
+    // task makes a todo, so only the flip to done has to travel through the dedicated kernel call
+    // (`/api/block/updateTaskListItemMarker`). A plain block update does not move a task marker.
+    const api = await kernelApi(siyuanUrl(), siyuanToken());
+    let docId = '';
+    try {
+      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n');
+      await openDoc(page, docId);
+      await toOutlineView(page);
+
+      const box = page.locator('.taskbox input[type="checkbox"]').first();
+      await expect(box, 'the fixture should render exactly one task box').toBeVisible();
+      await box.click();
+      await expect(box, 'the box should read as checked after the click').toBeChecked();
+
+      // The kernel is the ground truth: the marker is what a reopen reads back.
+      await expect
+        .poll(async () => {
+          const res = await api.call('/api/export/exportMdContent', { id: docId });
+          return JSON.stringify(res.data ?? '');
+        }, { message: 'the kernel should record the task as done', timeout: 10000 })
+        .toContain('[x]');
+
+      // And the state has to survive reopening, which is the whole point: close, reload the page, reopen.
+      await page.reload();
+      await openDoc(page, docId);
+      await toOutlineView(page);
+      await expect(page.locator('.taskbox input[type="checkbox"]').first(),
+        'the completed state should still be there after reopening').toBeChecked();
+    } finally {
+      if (docId) await removeDoc(api, docId);
+      await api.dispose();
+    }
+  });
+
   test('★ the unsaved controls are gone: summary, link lines and the due date', async ({ page }) => {
     // Both were offered while being unable to survive a reload: `summaryData` / `linkLines` have no native
     // counterpart in SiYuan, so they lived only in the session's memory (docs/MAPPING.md 3.3). They are now

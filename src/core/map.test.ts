@@ -123,6 +123,16 @@ check('★ round trip: the hierarchy is exactly identical', shapeOf(back) === sh
 // Task state fidelity: located by **text** (the ID has changed)
 const n12out = flatOut.find((n) => /子2粗/.test(n.text));
 check('round trip: taskStatus', n12out?.taskStatus === 1, `got=${n12out?.taskStatus}`);
+// ★ Done is the state that can be lost, and the assertion above only ever covered to-do: a task is
+//   *created* as `[ ]`, so only the flip to `[x]` has to round-trip. (`npm run test:e2e` covers whether
+//   the kernel accepts that flip -- a plain block update does not move a task marker.)
+const doneTree: OutlineNode[] = [
+  { id: 'd1', modified: 1, text: '<span>待办节点</span>', taskStatus: 2, children: [] },
+];
+const doneKd = treeToKramdown(doneTree, { docTitle: 'D' });
+check('★ a completed task writes the native [x] marker', /\[x\]/.test(doneKd), doneKd);
+const doneBack = flatten(kramdownToTree(doneKd)).find((n) => /待办节点/.test(n.text));
+check('★ a completed task round-trips as done', doneBack?.taskStatus === 2, `got=${doneBack?.taskStatus}`);
 
 // Text fidelity (the bold one)
 check('round trip: bold text', !!n12out && /<b>子2粗<\/b>/.test(n12out.text), `got=${n12out?.text}`);

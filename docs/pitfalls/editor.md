@@ -79,7 +79,7 @@ so that only continuous typing enters the merge window.
 **Practice**: `Backspace` and `Delete` are a pair of reverse operations; changing one means looking at the other at the same time.
 At the time the `Backspace` branches were complete while `Delete` missed the non-end-of-line case.
 
-**Test**: `src/plugin/link-delete.test.ts`
+**Test**: `e2e/ctxmenu.spec.ts` (deleting a node deletes its children and writes back to SiYuan)
 
 ---
 

@@ -210,7 +210,7 @@ are one mistake with two faces.
 ### 4.7 The mind map draws connector lines, but the delete entry point was never wired
 
 **Symptom**: the mind map renders a connector as **1 dashed line carrying its label**
-(`分支测试` on the line, the same string as the `<title>` on hover), so the feature looks present and alive.
+(`分支一` on the line, the same string as the `<title>` on hover), so the feature looks present and alive.
 Clicking that line opens the delete confirmation -- and confirming does **nothing at all**:
 the dashed line is still there and the data under it has not moved, **still unchanged after 8 seconds**.
 No error, no warning; the user reports "clicking does nothing".
@@ -220,11 +220,11 @@ but `mount.ts` **never passed it** -- across the whole project only the retired 
 An optional prop plus optional chaining (`onDeleteLink?.(...)`) is a perfect silent failure:
 `undefined` -> nothing happens, and TypeScript accepts it because of the `?`.
 
-Measured (one connector line between two nodes, label `分支测试`):
+Measured (one connector line between two nodes, label `分支一`):
 
 ```
 mind map        1 dashed line, line data =
-                [{"id":"EMeWnSFiRi","toNodeId":"<anchor-id>","dashed":true,"label":"分支测试"}]
+                [{"id":"EMeWnSFiRi","toNodeId":"<anchor-id>","dashed":true,"label":"分支一"}]
                 and the outline shows the connector marker 2 times (source and target both marked)
 click delete -> still 1 dashed line, data unchanged; still unchanged after 8s      <- before the fix
 after the fix -> 0 dashed lines, the attribute reads `[]`; still `[]` after 8s
@@ -248,7 +248,7 @@ connector-line path, and it is where two independent wirings meet: **whether a l
 **whether clicking it works** are not the same wiring, so "I can see the line" is not evidence that
 the delete path exists.
 
-**Tests**: `src/plugin/link-delete.test.ts`
+**Tests**: `e2e/ctxmenu.spec.ts`
 
 ---
 

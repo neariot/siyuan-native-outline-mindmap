@@ -82,13 +82,11 @@ conclusion to draw from a complete-looking list of findings.
 
 - **high · test-quality** `src/plugin/edge-autoscroll.test.ts:30`  
   Every check in the file compares a literal the test just defined (or a local re-implementation of the shipped guard) with itself; nothing reads styles.css or Outliner.tsx, yet two ledger entries name this file as the test that freezes that behaviour.
-- **high · test-quality** `src/plugin/link-delete.test.ts:25`  
-  The '#55' block asserts the pre-fix state from two arrays written inside the test, so it can never go red and it now claims the opposite of the shipped code (mount.ts really does pass onDeleteLink).
 
 ### scripts-gates
 
 - **high · test-quality** `scripts/audit-language.py:1061`  
-  The auditor's own selftest is RED: its source carries a CJK literal ('分支测试' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
+  The auditor's own selftest is RED: its source carries a CJK literal ('分支一' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
 
 ### scripts-infra
 
@@ -521,8 +519,6 @@ conclusion to draw from a complete-looking list of findings.
   A corrupt keymap snapshot is reported as a missing one, and the 'the check works' control asserts a value it derived from the same map (and is silently skipped when the fixture has no ⌥⌘ key).
 - **low · docs** `src/plugin/kernel-side-effects.test.ts:4`  
   The authority for these tests is cited as a gitignored development diary, so the measured facts behind the assertions are unreadable to anyone else (the same citation is used across the plugin tests).
-- **low · docs** `src/plugin/link-delete.test.ts:60`  
-  The 'Write-back attribute format (measured)' block parses a JSON literal and asserts that literal's own fields, and its premise contradicts the ledger, which states that connector lines are no longer written to any attribute.
 
 ### plugin-tests-b
 
