@@ -47,25 +47,31 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **high · test-quality** `scripts/check-vacuous-tests.py`  
-  13 files are cited by `docs/**` as the test that freezes a behaviour, and each of them reaches
+- **high · test-quality** `scripts/check-vacuous-tests.py` (in progress: 16 → 11 citations)  
+  Files are cited by `docs/**` as the test that freezes a behaviour while reaching
   nothing at all: no import, no file read, no child process. Every assertion in them compares a literal
   the file itself wrote with another literal the file itself wrote, so no change to the product can turn
   any of them red. The tool could already list the files, but it exited 0 while doing so, so a document
-  could name one as its evidence and nothing objected; it now pairs the two and fails on it. Fixing a
-  file means making it read the product (the shipped function, or `src/styles.css` through postcss), the
-  way `edge-autoscroll.test.ts` now does.
+  could name one as its evidence and nothing objected; it now pairs the two and fails on it (the gate
+  reports the rest through `--hollow-advisory`).
 
+  **Fixed so far** (each: read the product, then red-prove it): `map-coverage-guard.test.ts` now calls
+  `mappingLooksIncomplete()`, exported from `src/siyuan/store.ts` next to the code that uses it;
+  `node-id-block-id.test.ts` and the new `src/siyuan/blockmap-anchor.test.ts` drive
+  `treeToBlockDom` → `parseDomToTree` and assert on the store's own tables; `ref-nav.test.ts` reads
+  `kramdownToHtml`/`htmlToKramdown` and the `openTab` call's arguments. `kernel-bugs.test.ts` was
+  **deleted** —— its cases asserted on stub functions written inside it, and its measured kernel facts
+  moved to `docs/kernel-api.md` §7.14 (the `openTab` 2×2) and §7.15 (operations that fail while reporting
+  success). That move is the pattern for the rest: a file that models the kernel must become either a
+  product-side check or a documented measurement, never a stub compared with itself.
+
+  Left:
   · `src/plugin/blockmap-namespace.test.ts`
-  · `src/plugin/kernel-bugs.test.ts`
   · `src/plugin/kernel-side-effects.test.ts`
-  · `src/plugin/map-coverage-guard.test.ts`
   · `src/plugin/mindmap-focus.test.ts`
   · `src/plugin/mindmap-reparent.test.ts`
-  · `src/plugin/node-id-block-id.test.ts`
   · `src/plugin/panel-escape-focus.test.ts`
   · `src/plugin/panel-focus.test.ts`
-  · `src/plugin/ref-nav.test.ts`
   · `src/plugin/single-child-list.test.ts`
   · `src/plugin/stale-mapping.test.ts`
   · `src/plugin/undo-first-edit.test.ts`
