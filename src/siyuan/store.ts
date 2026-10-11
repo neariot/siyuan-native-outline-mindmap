@@ -21,6 +21,28 @@ import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
 /**
+ * Whether an entry of the *previous* mapping read must be carried over into this one.
+ *
+ * ★ The index lags 1~3 seconds behind an insert, so a block this session created is simply not in the
+ *   result of the read that follows —— and dropping its mapping makes the node look new on the next
+ *   write-back, which **inserts it a second time** (defect #54, measured: `SiblingE` at 22:32:58 and again
+ *   at 22:33:15). Carrying over the entries we have seen with our own eyes, but only for blocks **we**
+ *   inserted, is what keeps a just-written node mapped without keeping a foreign block's stale mapping
+ *   alive forever.
+ *
+ * Both halves matter, so both are asserted: `current` (this read really lacked the key) **and** ownership
+ * (the block is one this session inserted).
+ */
+export function isUnseenButOurs(
+  current: Map<string, string>,
+  key: string,
+  blockId: string,
+  freshlyInserted: Set<string>,
+): boolean {
+  return !current.has(key) && freshlyInserted.has(blockId);
+}
+
+/**
  * The mappings that point at a block the index did not report —— candidates for "this block is dead".
  *
  * ★ Exported so its boundaries can be pinned, because both directions are destructive:
@@ -501,14 +523,16 @@ export class SiYuanStore {
         this.lastByBlock.set(child, key);
         this.lastByBlock.set(key, key);
       }
+      // The block id of an entry is its **value** in the first two tables (node → block) and its **key**
+      // in the reverse table (block → node) —— the rule itself is in `isUnseenButOurs`.
       for (const [k, v] of prevMap) {
-        if (!map.has(k) && this.freshlyInserted.has(v)) map.set(k, v);
+        if (isUnseenButOurs(map, k, v, this.freshlyInserted)) map.set(k, v);
       }
       for (const [k, v] of prevListItems) {
-        if (!this.lastListItems.has(k) && this.freshlyInserted.has(v)) this.lastListItems.set(k, v);
+        if (isUnseenButOurs(this.lastListItems, k, v, this.freshlyInserted)) this.lastListItems.set(k, v);
       }
       for (const [k, v] of prevByBlock) {
-        if (!this.lastByBlock.has(k) && this.freshlyInserted.has(k)) this.lastByBlock.set(k, v);
+        if (isUnseenButOurs(this.lastByBlock, k, k, this.freshlyInserted)) this.lastByBlock.set(k, v);
       }
       if (this.writeEpochOpen) {
         this.mapCacheDocId = docId;

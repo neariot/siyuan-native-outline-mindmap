@@ -29,7 +29,11 @@ This kind of pollution is temporarily masked by "replace everything" —— `loa
 and the correct paragraph blocks from SQL would wash the pollution away. As soon as a table is given "retain/merge" semantics, the pollution becomes permanent.
 → Before giving a table retain semantics, first confirm that all the values currently in it are clean.
 
-**Test**: `src/plugin/blockmap-namespace.test.ts`
+**Tests**: `src/plugin/blockmap-namespace.test.ts` reads the real `loadBlockMap` (a document produced by
+`treeToBlockDom`, read back by `parseDomToTree`) and asserts that every table is keyed by the node and
+resolves through `listItemOf()`/`byBlock()`, plus the retention rule `isUnseenButOurs()` —— "absent from this
+read **and** inserted by us" —— which the three tables share. `src/siyuan/blockmap-anchor.test.ts` covers the
+other half: which **kind** of block ID belongs in which table.
 
 ---
 
