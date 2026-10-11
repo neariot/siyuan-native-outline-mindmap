@@ -472,3 +472,29 @@ opening a second tab.
 **Tests**: `src/plugin/ref-nav.test.ts`
 
 ---
+
+### 6.9dd The plain left button cannot select across nodes -- each node is its own editing host
+
+**Symptom**: in the outline, dragging the left button over several rows selects the text of the node the
+drag started in and nothing else. "Select 甲, 乙 and 丙 with the mouse" needs Ctrl+click or Shift+click,
+and a text range cannot be dragged across rows.
+
+**Cause**: every row is a separate `contenteditable` host. A DOM `Range` ends at the host boundary, so
+selecting text across two nodes is not a matter of handling the mouse better —— the browser will not
+produce such a selection. The bullet is `draggable` and already owns the other left-button gesture on a
+row, and dragging the text is text selection. The one strip of the row no gesture owned was the gutter:
+the left padding of `.om-outline` (`.om-outline { padding: 0 32px }`), 32px of nothing left of the first
+bullet.
+
+**Practice**: the cross-node selection rectangle starts in the gutter, and the overlay is SiYuan's own
+shape rather than a new one —— one `.om-marquee-layer` holding one `.om-marquee` rectangle,
+`pointer-events: none`, mirroring `protyle-select__container` / `protyle-select`
+(`app/src/protyle/ui/initUI.ts`, `app/src/assets/scss/protyle/_protyle.scss`, whose comment says the
+rectangle must not intercept the mouse "to avoid `elementFromPoint` hitting itself"). Two details that
+only bite on a scroll container: the layer is `position: fixed` (an absolutely positioned overlay scrolls
+away with the text while the finger stays put), and the press that starts it is skipped when
+`clientX` is already inside `.om-outline`'s content box, or it would steal the text selection.
+
+**Tests**: `e2e/outline.spec.ts`
+
+---

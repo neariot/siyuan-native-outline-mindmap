@@ -14,6 +14,7 @@
 | `Alt+→` | **Focus into the current node (Zoom-in)** |
 | `Alt+←` | **Back to the parent level / all nodes (Zoom-out)** |
 | `↑` / `↓` | Previous / next node; `Shift` extends the selection |
+| Left-drag in the **gutter** (the blank strip left of the dots) | Draw a selection rectangle and select every node it crosses; click there without dragging to clear the selection |
 | `←` / `→` (at line start / end) | Jump to the previous / next node |
 | `Shift+Enter` | Enter / leave the description note |
 | `Ctrl+.` / `Alt+.` (Chinese keyboard: `。`) | Collapse / expand the current node |

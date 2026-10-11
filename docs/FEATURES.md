@@ -10,8 +10,8 @@
   back up, double-click the dot to focus; the breadcrumb at the top jumps
   straight to an ancestor
 - Collapse via the dot (with `Alt` for the whole subtree) / drag to one of three
-  drop zones / multi-select (`Ctrl`-click, `Shift`-range, `Ctrl+Shift+↑↓`) plus a
-  bulk-action bar
+  drop zones / multi-select (drag a rectangle in the gutter with the left button,
+  `Ctrl`-click, `Shift`-range, `Ctrl+Shift+↑↓`) plus a bulk-action bar
 - H1–H6 / three-state to-dos / **attached paragraphs** / colour and highlight /
   clear formatting
 - Hyperlinks / images (paste, drag in, or pick; stored in SiYuan assets) /

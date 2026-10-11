@@ -498,6 +498,69 @@ test.describe('multi-select and batch operations', () => {
     expect(await selectedTexts(page), 'Ctrl+clicking an already selected row should deselect it, leaving 1').toHaveLength(1);
   });
 
+  /**
+   * ★ The plain left button, dragged in the gutter, selects across nodes.
+   *
+   *   This is the gesture the product was missing: a left-drag over the **text** can only select text,
+   *   because every node is its own `contenteditable` host and a range cannot leave one —— so "select
+   *   甲, 乙 and 丙 at once with the mouse" needed Ctrl+click or Shift+click. The gutter (the left
+   *   padding of `.om-outline`) was the one strip of the row no other gesture owned: the bullet is
+   *   `draggable` and moves the node.
+   *
+   *   The rectangle is asserted while it is being dragged, not just afterwards: a case that only checks
+   *   the final selection cannot tell "it drew a rectangle and caught the rows" from "it selected them
+   *   some other way", and the overlay is the part the browser never produces by accident.
+   */
+  test('★ a left-drag in the gutter selects every node it crosses', async ({ page }) => {
+    const rows = page.locator('.node-row');
+    const n = await rows.count();
+    expect(n, 'the test document should have several rows').toBeGreaterThanOrEqual(4);
+
+    // The gutter is left of the first row's own edge, so ask the page where that is rather than
+    // assuming a pixel offset from a padding the stylesheet owns.
+    const start = await page.evaluate(() => {
+      const outline = document.querySelector('.om-outline') as HTMLElement;
+      const row = document.querySelector('.node-row') as HTMLElement;
+      const left = outline.getBoundingClientRect().left +
+        parseFloat(getComputedStyle(outline).paddingLeft || '0');
+      const rows = Array.from(document.querySelectorAll('.node-row')) as HTMLElement[];
+      return { x: Math.round(left - 6), y0: Math.round(rows[0].getBoundingClientRect().top + 4),
+               y1: Math.round(rows[2].getBoundingClientRect().bottom - 4) };
+    });
+
+    await page.mouse.move(start.x, start.y0);
+    await page.mouse.down();
+    await page.mouse.move(start.x, start.y1, { steps: 6 });
+    // Mid-drag: the rectangle is on screen and has taken no events of its own.
+    const during = await page.evaluate(() => {
+      const rect = document.querySelector('.om-marquee') as HTMLElement | null;
+      if (!rect) return null;
+      const layer = document.querySelector('.om-marquee-layer') as HTMLElement;
+      return { w: Math.round(rect.getBoundingClientRect().width),
+               h: Math.round(rect.getBoundingClientRect().height),
+               layerEvents: getComputedStyle(layer).pointerEvents };
+    });
+    expect(during, 'the rectangle should exist while the button is down').not.toBeNull();
+    expect(during!.h, 'the rectangle should be taller than one row').toBeGreaterThan(20);
+    expect(during!.layerEvents, 'the overlay must not take pointer events').toBe('none');
+
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    // ★ The drag never leaves the margin, so the rectangle is all but 0px wide —— and that is the case
+    //   the hit test has to get right: a 0px-wide rectangle shares no pixel with a row (the rows begin at
+    //   the right edge of the margin), so an intersection test selects nothing however far it is dragged.
+    //   Asserted here because it is a precondition of the case, not an incidental number.
+    expect(during!.w, 'a straight-down drag in the margin is all but 0px wide').toBeLessThan(10);
+    expect(
+      await selectedTexts(page),
+      'dragging the rectangle over the first three rows should select exactly those three',
+    ).toHaveLength(3);
+
+    // The rows are selected, and no text got selected underneath the drag.
+    const stray = await page.evaluate(() => (window.getSelection()?.toString() ?? '').trim());
+    expect(stray, 'the gutter drag must not leave a text selection behind').toBe('');
+  });
+
   test('★ Shift+click selects a range (click 甲 then Shift+click 丁 → 4)', async ({ page }) => {
     const rows = page.locator('.node-row');
     const n = await rows.count();

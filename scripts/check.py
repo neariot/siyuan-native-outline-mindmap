@@ -122,6 +122,14 @@ GATES = [
         "why": "no id-shaped literal and no credential literal in the source",
     },
     {
+        "name": "dead-css",
+        # Node, not Python: the stylesheet is parsed with postcss and the selectors with
+        # postcss-selector-parser (the parsers the build already uses), because a selector is not a
+        # string and a regex over CSS is wrong exactly where it matters.
+        "command": "node scripts/check-dead-css.mjs",
+        "why": "every `om-` / `mm-` class in src/styles.css can actually be put on an element",
+    },
+    {
         "name": "css-scope",
         "command": "python3 scripts/verify-css-scope.py",
         "why": "no unscoped bare selector survived the build",

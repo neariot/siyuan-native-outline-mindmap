@@ -422,6 +422,15 @@ export default function Outliner(props: OutlinerProps) {
   const pendingFocus = useRef<FocusReq | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const isDraggingBulletRef = useRef(false);
+  // ★ Cross-node selection: a rectangle dragged in the gutter (see `onWrapPointerDown`).
+  const marqueeRef = useRef<{ x0: number; y0: number } | null>(null);
+  // ★ The drag ends with a `click` on the gutter, and the panel treats a click on empty space as "clear
+  //   the selection" —— so without this the rectangle selects the rows and the click that follows the
+  //   mouseup empties the selection again (measured: the 3 rows were set, then 0 rows were selected).
+  const suppressClickAfterMarqueeRef = useRef(false);
+  const [marqueeActive, setMarqueeActive] = useState(false);
+  const [marqueeRect, setMarqueeRect] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
+  const [marqueeBox, setMarqueeBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [anchor, setAnchor] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -2815,6 +2824,112 @@ export default function Outliner(props: OutlinerProps) {
   };
 
   // ---------- selection helpers ----------
+  /**
+   * Starts the cross-node selection rectangle.
+   *
+   * ★ The gesture has to live in the gutter, because both other left-button gestures already own their
+   *   area: the bullet is `draggable` (it moves the node), and the text is **one editing host per node**,
+   *   so a text range cannot span two nodes at all —— the browser ends the range at the host boundary.
+   *   That is why a plain left-drag over the text only ever selects the text of the node it started in.
+   *
+   * ★ The overlay is SiYuan's own shape: one `.om-marquee-layer` holding one `.om-marquee` rectangle,
+   *   `pointer-events: none` (`protyle-select__container` / `protyle-select`, app/src/protyle/ui/initUI.ts
+   *   and the SCSS beside it) —— a rectangle that takes its own events would become the element under the
+   *   cursor and the rows below it would stop being hit. It is `position: fixed` rather than `absolute`
+   *   because this is a scroll container and an absolutely positioned overlay scrolls away with the text.
+   */
+  const onWrapPointerDown = (e: React.PointerEvent): void => {
+    // Mouse only: touch already has a long-press drag that moves a node, and a second left-button gesture
+    // on the same finger would fight it for the same movement.
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    // Ctrl and Shift are selection gestures of their own here (accumulate / extend a range).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, .om-toolbar')) return;
+    const wrapEl = rootRef.current;
+    const outlineEl = wrapEl?.querySelector('.om-outline') as HTMLElement | null;
+    if (!wrapEl || !outlineEl) return;
+    // The gutter is the `.om-outline` padding left of the first row; a press on no row at all is
+    // gutter too, which is what makes the empty space under the last node usable.
+    const rowEl = target.closest('.node-row');
+    const contentLeft =
+      outlineEl.getBoundingClientRect().left + parseFloat(getComputedStyle(outlineEl).paddingLeft || '0');
+    if (rowEl && e.clientX >= contentLeft) return;
+    e.preventDefault();
+    marqueeRef.current = { x0: e.clientX, y0: e.clientY };
+    // No text may be selected underneath: the rectangle and a text highlight would both claim the drag.
+    document.getSelection()?.removeAllRanges();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const box = wrapEl.getBoundingClientRect();
+    setMarqueeBox({ l: box.left, t: box.top, w: box.width, h: box.height });
+    setMarqueeRect({ l: e.clientX, t: e.clientY, w: 0, h: 0 });
+    setMarqueeActive(true);
+  };
+
+  useEffect(() => {
+    if (!marqueeActive) return;
+    const onMove = (ev: PointerEvent): void => {
+      const st = marqueeRef.current;
+      if (!st) return;
+      setMarqueeRect({
+        l: Math.min(st.x0, ev.clientX),
+        t: Math.min(st.y0, ev.clientY),
+        w: Math.abs(ev.clientX - st.x0),
+        h: Math.abs(ev.clientY - st.y0),
+      });
+    };
+    const onUp = (ev: PointerEvent): void => {
+      const st = marqueeRef.current;
+      marqueeRef.current = null;
+      setMarqueeActive(false);
+      setMarqueeRect(null);
+      if (!st) return;
+      const l = Math.min(st.x0, ev.clientX);
+      const t = Math.min(st.y0, ev.clientY);
+      const r = Math.max(st.x0, ev.clientX);
+      const b = Math.max(st.y0, ev.clientY);
+      // A press that never moved is a click on empty space, and clears the selection like one.
+      if (r - l < 4 && b - t < 4) {
+        setSelected([]);
+        setAnchor(null);
+        return;
+      }
+      const wrapEl = rootRef.current;
+      if (!wrapEl) return;
+      const outlineEl = wrapEl.querySelector('.om-outline') as HTMLElement | null;
+      // ★ The gutter drag is **vertical**: the margin is 32px of padding and the rows begin at its right
+      //   edge, so a straight-down drag shares no pixel with any row (measured: press at x=844, the first
+      //   row starts at x=850, the rectangle 0px wide) —— a pure intersection test selects nothing at all,
+      //   which is exactly what "the rectangle drew and no row was selected" was.
+      //   So a rectangle that never reaches the content box selects by **vertical span** instead: dragging
+      //   down the margin takes the rows it passes, and a drag that does reach into the rows still has to
+      //   cover them horizontally.
+      const contentLeft = outlineEl
+        ? outlineEl.getBoundingClientRect().left + parseFloat(getComputedStyle(outlineEl).paddingLeft || '0')
+        : null;
+      const hits: string[] = [];
+      wrapEl.querySelectorAll('.node-row').forEach((row) => {
+        const rr = row.getBoundingClientRect();
+        if (rr.bottom <= t || rr.top >= b) return;
+        if (contentLeft !== null && r > contentLeft && rr.left >= r) return;
+        const id = row.getAttribute('data-node-id');
+        if (id) hits.push(id);
+      });
+      // Only a real drag suppresses the click: a press in the gutter that never moved is a click on
+      // empty space, and clearing the selection is what it means.
+      suppressClickAfterMarqueeRef.current = true;
+      setSelected(hits);
+      // The anchor is the first row the rectangle caught, so Shift+click extends from there.
+      setAnchor(hits.length > 0 ? hits[0] : null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [marqueeActive]);
+
   const onRowClick = (e: React.MouseEvent, id: string): void => {
     // ★ Order matters: check Shift first (it needs the **previous** anchor),
     //   then Ctrl, and only then a plain click setting the anchor.
@@ -3316,10 +3431,11 @@ export default function Outliner(props: OutlinerProps) {
   return (
     <>
       <div
-        className="om-outline-wrap"
+        className={`om-outline-wrap${marqueeActive ? ' marquee-active' : ''}`}
         ref={rootRef}
         tabIndex={-1}
         data-prevent-swipe="true"
+        onPointerDown={onWrapPointerDown}
         onKeyDown={handleWrapKeyDown}
         onContextMenu={(e) => {
           if ((e.target as HTMLElement).closest('.node-row')) return;
@@ -3337,6 +3453,23 @@ export default function Outliner(props: OutlinerProps) {
           paddingBottom: isMobile ? '24px' : undefined,
         }}
       >
+      {marqueeRect && marqueeBox && (
+        <div
+          className="om-marquee-layer"
+          aria-hidden="true"
+          style={{ left: marqueeBox.l, top: marqueeBox.t, width: marqueeBox.w, height: marqueeBox.h }}
+        >
+          <div
+            className="om-marquee"
+            style={{
+              left: marqueeRect.l - marqueeBox.l,
+              top: marqueeRect.t - marqueeBox.t,
+              width: marqueeRect.w,
+              height: marqueeRect.h,
+            }}
+          />
+        </div>
+      )}
       {/* Toolbar open/close switch -- **the same one as the mind map view** (collapsed by default on narrow screens, can be expanded/collapsed).
           Shown only on narrow screens (`@container (max-width: 560px)`); on desktop it is always expanded. */}
       <button
@@ -3715,9 +3848,17 @@ export default function Outliner(props: OutlinerProps) {
         </div>
       )}
 
+      {/* ★ `om-outline`, not `outline`: the stylesheet has carried a `.om-outline { padding: 0 32px }`
+          rule since the rename of the wrap (styles.css, the note above `.om-outline-wrap`), and the JSX
+          here was still `outline`, which matches **no rule at all** —— so the 32px left margin the rule
+          was written for was never applied to anything, and the panel had no gutter to drag in. */}
       <div
-        className="outline"
+        className="om-outline"
         onClick={(e) => {
+          if (suppressClickAfterMarqueeRef.current) {
+            suppressClickAfterMarqueeRef.current = false;
+            return;
+          }
           if (!(e.target as HTMLElement).closest('.node-row')) {
             if (selected.length > 0) {
               setSelected([]);

@@ -500,3 +500,36 @@ while giving every node the same height (`NODE_H = 34`). Neither side consulted 
 
 `src/mindmap/RichText.test.ts` and the wrapping block in `src/core/layout.test.ts` hold these
 invariants, and `e2e/mindmap.spec.ts` checks the render (`> 1` tspan, no `…`, nothing dropped).
+
+### A dead selector is silent —— `.om-outline` was dead twice over, and the gutter depended on it
+
+**Symptom**: `.om-outline { width: 100%; padding: 0 32px; box-sizing: border-box; }` had been in
+`src/styles.css` since the rename of the wrap, and no element ever carried that class: the JSX said
+`className="outline"`. The 32px left margin the rule was written for was applied to nothing, so the panel
+had no gutter — which only mattered once something needed one: a cross-node selection rectangle is
+dragged in exactly that strip, and it had nowhere to start.
+
+**Cause**: an unmatched selector is legal CSS. The build passes, `verify-css-scope.py` passes (the
+selector *is* scoped, `.om-` is its own namespace), the theme gate passes (the variables resolve), and a
+screenshot shows a panel that merely looks a little tight. The stylesheet even documents this exact
+failure mode one screen above the rule —— `.outline-wrap` → `.om-outline-wrap` was the
+first half of the rename, and the note left behind did not stop the second half from being missed.
+
+**Practice**: `node scripts/check-dead-css.mjs` (a gate in `npm run check`) parses `src/styles.css` with
+postcss and the selectors with postcss-selector-parser, collects the class names the source can actually
+put on an element (a `className` attribute, a `class` property of a props object, `classList.add/toggle/remove`,
+`setAttribute('class', ...)`), and fails on any `om-` / `mm-` class that none of them produce. It reads the
+source through the TypeScript parser, because a name inside a comment is not a name on an element —— the
+first version searched the text and could not fail at all. Two further notes it cost to learn:
+joining a template literal's static parts into one anchored pattern does not work a class name out of
+`" om-h${n.heading}"` (the leading space belongs to the neighbour), so the parts are read piece by piece;
+and the classes built with `React.createElement('div', { className: … })` are invisible to a check that
+only looks at JSX attributes.
+
+What it cannot see, and says so on every run: classes in the host's namespaces, and a class name whose
+whole text comes from a value (2 sites today).
+
+**Tests**: the gate itself —— reintroducing `className="outline"` makes it fail on `.om-outline`
+(`src/styles.css:170,549`, both copies).
+
+---

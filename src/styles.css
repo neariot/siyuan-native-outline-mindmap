@@ -552,6 +552,20 @@ html[data-theme-mode='dark'] .om-mm-host {
 .node-row.drop-above { box-shadow: 0 -2px 0 var(--accent); }
 .node-row.drop-below { box-shadow: 0 2px 0 var(--accent); }
 .om-outline-wrap:focus { outline: none; }
+/* Cross-node selection rectangle. Shaped like SiYuan's own (`protyle-select__container` /
+ * `protyle-select`, app/src/assets/scss/protyle/_protyle.scss): one overlay per outline holding one
+ * rectangle, `pointer-events: none` so the rectangle is never the element under the cursor.
+ * `position: fixed` because `.om-outline-wrap` is a scroll container, so an absolutely positioned
+ * overlay would scroll away with the content while the rectangle stays where the finger is. */
+.om-marquee-layer { position: fixed; overflow: hidden; pointer-events: none; z-index: 5; }
+/* A drag straight down the margin is the common case and is 0px wide, so the rectangle needs a floor or
+ * it is an invisible line while rows are being selected. */
+.om-marquee {
+  position: absolute; min-width: 2px; min-height: 2px;
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* While the rectangle is being dragged nothing may start a text selection under it. */
+.om-outline-wrap.marquee-active { user-select: none; cursor: crosshair; }
 .node-row.selected {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -992,7 +1006,6 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
   stroke: var(--accent, #3b82f6);
 }
 .mm-node.mm-selected text { font-weight: 600; }
-.mm-label { font-size: 14px; line-height: 1.5; padding: 5px 12px; border-radius: 8px; word-break: break-word; }
 .theme-swatches { display: flex; gap: 4px; }
 .theme-swatches button { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
 .theme-swatches button.on { border-color: var(--text); transform: scale(1.1); }
@@ -1435,61 +1448,6 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
 .mm-canvas.drop-hint {
   outline: 2px dashed var(--b3-theme-primary, #3575f0);
   outline-offset: -4px;
-}
-
-/* ---------------------------------------------------------------- mirror block */
-.om-mirror {
-  border: 1px solid var(--b3-border-color, #e0e0e0);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--b3-theme-background, #fff);
-}
-.om-mirror-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 120px;
-}
-.om-mirror-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--b3-border-color, #e0e0e0);
-  background: var(--b3-theme-surface, #f7f7f7);
-  font-size: 12px;
-}
-.om-mirror-title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.om-mirror-open {
-  color: var(--b3-theme-primary, #3575f0);
-  text-decoration: none;
-  flex-shrink: 0;
-}
-.om-mirror-open:hover { text-decoration: underline; }
-.om-mirror-scroll {
-  flex: 1;
-  overflow: auto;
-  padding: 8px 10px;
-}
-.om-mirror-list {
-  margin: 0;
-  padding-left: 0;
-  list-style: none;
-  font-size: 13px;
-  line-height: 1.7;
-}
-.om-mirror-list li { white-space: pre-wrap; }
-.om-mirror-loading,
-.om-mirror-empty {
-  padding: 16px;
-  color: var(--b3-theme-on-surface, #666);
-  font-size: 13px;
-  text-align: center;
 }
 
 /* ── outline / mind map view switch (inside the plugin) ──────────────────────────────── */
