@@ -31,6 +31,7 @@ import {
   MM_THEMES,
   calcSplitIndex,
   edgePath,
+  exportFreemind,
   label,
   layoutHorizontal,
   layoutOrg,
@@ -422,6 +423,27 @@ console.log('\ncalcSplitIndex: the split point for left/right branching');
 }
 
 // ──────────────────────────────────────────────────────────────────
+console.log('\n★ the export writes the product\'s wording, not an empty attribute');
+
+{
+  // ★ The two copies used to default to `''`, and the single caller passed `undefined`, so a node with no
+  //   text was exported as `TEXT=""` and a map with no title likewise —— an empty attribute in the file,
+  //   where the product shows a label on screen. The parameters are required now, so a caller cannot omit
+  //   them; these cases pin that the copies are really used.
+  const xml = exportFreemind([N('a', '')], '', '(untitled)', 'Untitled');
+  check('★ a node with no text exports the supplied node copy',
+    xml.includes('TEXT="(untitled)"'), xml);
+  check('★ a map with no title exports the supplied map copy',
+    xml.includes('TEXT="Untitled"'), xml);
+  check('★ … and no empty TEXT attribute is written at all',
+    !/TEXT=""(\s|>)/.test(xml), xml);
+
+  // The opposite direction: real text is exported as it is, with no fallback mixed in.
+  const named = exportFreemind([N('a', '文本')], '标题', '(untitled)', 'Untitled');
+  check('a real title and node text are exported unchanged',
+    named.includes('TEXT="标题"') && named.includes('TEXT="文本"'), named);
+}
+
 console.log('\n★ a formula keeps its own run (it is drawn whole, so it must not be merged away)');
 
 {

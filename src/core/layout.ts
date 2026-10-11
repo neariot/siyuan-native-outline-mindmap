@@ -871,12 +871,18 @@ export function edgePath(e: Edge, vertical: boolean, style: MmLineStyle = 'curve
  * @param untitled  the fallback copy for a node with an empty title (passed in by the render layer's `t()` —— this file is the pure logic layer,
  *                  it does not import i18n and has no built-in default in any language)
  * @param defTitle  the fallback copy when the whole map has no title, same as above
+ *
+ * ★ Both copies are **required**, and that is the fix rather than a style choice: they used to default to
+ *   `''`, and the one caller passed `undefined`, so every export of a map whose nodes or title were empty
+ *   wrote `TEXT=""` —— an empty attribute in the file, instead of the wording the product shows on screen.
+ *   A default here is a silent fallback: it made a missing argument look like a deliberate empty string.
+ *   Required parameters turn the omission into a compile error, which `npm run typecheck` catches.
  */
 export function exportFreemind(
   nodes: OutlineNode[],
   title: string,
-  untitled = '',
-  defTitle = '',
+  untitled: string,
+  defTitle: string,
   titleParagraphs?: string[],
 ): string {
   const esc = (s: string): string =>

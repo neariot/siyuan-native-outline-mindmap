@@ -943,7 +943,13 @@ export default function Mindmap({
   };
 
   const downloadMm = (): void => {
-    const blob = new Blob([exportFreemind(nodes, title, undefined, undefined, docParagraphs)], { type: 'text/xml' });
+    // The two fallback copies are the wording the product already shows: the root node's label on the
+    // canvas, and the outline's label for a node with no text. Required parameters, so this cannot be
+    // passed `undefined` again without a compile error.
+    const blob = new Blob(
+      [exportFreemind(nodes, title, t('lblUntitled'), t('phUntitled'), docParagraphs)],
+      { type: 'text/xml' },
+    );
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${title || 'mindmap'}.mm`;

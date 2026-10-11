@@ -114,8 +114,6 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · test-quality** `src/core/empty-span.test.ts:101`  
   The "reverse check" that is supposed to prove the defect is real hand-builds a strawman that does not touch the code under test, so its assertion is true by construction and can never fail.
-- **medium · fallback** `src/core/layout.ts:885`  
-  exportFreemind's untitled/defTitle copies default to `''` and the only caller passes `undefined`, so the "fallback copy supplied by the render layer's t()" never arrives: nodes and maps without a title are exported with an empty `TEXT` attribute instead of the product's untitled wording.
 - **medium · test-quality** `src/core/map.test.ts:865`  
   A check passes a literal `true` as its condition, so it is counted in the suite total while asserting nothing — it can never go red, whichever way the code changes.
 - **medium · dead-code** `src/core/map.ts:526`  
