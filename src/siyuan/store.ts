@@ -1178,35 +1178,32 @@ export class SiYuanStore {
         skipped++;
       }
 
-      // ★★★ task list item marker sync (native API: /api/block/updateTaskListItemMarker)
+      // ★★★ To-do state, written as **markdown** —— the only call that can *create* a task.
       //
-      // ★ Two defects met here and together lost every **newly created** to-do: `itemTaskStatus` holds only
-      //   the items that already carried a marker, so for a node whose to-do is being *introduced* the
-      //   lookup is `undefined` —— and requiring `oldStatus !== undefined` skipped precisely the case that
-      //   had to write the marker. A plain block update does not move a task marker, so the kernel never
-      //   learned about the task: the outline showed a checkbox and the document showed a plain list item.
-      //   The failure was then swallowed, so nothing said so.
-      //   A missing entry means "no marker yet" —— a state to write, not a reason to skip.
-      //   Removing a to-do (taskStatus 0) is left to the block update, which drops the task subtype.
+      //   Measured on the kernel: `updateBlock(id, '- [ ] x', dataType='markdown')` turns a plain list
+      //   item into a task **and keeps the block id**. Neither call this used to make could do it ——
+      //   `dataType=dom` (the block write above) cannot introduce the `t` subtype, and
+      //   `/api/block/updateTaskListItemMarker` only sets the checked state of a task that already
+      //   exists. A to-do **created** in the outline therefore reached SiYuan as a plain list item: the
+      //   panel showed a checkbox it had no way to persist, and both calls returned success.
+      //
+      //   All three states go through this one path (`- [X] `, `- [ ] `) rather than a marker call beside
+      //   the DOM write: two calls for one field drift apart, and only one of them can create.
       let liId = this.lastListItems.get(n.id);
-      if (!liId && (n.taskStatus === 1 || n.taskStatus === 2)) {
-        // ★ A task state with no list-item mapping is not a quiet no-op: the plugin is showing a to-do that
-        //   it has no way to write, which is exactly how a created to-do went missing from the document.
-        console.warn('[om] no listItem mapping for a task node, cannot set its marker:', n.id);
-      }
-      if (liId && (n.taskStatus === 1 || n.taskStatus === 2)) {
-        const oldStatus = this.lastDomTree?.itemTaskStatus?.get(liId);
-        if (oldStatus !== n.taskStatus) {
-          const marker = n.taskStatus === 2 ? 'X' : ' ';
-          try {
-            await this.client.updateTaskListItemMarker(liId, marker);
-            this.lastDomTree?.itemTaskStatus?.set(liId, n.taskStatus);
-            updated++;
-          } catch (e) {
-            // Loud rather than swallowed: this is the only call that makes a to-do a to-do in the document.
-            console.warn('[om] could not set the task marker for', liId, e);
-          }
+      const wantsTask = n.taskStatus === 1 || n.taskStatus === 2;
+      if (liId && wantsTask) {
+        const prefix = n.taskStatus === 2 ? '- [X] ' : '- [ ] ';
+        try {
+          await this.client.updateBlock(liId, prefix + htmlToKramdown(n.text));
+          updated++;
+        } catch (e) {
+          // Loud rather than swallowed: this is the only call that makes a to-do a to-do in the document.
+          console.warn('[om] could not write the to-do state for', liId, e);
         }
+      } else if (!liId && wantsTask) {
+        // ★ A task state with no list-item mapping is not a quiet no-op: the plugin is showing a to-do it
+        //   has no way to write, which is how a created to-do went missing from the document.
+        console.warn('[om] no listItem mapping for a task node, cannot write its to-do state:', n.id);
       }
 
       // ★★★ attached-paragraph write-back: **body paragraphs** carry a node's extra notes.
