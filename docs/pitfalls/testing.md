@@ -987,3 +987,30 @@ calls, dozens of assertions each — and 15 × ~200 lines is a lot of green that
 - **Deleting tests has consequences; follow them.** Removing the files broke four gates at once, each
   correctly: two docs cited a deleted test, twelve ledger entries named one, and two fixture-vocabulary
   words were left with no user. A deletion that leaves those red is not finished.
+
+## Consolidating duplicated code exposes what the copies disagreed about
+
+**Symptom**: none at first. Five copies of an HTML escape/decode pair, three files, all producing identical
+output on ordinary text.
+
+**Cause**: two of the five decoded `&amp;` **before** the entities it can create, and three decoded it
+**last**. On ordinary text the orders agree. On text that *contains* an entity name they do not: a user who
+types `&nbsp;` stores `&amp;nbsp;`, and the wrong order turns those six characters into one space. Nothing
+had written down which order was right, so the divergence had no owner.
+
+**Practice**:
+- **A duplicate is a place where two answers to one question are stored, and only one can be checkable.**
+  The reason to consolidate is not tidiness —— it is that the disagreement is invisible until an input
+  distinguishes the copies, and by then it has been shipping.
+- **Write down the part that is not obvious, at the point where it matters.** The correct order is now a
+  comment in the shared function *and* a case that fails with the wrong order (`want="&nbsp;" got=" "`).
+  "Decode `&amp;` last" is the kind of fact that is obvious to whoever wrote it and invisible to whoever
+  edits it next.
+- **Measure equivalence before consolidating, then trust the measurement rather than the resemblance.** The
+  five flatten copies were compared on a chain, a wide tree, an empty list, a missing `children` key and a
+  five-deep tree; identical on all five, so merging needed no judgement. The escape copies *looked* just as
+  alike and were not.
+- **★ A "mechanical" refactor is where semantic slips hide.** This round's consolidation silently dropped a
+  trailing `.trim()` (turning a `<br>`-only kernel echo into `" "` instead of `""` —— a spurious conflict on
+  every empty node) and added a `snapshot()` clone the original never did. Read the diff line by line after
+  the tests pass, not only before.

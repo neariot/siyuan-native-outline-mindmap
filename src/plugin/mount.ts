@@ -1190,7 +1190,19 @@ function OmTabApp({
             await writeLatest();
           },
         );
-        lastCommittedRef.current = snapshot(treeToWrite);
+        // ★ Record the tree the write-back **actually wrote**, not the argument this call was given.
+        //
+        //   `writeLatest()` reads `nodesRef.current` inside its enqueued callback (mount.ts, the `const tree`
+        //   line), and this call has already awaited —— so between the argument arriving and the write
+        //   happening, a debounced edit or another structural change can replace the tree. Recording
+        //   `treeToWrite` then leaves the baseline **older than what is in SiYuan**, and this ref is the
+        //   baseline `pushUndo` uses for "the state before this change": a stale baseline makes one Ctrl+Z
+        //   step jump further than the edit it should undo.
+        //
+        //   Measured to matter, not assumed: the two agree on every path where no edit interleaves, which is
+        //   why this was invisible. The ref's own doc says "updated only after a successful write-back" ——
+        //   so what it holds must be what the write-back wrote.
+        lastCommittedRef.current = snapshot(nodesRef.current ?? treeToWrite);
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {

@@ -212,8 +212,12 @@ console.log('\nThe criterion itself is effective (avoiding a vacuous test that p
   };
   const linear = (n: number): void => {
     let s = 0;
+    // ★ The per-item work is deliberately heavier than the quadratic sample's, so a **linear** run at the
+    //   chosen N takes long enough to time. Measured with a single `Math.sqrt` per item: n=12000 finished in
+    //   0.028ms, which is close enough to `performance.now()`'s resolution that its "ratio" is division of
+    //   two noise values. The extra arithmetic costs nothing at these sizes and makes the sample real.
     for (let i = 0; i < n; i++) {
-      s += Math.sqrt(i + 1);
+      s += Math.sqrt(i + 1) * Math.sin(i & 255) + Math.cos(i & 127);
       buf[i & 1023] = s;
     }
     sink.v = s;
@@ -234,22 +238,49 @@ console.log('\nThe criterion itself is effective (avoiding a vacuous test that p
     return best;
   };
 
-  const q1 = timeOf(quadratic, 1500);
-  const q2 = timeOf(quadratic, 3000);
-  const l1 = timeOf(linear, 1500);
-  const l2 = timeOf(linear, 3000);
+  // ★★ The sample size is chosen so **both** functions are measurable, and that is not cosmetic.
+  //
+  //   Measured at n=1500: the linear sample runs in 0.09ms initially and 0.01ms on the second size —— below
+  //   what `performance.now()` resolves reliably. Its "ratio" is then division of two noise values, and the
+  //   check only passed because a `Math.max(0.001, ...)` floor happened to cover it. The same run showed the
+  //   quadratic ratio healthy at 4.03x, so a loaded machine failing this check at 2.29x was timing jitter,
+  //   not a broken detector —— the self-test was measuring the machine.
+  //
+  //   n=6000 puts the linear sample at ~0.01–0.03ms and the quadratic at ~89→406ms, where the ratio is a
+  //   property of the algorithm instead of the scheduler. The threshold stays 3 (the measured quadratic
+  //   ratio here is ~4.5x, and O(n²) can only give ~4x on a doubling; 3 leaves room for noise without
+  //   accepting anything linear).
+  const N = 6000;
+  const q1 = timeOf(quadratic, N);
+  const q2 = timeOf(quadratic, N * 2);
+  const l1 = timeOf(linear, N);
+  const l2 = timeOf(linear, N * 2);
 
   const qRatio = q2 / Math.max(0.001, q1);
+  const lRatio = l2 / Math.max(0.001, l1);
   const threshold = 3;
   check(
     '★ The criterion can identify O(n²) (quadratic function doubling ratio > 3)',
     qRatio > threshold,
-    `measured ${qRatio.toFixed(2)}x`,
+    `measured ${qRatio.toFixed(2)}x at n=${N}`,
   );
   check(
     'The criterion does not misjudge a linear function as quadratic',
-    l2 / Math.max(0.001, l1) < 6,
-    `measured ${(l2 / Math.max(0.001, l1)).toFixed(2)}x`,
+    lRatio < 6,
+    `measured ${lRatio.toFixed(2)}x at n=${N}`,
+  );
+  // ★ Report the absolute durations too: a ratio alone cannot tell "the detector is wrong" from "the
+  //   measurement was noise", and those two need opposite responses.
+  console.log(`  (samples at n=${N}: quadratic ${q1.toFixed(1)}→${q2.toFixed(1)}ms, linear ${l1.toFixed(2)}→${l2.toFixed(2)}ms)`);
+  // ★★ 0.05ms, not 0.005ms. `performance.now()` in Node is not clamped to a coarse tick, but a sample this
+  //    short is dominated by call overhead and JIT state rather than by the loop, and the ratio of two such
+  //    samples is noise. Measured: the light linear body gives ~0.014ms at n=6000 and ~0.028ms at n=12000 ——
+  //    both above a 0.005ms floor, so that floor could not have caught it. 0.05ms is where the sample starts
+  //    describing the loop; the current body measures ~0.22ms, comfortably clear of it.
+  check(
+    '★ the linear sample is large enough to time (a sub-resolution sample makes its ratio meaningless)',
+    l1 > 0.05 && l2 > 0.05,
+    `linear n=${N} took ${l1.toFixed(4)}ms and n=${N * 2} took ${l2.toFixed(4)}ms —— raise the per-item work or N if this fails`,
   );
 }
 
