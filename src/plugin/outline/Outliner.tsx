@@ -7,6 +7,7 @@ import {
   findNode,
   findPath,
   flattenAll,
+  containsNode,
   flattenVisible,
   htmlToText,
   removeNode,
@@ -14,7 +15,8 @@ import {
 } from '../../model/tree';
 // Collapse granularity (recursive semantics) lives in tree-ops, where it is unit-testable offline.
 // Alias it to avoid clashing with the local `toggleCollapse` below (the one wrapping mutate).
-import { toggleCollapse as toggleCollapseAt } from '../tree-ops';import {
+import { toggleCollapse as toggleCollapseAt } from '../tree-ops';
+import {
   indentNodes as indentInTree,
   outdentNodes as outdentInTree,
 } from './indent';
@@ -1476,17 +1478,10 @@ export default function Outliner(props: OutlinerProps) {
   const moveDrop = (targetId: string, zone: Exclude<DropZone, null>, ids: string[]): void => {
     const tops = topLevelIds(ids.filter((i) => i !== targetId));
     if (tops.length === 0) return;
-    // prevent dropping into own descendant
-    const desc = new Set<string>();
-    const collect = (n: OutlineNode) => {
-      desc.add(n.id);
-      n.children.forEach(collect);
-    };
-    for (const id of tops) {
-      const n = nodeById.get(id);
-      if (n) collect(n);
-    }
-    if (desc.has(targetId)) return;
+    // Refuse a drop into the node's own subtree —— that would make the node its own ancestor.
+    // `anyContains` includes the node itself, so it covers "dropped onto itself" as well as "dropped onto a
+    // descendant"; both are the same refusal here.
+    if (tops.some((id) => { const n = nodeById.get(id); return n ? containsNode(n, targetId) : false; })) return;
     mutate((draft) => {
       const moving: OutlineNode[] = [];
       for (const id of tops) {

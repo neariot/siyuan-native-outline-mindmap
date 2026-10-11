@@ -186,8 +186,6 @@ conclusion to draw from a complete-looking list of findings.
   The regression test for defect #57 asserts the pre-fix state using an empty array literal, so it cannot fail and it documents a bug that is already fixed as if it were live.
 - **medium · test-quality** `src/plugin/undo-merge-kind.test.ts:14`  
   The merge window is a copy of the product constant with no source assertion, so the boundary cases assert a window the product may no longer have.
-- **medium · test-quality** `src/plugin/wording-honesty.test.ts:224`  
-  The 'every advertised shortcut exists in the keydown handler' criterion searches a 60,000-character window instead of the handler body, so branches of other functions can satisfy it.
 
 ### scripts-gates
 
@@ -401,12 +399,6 @@ conclusion to draw from a complete-looking list of findings.
   A failed PNG export is silent: only img.onload is wired, so a decode failure (or a null toBlob, which is how an over-large canvas fails) produces no download and no message.
 - **low · dead-code** `src/mindmap/Mindmap.tsx:19`  
   The explicit re-export list is dead surface: nothing imports these names from this module, and `export * from '../core/layout'` on the line above already re-exports all of them.
-- **low · test-quality** `src/mindmap/export-styling.test.ts:112`  
-  An offline unit test shells out to a full `npm run build` when the build artifact happens to be missing, swallows the build's failure with an empty catch, and then reports the absence as an ordinary check failure.
-- **low · test-quality** `src/mindmap/pan-zoom.test.ts:235`  
-  The block titled "The criteria themselves are effective" asserts properties of three local arrow functions the product never calls, so those checks are tautologies that no change to Mindmap.tsx can redden.
-- **low · docs** `src/mindmap/pan-zoom.test.ts:11`  
-  Three comments in scope cite Mindmap.tsx line numbers that no longer point at the code they describe.
 - **low · test-quality** `src/mindmap/structure-order.test.ts:192`  
   The "five labels are pairwise distinct" check reads the test's own literal instead of the labels parsed out of the source and the catalogue, so it is always true and can never go red.
 
@@ -424,12 +416,6 @@ conclusion to draw from a complete-looking list of findings.
   Closing the find bar through its own toggle (toolbar/dock button, Ctrl+F) skips the focus restore, so typing afterwards goes to BODY - the exact 'one-way focus migration' the code comments describe.
 - **low · dead-code** `src/plugin/outline/indent.test.ts:63`  
   The module-level readBool helper is unused - the only call site resolves to a second, block-scoped copy declared inside the same block.
-- **low · test-quality** `src/plugin/outline/keyboard-offset.test.ts:123`  
-  The 'offsetTop has no effect' case is a tautology - the helper ignores its own parameter and the mobile gate is a constant - so the case cannot go red for any implementation change.
-- **low · test-quality** `src/plugin/outline/keyboard-offset.test.ts:148`  
-  Section 7 asserts on raw file text including comments, while the repository ships source-probe's stripComments/fnBody for exactly this; a comment can satisfy any of these regexes after the code changed.
-- **low · dead-code** `src/plugin/outline/split-node.test.ts:228`  
-  A second copy of source-probe's brace matcher plus a second hand-rolled comment stripper live in this file, and the replica hardcodes the new node id that its own comment says must be generated.
 - **low · test-quality** `src/plugin/outline/touch-longpress.test.ts:275`  
   The 'the criterion itself is effective' block asserts properties of a literal object built three lines above it, so it passes whatever the implementation does.
 - **low · test-quality** `src/plugin/source-probe.ts:52`  
@@ -439,8 +425,6 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/pitfalls/editor.md:82`  
   The §2.3 entry 'Paired reverse keys (Backspace / Delete)' points its Test line at a file that has no key-handling coverage at all.
-- **low · test-quality** `src/plugin/doc-switch-is-event-driven.test.ts:51`  
-  One of the four assertions runs against the raw source with comments included while its sibling deliberately strips them, so documenting the removed polling in a code comment can turn the test red for a non-defect.
 - **low · test-quality** `src/plugin/echo-own-value.test.ts:85`  
   A section titled 'After expiry it is no longer treated as an echo' contains no post-expiry assertion and never calls prune(), so the behaviour its heading names is untested.
 - **low · test-quality** `src/plugin/hotkey-collision.test.ts:72`  
@@ -452,20 +436,14 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · test-quality** `src/plugin/mindmap-focus.test.ts:17`  
   Some files in scope are replica-only: they assert a model the test itself defines, with no assertion on the product, which is below the standard the repository applies to its own replicas.
-- **low · test-quality** `src/plugin/mindmap-reparent.test.ts:51`  
-  The check is named for a behaviour ("a drop onto itself, or onto the root, is not a reparent") but asserts that the handler's **source text** contains `tgt !== src` and `'__root__'` —— so it can only go red when those characters are rewritten, never when the drop misbehaves. It is one of several checks in the file with this shape: the file reads `Mindmap.tsx` / `mount.ts` and regex-matches the handler bodies instead of driving the gesture.
 - **low · type-escape** `src/plugin/mobile-swipe.test.ts:74`  
   The component is rendered through `as never` with props it does not accept and a required prop missing, and the third case's 'algorithm matches SiYuan' check is a locally built two-object walk that cannot fail.
 - **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  
   The single-child-list regression is asserted against a literal that the test itself declares one line above, so it can never fail.
-- **low · test-quality** `src/plugin/slash-insert-mirror.test.ts:95`  
-  The slash callback is extracted with the non-greedy brace match the same file warns against, so a nested block truncates the body that the negative criterion ('must not call openMindmapTab') reads.
 - **low · dead-code** `src/plugin/stale-mapping.test.ts:72`  
   Unused locals left behind by removed assertions (four instances in scope).
 - **low · docs** `src/plugin/tree-ops.test.ts:8`  
   The file's 'Run:' instruction points at a stale compiled copy of the test instead of the sanctioned runner.
-- **low · test-quality** `src/plugin/wording-honesty.test.ts:76`  
-  The premise that decides whether both fullscreen wording checks run at all is a regex over raw file text including comments, so a comment mentioning requestFullscreen() silently disables them while the output still claims they passed.
 - **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
   See the entry below; this is the same file, and it is now the only one the vacuous-test tool still lists as
   unable to go red.
@@ -555,8 +533,6 @@ conclusion to draw from a complete-looking list of findings.
   `uploadAsset` performs its own request with the global `fetch` instead of `this.fetchImpl`, so the documented test-injection seam ('Custom fetch (makes test injection easy)') does not cover the image-migration path and an injected fake cannot observe or fail it.
 - **low · dead-code** `src/siyuan/api.ts:602`  
   Six exported members of the kernel client have no caller anywhere in src/, scripts/, e2e/ or docs/: resolveTokenFromConfig, listNotebooks, createNotebook, moveDocs, getBlockAttrs, setBlockAttrs.
-- **low · test-quality** `src/siyuan/poll-budget.test.ts:121`  
-  A polling loop whose sleep is removed silently disappears from the budget check — the loops are parsed out of the source text, loops with `sleepMs === 0` are skipped, and only `withSleep.length > 0` is required, so the criterion 'every polling budget ≥ 3000 ms' can pass while the loop it was written for no longer waits at all.
 - **low · bug** `src/siyuan/store.ts:1929`  
   `resolveWantList` registers cleanup placeholders on the instance field `this.pendingPlaceholders` while the cleanup at the end of moveNodes deletes only the set the caller passed, so the documented 'one call owns the set' contract is not implemented and a caller that passes any other Set leaves `- placeholder` list items in the user's document forever.
 - **low · dead-code** `src/siyuan/store.ts:1380`  

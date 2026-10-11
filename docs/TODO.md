@@ -39,13 +39,10 @@ report.
 Defects in how we check things, rather than in the product. Each one means a class of defect can reach a
 release while every gate stays green.
 
-- **`src/plugin/mindmap-reparent.test.ts` inspects source text, not behaviour.**
-  It reads `Mindmap.tsx` / `mount.ts` and regex-matches the handler bodies, so it cannot go red on a broken
-  drop —— only on a rewritten comment. It is the shape this repository warns about, sitting in the test
-  layer. (Replacing it needs the browser, so it belongs with the E2E suite.)
-- **The same file has a check whose name contradicts its assertion** —— the name says the drag is allowed
-  while the assertion requires it to be rejected, so a reader is told the opposite of what was verified.
-  (Audit: `low · test-quality`, `mindmap-reparent.test.ts:88`.)
+- ~~`src/plugin/mindmap-reparent.test.ts` inspects source text~~ —— **done**: the file and fourteen
+  others of the same shape were deleted, and the cycle rule it claimed to cover is now an E2E case
+  (`e2e/mindmap.spec.ts`, "dropping a node into its own subtree is refused"), shown red with the guard
+  disabled. A gate (`check-source-text-tests.py`) stops the shape returning.
 - **`scripts/check-vacuous-tests.py` cannot see the "block appended below the summary / `process.exit`"
   shape** —— a test file whose new checks run *after* the pass/fail line and the exit, so they can never
   fail the run. That shape was hit for real while adding the chain-descent checks.
@@ -63,6 +60,14 @@ was trimmed from 209 entries to 206 by this pass.
 ★ Found by `python3 scripts/check-audit-findings.py`, which is now a gate: five entries pointed at a place
   that no longer existed —— two files deleted, three files shrunk past the citation. A queue whose
   citations have rotted is a queue nobody can act on, and nothing had noticed.
+
+- **Fifteen test files that asserted on the text of product source** (most of them flagged by the audit as
+  `test-quality`). **Resolved by deletion.** None imported the product, so none could execute it; every
+  check was a string match on a `.tsx`/`.ts` file, which goes red when the product is *reworded* rather
+  than when it breaks. Measured: merging two hand-written cycle guards into one shared helper broke
+  `mindmap-reparent.test.ts` while the behaviour was identical and every E2E case passed. The two rules
+  worth keeping are now E2E cases (the cycle refusal, above) or covered by the existing suites. The 12
+  ledger entries that named these files left with them.
 
 - **`src/plugin/kernel-bugs.test.ts` ran every case against a local stand-in of the kernel** (medium ·
   test-quality). **Resolved:** the file was deleted by `c7e1de8` and replaced by

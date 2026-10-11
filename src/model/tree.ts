@@ -60,6 +60,32 @@ export function removeNode(nodes: OutlineNode[], id: string): OutlineNode | null
   return null;
 }
 
+/**
+ * Is `id` inside `node`'s subtree —— `node` itself, or any of its descendants?
+ *
+ * ★★ This answers the **cycle** question, and it deliberately includes `node` itself. Two call sites had
+ *    grown their own version of it and disagreed on exactly that point: the outline's drop guard built a
+ *    `Set` that `add`ed the moving node before walking its children, while the mount's reparent guard
+ *    walked only `children`. Measured against a tree shaped `a > b > c`, both still refused and allowed
+ *    the same drops, because each site reaches "target is the node itself" by a different route —— the
+ *    outline through the descendant set, the mount through its earlier `ids.filter((i) => i !== targetId)`
+ *    —— so the divergence was invisible. It would not have stayed invisible: a caller that moved that
+ *    filter, or a third caller that copied one of the two, would enforce the safety rule in one view and
+ *    not the other.
+ *
+ *    One function, one answer. Callers that must distinguish "itself" from "a descendant" filter first and
+ *    pass what remains; callers guarding a reparent treat both as a refusal, which is what this returns.
+ */
+export function containsNode(node: OutlineNode, id: string): boolean {
+  if (node.id === id) return true;
+  return node.children.some((c) => containsNode(c, id));
+}
+
+/** Does any node in `nodes` contain `id` in its subtree (the node itself included)? */
+export function anyContains(nodes: OutlineNode[], id: string): boolean {
+  return nodes.some((n) => containsNode(n, id));
+}
+
 export function touch(n: OutlineNode): void {
   n.modified = now();
 }

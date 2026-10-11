@@ -3,13 +3,13 @@
 # synthetic on sight and cannot have been copied out of a document, because it has no content to copy.
 #
 # ★ The direction matters. A fixture that does not fit is **renamed to fit**; the vocabulary is not
-#   extended to make a fixture pass. Adding a word here to silence a finding turns this file into a
-#   description of whatever the tests happen to say, which is the same as having no rule at all
-#   (`AGENTS.md` section 2: "the fix is `t('<key>')`, never an exemption").
+#  extended to make a fixture pass. Adding a word here to silence a finding turns this file into a
+#  description of whatever the tests happen to say, which is the same as having no rule at all
+#  (`AGENTS.md` section 2: "the fix is `t('<key>')`, never an exemption").
 #
 # So a label may contain exactly two kinds of word:
-#   1. a *noun for a thing* the plugin deals with —— 节点, 段落, 标题, 列表项, 备注, 图片 …
-#   2. a *role or a number* that tells one such thing from another —— 子, 根, 同级, 空, 第二, 一 …
+#  1. a *noun for a thing* the plugin deals with —— 节点, 段落, 标题, 列表项, 备注, 图片 …
+#  2. a *role or a number* that tells one such thing from another —— 子, 根, 同级, 空, 第二, 一 …
 # What it may not contain is a verb, a sentence, or a noun from somebody's subject matter
 # —— a label like that is describing content, which is the thing to fix.
 #
@@ -24,8 +24,8 @@
 # kinds of text
 标题 子标题 正文 文本 文字 段落 段 行 字 内容 说明 长 短 值 属性 状态
 # carriers and surfaces the tests exercise
-文档 备注 待办 任务 图片 代码 标签 引用 菜单 画布 导图 大纲
+文档 备注 待办 任务 图片 代码 标签 引用 菜单 导图 大纲
 # formatting the mind map renders
-粗体 下划线 高亮 颜色 无色 格式 空格 全屏 缩进
+粗体 下划线 高亮 颜色 无色 格式 空格 缩进
 # roles and qualifiers
 子 根 孙 父 同级 前 后 内 外 空 多 无 普通 已有 临时 独立 目标 源 侧 外部 内核 符号 示例 测试

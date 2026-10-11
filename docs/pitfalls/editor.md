@@ -432,12 +432,13 @@ Dropping onto a node makes the node its child, **consistent with the outline's d
 (the same `onReparent` path as the outline's `moveDrop(zone='child')`). Cycle detection is part of the same
 rule: a node dragged into its own descendant is refused, or the tree becomes a cycle.
 
-**Tests**: `src/plugin/mindmap-reparent.test.ts` reads both halves of this entry —— the drop decision in
-`src/mindmap/Mindmap.tsx` (hit-tested with the position the handler recorded itself, never with the event
-coordinates; rectangles compared by hand, never `elementFromPoint`; a drop onto itself or onto the root is not
-a reparent; only a real drag counts) and the reparent in `src/plugin/mount.ts` (the cycle guard runs before
-anything is mutated, the node is taken out before it is appended, and the move pushes an undo snapshot). The
-file previously held a local `hitTest()` and `decide()` written inside the test.
+**Tests**: `e2e/mindmap.spec.ts` drives the gesture and asserts on the result —— which position the
+drop hit-tests with, that a drop onto another node nests it, and that a drop into the node's own
+subtree is **refused with the document left exactly as it was** (the guard has to run before the
+node is taken out, or a refused drop loses it). A unit file named `mindmap-reparent.test.ts` used to
+hold this entry by reading `Mindmap.tsx` / `mount.ts` as **text** and regex-matching the handlers;
+it could not go red when the drop misbehaved, only when the guard was reworded —— which is exactly
+what happened when the two hand-written cycle guards were merged into one helper.
 
 ---
 

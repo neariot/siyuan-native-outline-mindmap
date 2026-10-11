@@ -1217,3 +1217,59 @@ test('dragging a DEEP node onto a shallow one re-levels it in both views', async
     await api.dispose();
   }
 });
+
+test('★ dropping a node into its own subtree is refused (no cycle, nothing lost)', async ({ page }) => {
+  // Replaces a unit file that read `Mindmap.tsx` as text and regex-matched the guard (`isDesc` /
+  // `containsNode`). A text match cannot go red when the drop misbehaves —— only when the guard is
+  // reworded, which is what happened when the two hand-written cycle guards were merged into one helper.
+  // This drives the gesture and asserts on the result instead.
+  //
+  // The rule: a node must never become its own descendant. A refused drop must leave the document
+  // **exactly** as it was —— the guard has to run before the node is taken out of the tree, or a refused
+  // drop loses it.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n');
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    const markdown = async (): Promise<string> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String(res.data?.content ?? '');
+    };
+    const before = await markdown();
+
+    // Drag 甲 (the ancestor) onto 丙 (its own grandchild).
+    const names = await page.evaluate(() =>
+      [...document.querySelectorAll('.mm-node')].map((n) => (n.textContent || '').trim()));
+    const from = names.findIndex((t) => t.startsWith('甲'));
+    const to = names.findIndex((t) => t.startsWith('丙'));
+    expect(from, 'the fixture must contain 甲').toBeGreaterThanOrEqual(0);
+    expect(to, 'the fixture must contain 丙').toBeGreaterThanOrEqual(0);
+
+    const nodes = page.locator('.mm-node');
+    const srcBox = await nodes.nth(from).boundingBox();
+    const dstBox = await nodes.nth(to).boundingBox();
+    expect(srcBox && dstBox, 'both nodes must be laid out').toBeTruthy();
+    await page.mouse.move(srcBox!.x + srcBox!.width / 2, srcBox!.y + srcBox!.height / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(
+        srcBox!.x + (dstBox!.x - srcBox!.x) * (i / 10) + dstBox!.width / 2,
+        srcBox!.y + (dstBox!.y - srcBox!.y) * (i / 10) + dstBox!.height / 2,
+      );
+      await page.waitForTimeout(45);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(1500);
+
+    // The document must be untouched —— the same tree, the same nesting, nothing lost.
+    expect(await markdown(), 'a refused drop must leave the document exactly as it was').toBe(before);
+    // And 甲 must still be there (a guard that ran after the node was taken out would lose it).
+    expect(await markdown()).toMatch(/- 甲/);
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});

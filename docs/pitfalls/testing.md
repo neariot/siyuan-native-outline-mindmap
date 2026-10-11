@@ -963,3 +963,27 @@ was written.
   contains —— and reported **60** entries `drifted` on a criterion that meant nothing. Only
   **identifier-shaped** tokens (underscores, SCREAMING_CASE, camelCase) are useful signal; when a finding
   names none, the honest answer is `cannot-judge`.
+
+## A test that reads product source can only fail on a rewording
+
+**Symptom**: a refactor that merged two hand-written cycle guards into one shared helper — behaviour
+identical, every E2E case green — turned `src/plugin/mindmap-reparent.test.ts` **red**, because it
+regex-matched the old guard's *name* in `mount.ts`. The suite reported a regression that did not exist, and
+the obvious "fix" was to update the pattern.
+
+**Cause**: fifteen test files read a product `.ts`/`.tsx` file as text and asserted on its contents, with
+**no import of the product at all**. Nothing in them could execute product logic, so the only thing they
+could ever detect was that the source had been reworded. They read like coverage — file names, `check()`
+calls, dozens of assertions each — and 15 × ~200 lines is a lot of green that means nothing.
+
+**Practice**:
+- `scripts/check-source-text-tests.py` is the gate. Its criterion is a **pair**, not either half:
+  the file reads product source **and** imports nothing it could execute. Either alone has legitimate
+  cases that this repository actually contains —— reading the built bundle (`dist-plugin/index.js`) is real
+  output, and `source-probe.test.ts` tests the probe that reads source.
+- **Replace, do not just delete, when the rule is worth keeping.** The cycle refusal became an E2E case
+  that drags a node into its own subtree and asserts the document is left **exactly** as it was; shown red
+  by disabling the guard. That is a check that fails when the product breaks.
+- **Deleting tests has consequences; follow them.** Removing the files broke four gates at once, each
+  correctly: two docs cited a deleted test, twelve ledger entries named one, and two fixture-vocabulary
+  words were left with no user. A deletion that leaves those red is not finished.

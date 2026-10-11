@@ -15,7 +15,7 @@ import Outliner from './outline/Outliner';
 import { setOutlineImageClient } from './outline/images';
 import type { OutlineNode } from '../model/types';
 import { toggleTaskStatus } from '../model/types';
-import { cloneNodes, touch } from '../model/tree';
+import { cloneNodes, containsNode, touch } from '../model/tree';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
@@ -2250,11 +2250,11 @@ function OmTabApp({
         if (!target) return;
         const moving = ids.filter((i) => i !== targetId);
         if (!moving.length) return;
-        const isDesc = (n: OutlineNode, id: string): boolean =>
-          (n.children ?? []).some((c) => c.id === id || isDesc(c, id));
+        // Refuse a drop into the moved node's own subtree. `containsNode` also reports the node itself,
+        // which `moving` has already excluded, so this is the descendant case and that case in one test.
         for (const id of moving) {
           const n = findNode(base, id);
-          if (n && isDesc(n, targetId)) return; // dropped into own descendant → ignore
+          if (n && containsNode(n, targetId)) return; // dropped into its own subtree → ignore
         }
         // ★ Take the node itself out first (removeNode returns only a **new array**, not the removed node)
         const grabbed: OutlineNode[] = [];

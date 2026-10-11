@@ -81,7 +81,10 @@ Now `serializeTree` in `mount.ts` carries `paras=JSON.stringify(...)`.
 When adding a new field that gets written back, `serializeTree` must be updated in step.
 Missing it raises no error; it only shows up as "I changed this field and nothing happened".
 
-**Test**: `src/plugin/note-persist.test.ts`
+**Test**: the E2E suite drives this through the real editors (`e2e/outline.spec.ts`,
+`e2e/mindmap.spec.ts`). A unit file named `note-persist.test.ts` used to sit here; it read
+`store.ts` as **text** and matched patterns, so it could not go red when the note was actually
+lost —— only when the code was reworded. It was deleted with fourteen others of the same shape.
 
 ---
 
