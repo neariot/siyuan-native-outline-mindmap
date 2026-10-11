@@ -21,6 +21,50 @@ import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
 /**
+ * The mappings that point at a block the index did not report —— candidates for "this block is dead".
+ *
+ * ★ Exported so its boundaries can be pinned, because both directions are destructive:
+ *
+ *   · **Declare too much dead** and a live node's mapping is cleared, so it is re-inserted and the document
+ *     gains a **duplicate** (defect #54: the exemption below was missing, and the same node was inserted
+ *     twice — measured `SiblingE` at 22:32:58 and again at 22:33:15).
+ *   · **Declare too little dead** and the node keeps a link to a destroyed block: `syncStructure` believes
+ *     "it is already there", `updateBlock` writes into nothing, `syncDeletions` reports nothing —— present
+ *     in the UI, absent in SiYuan, **with no error at all** (measured `total=7, only 4 alive`).
+ *
+ * `freshlyInserted` is the exemption: a block this session created has an index entry that necessarily lags
+ * by 1~3 seconds, so "SQL did not find it" says nothing about it yet.
+ *
+ * A node with **no** mapping is not a suspect —— it is a new node, and the insert path handles it.
+ */
+export function deadMappingSuspects(
+  blockMap: Map<string, string>,
+  aliveIds: Set<string>,
+  freshlyInserted: Set<string>,
+): Array<[string, string]> {
+  const suspects: Array<[string, string]> = [];
+  for (const [nodeId, blk] of blockMap.entries()) {
+    if (aliveIds.has(blk)) continue;
+    if (freshlyInserted.has(blk)) continue;
+    suspects.push([nodeId, blk]);
+  }
+  return suspects;
+}
+
+/**
+ * Whether a missing mapping may be confirmed dead in this write-back at all.
+ *
+ * ★ For a **pure text edit** the node count equals the block count (`treeSize === mappedSize`), and a
+ *   structural operation cannot have run, so no sibling block can have been destroyed. Skipping the
+ *   confirmation query (and its 400 ms wait) keeps every keypress fast; the check that guarded this was
+ *   worth more than the seconds it saves on a 300-node document, and it is the reason a suspect found
+ *   during typing is left alone until a structural change really happens.
+ */
+export function suspectedStructuralChange(treeSize: number, mappedSize: number): boolean {
+  return treeSize !== mappedSize;
+}
+
+/**
  * Whether a mapping read is so incomplete that the write-back must be refused.
  *
  * ★ Exported as a **function of two numbers** rather than left as a closure over the tree it was written
@@ -1116,17 +1160,12 @@ export class SiYuanStore {
       if (this.freshlyInserted.size > 500) {
         this.freshlyInserted = new Set([...this.freshlyInserted].slice(-200));
       }
-      const suspects: Array<[string, string]> = [];
-      for (const [nodeId, blk] of blockMap.entries()) {
-        if (aliveIds.has(blk)) continue;
-        // just inserted, the index has not caught up —— never declare it dead (defect #54)
-        if (this.freshlyInserted.has(blk)) continue;
-        suspects.push([nodeId, blk]);
-      }
+      // just inserted, the index has not caught up —— never declare it dead (defect #54)
+      const suspects = deadMappingSuspects(blockMap, aliveIds, this.freshlyInserted);
       // ★★★ For a pure text edit the node count equals the block count (flat.length === blockMap.size),
       //   so "sibling blocks destroyed by a structural operation" can never happen (defect #53 only occurs on structural changes).
       //   On a text edit the suspect re-query and the 400ms sleep are skipped, so no keypress is slowed down.
-      if (suspects.length && flat.length !== blockMap.size) {
+      if (suspects.length && suspectedStructuralChange(flat.length, blockMap.size)) {
         // second confirmation: wait for the index to catch up and query again; only two misses declare it dead
         await new Promise((r) => setTimeout(r, 400));
         const ids = [...new Set(suspects.map(([, b]) => b))];

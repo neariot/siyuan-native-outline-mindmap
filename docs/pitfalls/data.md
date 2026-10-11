@@ -137,10 +137,13 @@ Nothing on the write-back side was wrong: the anchor was right, the two nodes ha
 
 **Root cause**: `previousID` is not a stable "insert after this block" —— its meaning depends on the structure the anchor currently sits in (kernel behaviour: `kernel-api.md` 7.1). When the child list does not exist yet, one anchor form builds it; when it already exists, the insert makes the kernel rebuild the list and the existing item is **replaced**. `insertBlock` still answers `code:0`, so there is no error to react to.
 
-**Practice**: a mapping that points at a **dead block** is more dangerous than no mapping at all —— a missing mapping makes the node look new (a re-insert is idempotent), while a dead mapping makes every stage believe "we already have it" (`syncStructure` skips it, `updateBlock` writes nowhere, `syncDeletions` says nothing). Validate liveness on both sides:
+**Practice**: a mapping that points at a **dead block** is more dangerous than no mapping at all —— a missing mapping makes the node look new (a re-insert is idempotent), while a dead mapping makes every stage believe "we already have it" (`syncStructure` skips it, `updateBlock` writes nowhere, `syncDeletions` says nothing). Validate liveness on both sides, and never with a single query:
 
-1. when entering a write-back, `loadBlockMap`'s own result is the authority (zero extra queries): drop every mapping whose block is not in it;
-2. right after an insert, re-check the blocks that existed **at the same level before** the insert (usually 0~2 of them) and drop the mapping of any that is gone, so that this same write-back re-inserts it.
+1. when entering a write-back, the block list read alongside `loadBlockMap` is the authority (zero extra queries): the mappings absent from it become **suspects**;
+2. **exempt the blocks this session inserted** —— their index entry lags 1~3 s by nature, so "SQL did not find it" says nothing about them yet. The naive rule of step 1 alone ("not in the list ⇒ dead ⇒ drop") collided head-on with `loadBlockMap`'s "keep what SQL has not picked up", the drop won, and a just-inserted node's mapping was deleted and re-inserted as a duplicate (1.9, measured: `SiblingE` at 22:32:58 and again at 22:33:15);
+3. **confirm before acting**: only when the node count and the mapped count differ (a structural change; a pure text edit cannot destroy a sibling block, so keypresses skip the whole check) and only after a second query 400 ms later still does not report the block —— and if that query fails, treat the blocks as alive rather than doing nothing.
+
+The rule is `deadMappingSuspects()` + `suspectedStructuralChange()` in `src/siyuan/store.ts`; their boundaries are pinned by `src/plugin/stale-mapping.test.ts`.
 
 After the fix: `['甲','  同E','  子T','乙','丙']` —— both children present, unchanged after another 18 s.
 

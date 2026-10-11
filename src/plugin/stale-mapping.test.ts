@@ -6,162 +6,94 @@
  * ★ Core point: a **mapping that points at a dead block** is far more dangerous than "no mapping".
  *   No mapping   → treated as a new node and re-inserted (idempotent);
  *   Dead mapping → every stage believes "it is already there", so nobody creates it and nobody errors.
+ *
+ * ★ Both directions of the decision are destructive, which is why it is not tested through a transcribed
+ *   copy any more: declare too little dead and the node keeps a link to a destroyed block (present in the
+ *   UI, absent in SiYuan, no error —— measured `total=7, only 4 alive`); declare too much dead and a live
+ *   node is re-inserted as new (defect #54: `SiblingE` written at 22:32:58 and again at 22:33:15). The two
+ *   predicates now live in `src/siyuan/store.ts` and are called by the write-back itself:
+ *   `deadMappingSuspects()` and `suspectedStructuralChange()`.
+ *
+ * ★ This file used to hold `simulateWriteBack()` —— a three-line copy of the chain —— and asserted on that
+ *   copy, so the plugin's own rule could be changed without turning anything red.
  */
 export {};
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { callSites } from './source-probe';
+import { deadMappingSuspects, suspectedStructuralChange } from '../siyuan/store';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-interface MapState {
-  /** nodeId → blockId (paragraph block) */
-  blockMap: Map<string, string>;
-  /** nodeId → listItem */
-  lastListItems: Map<string, string>;
-  /** blockId → nodeId */
-  lastByBlock: Map<string, string>;
+const dead = (id: string) => `dead-${id}`;
+
+console.log('=== §105 a mapping pointing at a destroyed block is a suspect ===');
+{
+  // 子T maps to a block the index never reported; 同E maps to a block that is alive.
+  const blockMap = new Map([
+    ['子T', dead('blk')],
+    ['同E', 'live-blk'],
+  ]);
+  const freshlyInserted = new Set<string>();
+  const suspects = deadMappingSuspects(blockMap, new Set(['live-blk', 'live-li']), freshlyInserted);
+
+  check('★★ the dead mapping is reported (so it can be cleared and the node re-inserted)',
+    suspects.length === 1 && suspects[0][0] === '子T', JSON.stringify(suspects));
+  check('★ the live mapping is not touched', !suspects.some(([n]) => n === '同E'), JSON.stringify(suspects));
+  check('★ a node with no mapping at all is not a suspect (it is a new node, not a dead link)',
+    deadMappingSuspects(new Map(), new Set(), freshlyInserted).length === 0);
+  check('★ an empty index is not "everything is dead"',
+    deadMappingSuspects(new Map([['a', 'x']]), new Set(), new Set()).length === 1,
+    'a block missing from an empty index is still only a suspect, never a verdict');
 }
 
-/** Blocks that really exist in the store */
-type Live = Set<string>;
-
-console.log('=== §105 the damage chain of a dead mapping ===');
+console.log('\n=== defect #54: a block we just inserted must never be declared dead ===');
 {
-  const simulateWriteBack = (m: MapState, live: Live, uiNodes: string[]) => {
-    let inserted = 0;
-    for (const id of uiNodes) {
-      const blk = m.blockMap.get(id);
-      if (!blk) { inserted++; continue; }     // no mapping → re-insert ✅
-      if (!live.has(blk)) continue;           // mapping exists but the block is dead → do nothing ❌
-    }
-    return { inserted };
-  };
-
-  const uiNodes = ['子T', '同E'];
-
-  // Before the fix: ChildT's mapping points at a dead block
-  const before: MapState = {
-    blockMap: new Map([['子T', 'dead_blk'], ['同E', 'live_blk']]),
-    lastListItems: new Map([['子T', 'dead_li'], ['同E', 'live_li']]),
-    lastByBlock: new Map([['dead_blk', '子T'], ['live_blk', '同E']]),
-  };
-  const r1 = simulateWriteBack(before, new Set(['live_blk', 'live_li']), uiNodes);
-  check('★★ Before the fix: 子T is neither re-inserted nor reports an error ⇒ silently disappears', r1.inserted === 0);
-
-  // After the fix: the dead mapping is cleared → the node is re-inserted as new
-  const after: MapState = {
-    blockMap: new Map([['子T', 'dead_blk'], ['同E', 'live_blk']]),
-    lastListItems: new Map([['子T', 'dead_li'], ['同E', 'live_li']]),
-    lastByBlock: new Map([['dead_blk', '子T'], ['live_blk', '同E']]),
-  };
-  // Cleanup: for any block not in live, delete every mapping of that node
-  const liveSetAfter = new Set(['live_blk', 'live_li']);
-  for (const [nodeId, blk] of [...after.blockMap.entries()]) {
-    if (liveSetAfter.has(blk)) continue;
-    after.blockMap.delete(nodeId);
-    after.lastByBlock.delete(blk);
-  }
-  const live2Has = (b: string): boolean => b === 'live_blk';
-  const r2 = simulateWriteBack(after, new Set(['live_blk', 'live_li']), uiNodes);
-  check('★★ After the fix: 子T is re-inserted ⇒ the data is back', r2.inserted === 1);
-
-  check(
-    '★★★ Conclusion: a dead mapping = silent loss; clearing the dead mapping = self-healing',
-    r1.inserted === 0 && r2.inserted === 1,
-  );
+  // The index lags 1~3 s behind an insert, so "SQL did not find it" says nothing about a fresh block.
+  // Without this exemption the mapping of a just-inserted node is cleared and the next write-back inserts
+  // it a **second time** —— the measured duplicate.
+  const fresh = new Set([dead('blk')]);
+  const blockMap = new Map([['子T', dead('blk')]]);
+  check('★★★ a freshly inserted block is exempt, even though the index has not caught up',
+    deadMappingSuspects(blockMap, new Set(['live-blk']), fresh).length === 0,
+    JSON.stringify(deadMappingSuspects(blockMap, new Set(['live-blk']), fresh)));
+  check('★ … and it stops being exempt as soon as the index reports it (no permanent immunity)',
+    deadMappingSuspects(blockMap, new Set([dead('blk')]), fresh).length === 0,
+    'alive ⇒ never a suspect, whatever the exemption set says');
 }
 
-console.log('\n=== Both validation points are required ===');
+console.log('\n=== §106/§53: only a structural change may confirm a death ===');
 {
-  /**
-   * ① The write-back entry (after loadBlockMap)
-   * ② After the insert (inside syncStructure)
-   *
-   * ★ Doing only ① cannot catch a block "destroyed by this very insert" ——
-   *   it was still alive when the write-back began.
-   */
-  const scenario = {
-    atWriteEnter: 'alive',   // ChildT is still alive when the write-back begins
-    afterInsert: 'dead',     // destroyed by the kernel after SiblingE is inserted
-  };
-
-  const checkAtEnter = scenario.atWriteEnter === 'dead';   // → false, cannot detect it
-  const checkAfterInsert = scenario.afterInsert === 'dead'; // → true, detects it
-
-  check('★ Doing only ① (write-back entry check) → **cannot detect it**', checkAtEnter === false);
-  check('★★ ② (post-insert check) is required to cure #53', checkAfterInsert === true);
-  check(
-    '★★ The two predicates differ ⇒ one check cannot replace the other',
-    checkAtEnter !== checkAfterInsert,
-  );
-
-  // ① still has value because of its cost
-  const cost1 = 'zero-extra-query';   // loadBlockMap has just queried the store
-  const cost2 = 'one-extra-query';    // a re-check of sibling blocks is needed
-  check('① zero extra queries (reuses the loadBlockMap result)', cost1 === 'zero-extra-query');
-  check('② queries only existing siblings (usually 0~2), negligible cost', cost2 === 'one-extra-query');
+  // A pure text edit cannot destroy a sibling block: the node count equals the block count.
+  check('★★ a pure text edit (node count === mapped count) may not confirm a death',
+    suspectedStructuralChange(7, 7) === false);
+  check('★★ a structural change (the counts differ) may',
+    suspectedStructuralChange(7, 5) === true);
+  check('★ one extra node in the tree also counts as structural',
+    suspectedStructuralChange(8, 7) === true);
 }
 
-console.log('\n=== Clearing dead mappings must cover all three tables ===');
+console.log('\n=== the write-back really uses these predicates ===');
 {
-  const m = {
-    blockMap: new Map([['子T', 'dead_blk']]),
-    lastListItems: new Map([['子T', 'dead_li']]),
-    lastByBlock: new Map([['dead_blk', '子T'], ['dead_li', '子T']]),
-  };
-  check('Before cleanup: all three tables hold dead links', m.blockMap.size === 1 && m.lastListItems.size === 1 && m.lastByBlock.size === 2);
-
-  m.blockMap.delete('子T');
-  m.lastListItems.delete('子T');
-  m.lastByBlock.delete('dead_blk');
-  m.lastByBlock.delete('dead_li');
-
-  check('★ All three tables must be cleared: blockMap / lastListItems / lastByBlock', m.blockMap.size === 0 && m.lastListItems.size === 0 && m.lastByBlock.size === 0);
-}
-
-console.log('\n=== §106 child ordering: the early exit of moveNodes ===');
-{
-  interface PlanItem {
-    nodeId: string;
-    wantPid: string;
-    index: number;
-    blockId: string;
-    /** The real type of that block in the store */
-    realType: 'i' | 'l' | 'p' | 'missing';
-  }
-  /** actualParentOf only accepts blocks with type='i' */
-  const actualParentOf = (it: PlanItem): string =>
-    it.realType === 'i' ? 'someList' : '';
-
-  const ziT: PlanItem = { nodeId: '子T', wantPid: '甲', index: 0, blockId: 'aaxx5ak', realType: 'l' };
-  check('★ the real type of the child blockId is **List** (namespace mismatch)', ziT.realType === 'l');
-  check('★★ actualParentOf finds nothing ⇒ `if (!actualParentBlock) continue` exits early', actualParentOf(ziT) === '');
-  check('★★ Result: the child ordering is **never corrected**', actualParentOf(ziT) === '');
-
-  // Direction of the fix
-  const healed: PlanItem = { ...ziT, realType: 'i' };
-  check('★ If the block ID is first put back on a real listItem, the ordering correction can proceed', actualParentOf(healed) === 'someList');
-}
-
-console.log('\n=== Measured data kept on record ===');
-{
-  const probe = { total: 7, aliveN: 4, dead: ['子T', '同E'] };
-  check('★★ Probe measurement: only 4 of the 7 mapped blocks are alive', probe.total === 7 && probe.aliveN === 4);
-  check('★ the dead ones are exactly the two nodes that went wrong', probe.dead.length === 2);
-
-  const before = ['甲', '  同E', '乙', '丙'];
-  const after = ['甲', '  同E', '  子T', '乙', '丙'];
-  check('★★ Before the fix: 子T is gone', !before.some((s) => s.includes('子T')));
-  check('★★ After the fix: both children are there', after.filter((s) => s.startsWith('  ')).length === 2);
-  check('★ the remaining difference is only the **order** ([同E,子T] vs the UI order [子T,同E])', after.filter((s) => s.startsWith('  ')).join(',') === '  同E,  子T');
+  // ★ Precondition of everything above: a rule that nothing calls defends nothing. Read through the parser,
+  //   because the names also appear in the comments that explain them.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'siyuan', 'store.ts'), 'utf8');
+  const suspects = callSites(src, /^deadMappingSuspects$/);
+  const structural = callSites(src, /^suspectedStructuralChange$/);
+  check('★★ the liveness check asks deadMappingSuspects()', suspects.length === 1, suspects.join(', '));
+  check('★★ the confirmation gate asks suspectedStructuralChange()', structural.length === 1,
+    structural.join(', '));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);
