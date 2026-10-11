@@ -65,8 +65,12 @@ class FakeClient {
     return this.markdown;
   }
 
+  /** How many reads of `blocks.markdown` this fake answered —— a write-back may make more than one. */
+  markdownReads = 0;
+
   async sql<T>(stmt: string, _limit?: number): Promise<T[]> {
     if (stmt.includes('SELECT id, content, markdown')) {
+      this.markdownReads++;
       return [{ id: LI, content: ' 节点一', markdown: this.markdown }] as unknown as T[];
     }
     if (stmt.includes("b.type = 'i'")) {
@@ -198,7 +202,40 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log('Scenario 3: creating and clearing a task stay markdown-only');
+  console.log('Scenario 3: the read catches up between two writes of the same state');
+
+  {
+    // ★ This is the gap a single memory entry cannot close on its own. The memory is retired by a read that
+    //   agrees with it, and a write-back makes more than one read (the create path polls). So the sequence
+    //   "write, read catches up and retires the note, read lags again" can leave the note absent while the
+    //   read is stale again —— and the change is dropped exactly as before.
+    const c = new FakeClient();
+    const store = mkStore(c);
+
+    await store.saveNodesIncremental('doc1', [task(2)]); // done; the memory now says 2
+    const afterFirst = c.markdownReads;
+
+    c.markdown = '- [X] 节点一'; // the index caught up
+    await store.saveNodesIncremental('doc1', [task(2)]); // resolves to "nothing to do"
+    check(
+      'the read really happens more than once across write-backs (the memory retires)',
+      c.markdownReads > afterFirst,
+      `reads=${c.markdownReads}`,
+    );
+
+    // The state is unchanged, but the read is stale again —— the same window as the original defect, now
+    // with the memory gone. Nothing has to be written here, and nothing should be.
+    c.markdown = '- [ ] 节点一';
+    const before = c.calls.length;
+    await store.saveNodesIncremental('doc1', [task(2)]);
+    check(
+      'a stale read with no memory re-writes the state rather than dropping it',
+      c.calls.slice(before).some((x) => x.startsWith('updateTaskListItemMarker')),
+      `calls=${JSON.stringify(c.calls.slice(before))}`,
+    );
+  }
+
+  console.log('Scenario 4: creating and clearing a task stay markdown-only');
 
   {
     const c = new FakeClient();
