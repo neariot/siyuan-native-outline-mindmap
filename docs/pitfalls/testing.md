@@ -1014,3 +1014,31 @@ had written down which order was right, so the divergence had no owner.
   trailing `.trim()` (turning a `<br>`-only kernel echo into `" "` instead of `""` —— a spurious conflict on
   every empty node) and added a `snapshot()` clone the original never did. Read the diff line by line after
   the tests pass, not only before.
+
+## A load average above ~3 makes the E2E suite lie about the plugin
+
+**Symptom**: four cases in one full run failed at **46.7–48.4s** while every other case passed in ~5s. The
+error said *"the plugin may have failed to load — check the browser console for an onload error"*. Re-run in
+isolation: still failed, same 46.7s. That looked like a real regression in the build.
+
+**Cause**: nothing was wrong with the build. Measured on the same commit:
+
+| machine | case | result |
+|---|---|---|
+| load average 5.3 | `cancelling the confirm dialog does not delete the node` | ✘ 46.7s |
+| load average 1.6 | the same case, same build | ✓ 11.6s |
+
+A probe on the "failing" build printed `[native-outline-mindmap] plugin loaded`, and the panel's
+`.om-mm-viewswitch` measured 420px wide **before any click** —— it was never closed. The uniform ~47s
+ceiling is the tell: real failures vary, a fixed timeout is flat.
+
+**Practice**:
+- **Check `uptime` before believing an E2E failure.** Above ~3, the suite's fixed timeouts stop measuring
+  the product. The 46–48s cluster and the ~5s passes in one run is the signature.
+- **"Failed in isolation" is not proof of a regression** when the machine is loaded —— the isolation run pays
+  the same contention.
+- **★ The message is part of the defect.** This one named the plugin for a machine problem and sent the
+  reader to the browser console, where there was nothing to find. It now lists the three things to check in
+  order: host loaded (the plugin's own console line), machine loaded (`uptime`), onload error last.
+- A red proof or a verification run that must be trustworthy should be re-run once the load is back down,
+  and the load written into the report either way.

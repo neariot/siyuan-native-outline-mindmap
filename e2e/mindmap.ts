@@ -156,8 +156,15 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   }
 
   throw new Error(
-    'after 3 clicks on the plugin entry the panel is still closed (.om-mm-viewswitch width stayed 0).' +
-      'the plugin may have failed to load —— check the browser console for an onload error',
+    'after 3 clicks on the plugin entry the panel is still closed (.om-mm-viewswitch width stayed 0).\n' +
+      'Before blaming the plugin: the plugin loading and the panel opening are two separate things, and this\n' +
+      'message cannot tell them apart. Measured: with the machine under load, four cases in one run failed\n' +
+      'here after 46.7-48.4s while every other case passed in ~5s, and the same cases passed in 8-12s on an\n' +
+      'idle machine with the identical build. The plugin had loaded (`[native-outline-mindmap] plugin loaded`\n' +
+      'in the console) and the panel never closed.\n' +
+      'So check, in this order: (1) is the host loaded? look for the plugin\'s own console line;\n' +
+      '(2) is the machine loaded? `uptime` —— a load average above ~3 makes this suite unreliable;\n' +
+      '(3) only then look for an onload error in the browser console.',
   );
 }
 
