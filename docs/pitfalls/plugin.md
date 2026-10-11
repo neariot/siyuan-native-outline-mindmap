@@ -117,7 +117,10 @@ produced the claim "not passing `action` crashes", and the table above disproves
 0 errors): the `forEach` belongs to `app.plugins`, not to `action`. **A cause read out of the compiled build is
 a hypothesis until a measurement confirms it.**
 
-**Tests**: `src/plugin/kernel-bugs.test.ts` (freezes the 2×2 outcome: `app` is the only independent variable).
+**Measured**: the 2×2 outcome is in [`docs/kernel-api.md`](../kernel-api.md) §7.14 (with the table), and the
+plugin's side of it —— which value the call passes, and that a missing instance is reported instead of
+substituted —— is `src/plugin/ref-nav.test.ts`. It used to be cited to `src/plugin/kernel-bugs.test.ts`, a file
+whose cases asserted on stub functions written inside the test itself.
 
 ---
 

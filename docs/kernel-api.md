@@ -241,3 +241,41 @@ blank-page row above, so the precondition is checked and the user is told
 (`errClientNotReady`) instead (`src/plugin/mount.ts`).
 
 ---
+
+## 7.15 Kernel operations that fail while reporting success
+
+Two of these are silent: the return value says success, nothing is applied, and
+the plugin's state drifts from the document. They are the reason the write-back
+verifies its own writes instead of trusting a `code: 0`.
+
+**`moveBlock` with a `previousID` that is not a listItem** —— the kernel notices
+the illegal structure and writes an `E` log, but returns
+
+```
+{ code: 0, msg: '' }        and applies nothing
+```
+
+Success and failure return exactly the same values, so the caller cannot tell
+them apart. Measured residue (defect #53): node A has `ChildT`; adding the
+sibling `SiblingE` leaves SiYuan at `['A', '  SiblingE', '  ChildT']` while the
+UI shows `[ChildT, SiblingE]` —— nothing is lost, the order disagrees, and
+nothing is reported. `moveNodes` therefore resolves every anchor through
+`listItemOf()` (the **listItem** block, never the paragraph) and skips a node
+whose parent cannot be resolved; the anchors are covered by
+`src/siyuan/blockmap-anchor.test.ts`.
+
+**`insertBlock` with a document ID as `previousID`** —— the kernel **panics**
+(100% reproducible). A listItem, a List, a paragraph and a heading anchor are
+all fine; only the document ID is fatal, so the anchor must never be the
+document root.
+
+**The error message for an illegal `previousID` points the wrong way**: an ID
+that does not exist, one that was deleted, and a document ID all produce *the
+same* message ("… is a document ID …"), so it cannot be used to tell the three
+apart.
+
+**`openTab` is an empty implementation on mobile** —— it does not throw, and it
+does nothing at all. A reference click there is a silent no-op; there is no
+error to catch (see §7.14 for the desktop branch).
+
+---
