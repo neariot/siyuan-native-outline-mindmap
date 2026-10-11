@@ -16,7 +16,7 @@
 
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown } from '../core/map';
+import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, taskStateOfKramdownLine } from '../core/map';
 import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
@@ -1030,14 +1030,25 @@ export class SiYuanStore {
 
     // first read the current text of each block, for comparison
     const current = new Map<string, string>();
+    // ★ The to-do state is read here too, and not from `content`: measured, a task's `content` is
+    //   ` x` —— the marker has been reduced to a space —— while its `markdown` is `- [ ] x`. And the
+    //   mapping's value is the **paragraph** block, which never carries the marker, so the listItem ids
+    //   have to be read alongside it. Without this the store cannot tell a to-do it already wrote from one
+    //   the user just changed, and either rewrites every task on every save or never clears one.
+    const storedTask = new Map<string, number>();
     const aliveIds = new Set<string>();
     if (blockMap.size) {
-      const ids = [...blockMap.values()].map((id) => `'${sqlStr(id)}'`).join(',');
-      const rows = await this.client.sql<{ id: string; content: string }>(
-        `SELECT id, content FROM blocks WHERE id IN (${ids})`,
-        Math.max(blockMap.size, 1),
+      const wanted = [...new Set([...blockMap.values(), ...this.lastListItems.values()])];
+      const ids = wanted.map((id) => `'${sqlStr(id)}'`).join(',');
+      const rows = await this.client.sql<{ id: string; content: string; markdown: string | null }>(
+        `SELECT id, content, markdown FROM blocks WHERE id IN (${ids})`,
+        Math.max(wanted.length, 1),
       );
-      for (const r of rows) { current.set(r.id, (r.content ?? '').trim()); aliveIds.add(r.id); }
+      for (const r of rows) {
+        current.set(r.id, (r.content ?? '').trim());
+        aliveIds.add(r.id);
+        storedTask.set(r.id, taskStateOfKramdownLine(r.markdown ?? ''));
+      }
     }
 
     // ★★★ Liveness check: clear mappings pointing at **blocks that no longer exist** (measured).
@@ -1190,21 +1201,36 @@ export class SiYuanStore {
       //   All three states go through this one path (`- [X] `, `- [ ] `) rather than a marker call beside
       //   the DOM write: two calls for one field drift apart, and only one of them can create.
       let liId = this.lastListItems.get(n.id);
-      const wantsTask = n.taskStatus === 1 || n.taskStatus === 2;
-      if (liId && wantsTask) {
+      const wants = n.taskStatus === 2 ? 2 : n.taskStatus === 1 ? 1 : 0;
+      // ★ Written only when the document does not already hold this state. Rewriting unconditionally costs
+      //   a full markdown reparse of the node and its subtree on every save, and a markdown write cannot
+      //   carry HTML/IAL, so a to-do whose text is styled would lose that styling on every keystroke.
+      const stored = liId ? storedTask.get(liId) ?? 0 : 0;
+      if (liId && wants !== stored) {
         try {
-          // ★ The markdown must carry the node's **subtree**, not just its own line: measured on the kernel,
-          //   updating a list item that has children with only its own line makes the kernel **append a
-          //   nested line** instead of converting the block, so the to-do lands beside its children instead
-          //   of above them. `nodeSubtreeToKramdown` is the same walker the document export uses, so the two
-          //   cannot drift apart, and it writes the task prefix from `taskStatus` itself.
-          await this.client.updateBlock(liId, nodeSubtreeToKramdown(n));
+          if (wants && stored) {
+            // ★ Already a to-do, so this is a checked-state change: the marker API is the native call for
+            //   exactly that, and it leaves the block's own content alone. (It cannot create a task — it
+            //   answers `-1 block is not a task list item` on a plain list item, which is why creation and
+            //   clearing take the markdown path instead.)
+            await this.client.updateTaskListItemMarker(liId, wants === 2 ? 'X' : ' ');
+          } else {
+            // ★ Creating a to-do (0 → task) and clearing one (task → 0) are both markdown-only: no other
+            //   call can introduce or remove the task subtype. The markdown must carry the node's
+            //   **subtree**, not just its own line: measured, updating a list item that has children with
+            //   only its own line makes the kernel append a nested line instead of converting the block,
+            //   so the to-do lands beside its children instead of above them. Measured the other way too:
+            //   clearing through the same call drops the marker and keeps the children.
+            //   `nodeSubtreeToKramdown` is the walker the document export uses, so the two cannot drift
+            //   apart, and it writes the prefix from `taskStatus` itself.
+            await this.client.updateBlock(liId, nodeSubtreeToKramdown(n));
+          }
           updated++;
         } catch (e) {
-          // Loud rather than swallowed: this is the only call that makes a to-do a to-do in the document.
+          // Loud rather than swallowed: these are the only calls that make a to-do a to-do in the document.
           console.warn('[om] could not write the to-do state for', liId, e);
         }
-      } else if (!liId && wantsTask) {
+      } else if (!liId && wants) {
         // ★ A task state with no list-item mapping is not a quiet no-op: the plugin is showing a to-do it
         //   has no way to write, which is how a created to-do went missing from the document.
         console.warn('[om] no listItem mapping for a task node, cannot write its to-do state:', n.id);

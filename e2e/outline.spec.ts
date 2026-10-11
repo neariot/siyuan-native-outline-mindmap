@@ -666,6 +666,53 @@ test.describe('multi-select and batch operations', () => {
     }
   });
 
+  test('★ clearing a to-do in the outline clears it in the document', async ({ page }) => {
+    // ★ The other direction of the same field. A node's own checkbox cycles todo → done → none, and the
+    //   last step is the one with no marker call behind it: measured, the marker API answers
+    //   `-1 block is not a task list item` on anything that is not already a task, so clearing has to go
+    //   through the markdown write that creates a task. Both states are asserted, because "the to-do never
+    //   went away" and "the to-do went away one step too early" are different defects.
+    const api = await kernelApi(siyuanUrl(), siyuanToken());
+    let docId = '';
+    try {
+      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n');
+      await openDoc(page, docId);
+      await toOutlineView(page);
+      await ensureOutlineToolbarOpen(page);
+
+      const line = async (): Promise<string> => {
+        const res = await api.call('/api/export/exportMdContent', { id: docId });
+        return String(res.data?.content ?? '')
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.includes('待办节点')) ?? '';
+      };
+      const box = page.locator('.taskbox input[type="checkbox"]:visible').first();
+      await expect(box, 'a to-do read from the document should offer a checkbox').toBeVisible();
+      expect(await line(), 'the document starts as a to-do').toBe('- [ ] 待办节点');
+
+      await box.click();
+      await expect(box, 'the outline should still offer the to-do it just completed').toBeVisible();
+      // Uppercase, because that is what the kernel writes for a completed task.
+      await expect.poll(line, { message: 'the document should record the completed state', timeout: 10000 })
+        .toBe('- [X] 待办节点');
+
+      await box.click();
+      // A plain node has no checkbox, so the box disappearing is the outline's own evidence that the node
+      // stopped being a to-do — and it is the half that can drift from the document.
+      await expect(
+        page.locator('.taskbox input[type="checkbox"]:visible'),
+        'a node that is no longer a to-do should offer no checkbox',
+      ).toHaveCount(0);
+      await expect
+        .poll(line, { message: 'the document should stop being a to-do', timeout: 10000 })
+        .toBe('- 待办节点');
+    } finally {
+      if (docId) await removeDoc(api, docId);
+      await api.dispose();
+    }
+  });
+
   test('★ a completed task survives reopening the document', async ({ page }) => {
     // `taskStatus` is stored as SiYuan's native task marker, and *done* is the state at risk: creating a
     // task makes a todo, so only the flip to done has to travel through the dedicated kernel call

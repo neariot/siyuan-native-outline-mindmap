@@ -836,6 +836,25 @@ export function takeTitleParagraphs(): string[] {
   return v;
 }
 
+/**
+ * The task state one block's own Kramdown line carries: 0 not a to-do, 1 unchecked, 2 checked.
+ *
+ * ★ One definition for two readers. `kramdownToTree` asks it what a document line means, and the store
+ *   asks it what a block already holds before writing a change —— so the write-back cannot disagree with
+ *   the reader about what counts as a to-do.
+ *
+ * Tolerates the two shapes the same text arrives in: a `blocks.markdown` value (`- [ ] x`) and a
+ * `getBlockKramdown` value, which carries the block's attribute group between the bullet and the body
+ * (`- {: id="..."}[ ] x`).
+ */
+export function taskStateOfKramdownLine(line: string): 0 | 1 | 2 {
+  let body = line.replace(/^\s*[-*+]\s+/, '');
+  for (let i = 0; i < 2 && /^\{:/.test(body); i++) body = body.replace(/^\{:[^}]*\}\s*/, '');
+  if (/^\[x\]\s*/i.test(body)) return 2;
+  if (/^\[ \]\s*/.test(body)) return 1;
+  return 0;
+}
+
 export function kramdownToTree(kramdown: string): OutlineNode[] {
   const roots: OutlineNode[] = [];
   const titleParagraphs: string[] = [];
@@ -1015,12 +1034,10 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
     }
 
     let taskStatus: number | undefined;
-    if (/^\[x\]\s*/i.test(body)) {
-      taskStatus = 2;
-      body = body.replace(/^\[x\]\s*/i, '');
-    } else if (/^\[ \]\s*/.test(body)) {
-      taskStatus = 1;
-      body = body.replace(/^\[ \]\s*/, '');
+    const taskState = taskStateOfKramdownLine(body);
+    if (taskState) {
+      taskStatus = taskState;
+      body = body.replace(/^\[[ xX]\]\s*/, '');
     }
 
     let heading = 0;
