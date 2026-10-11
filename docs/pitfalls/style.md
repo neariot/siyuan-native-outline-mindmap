@@ -533,3 +533,28 @@ whole text comes from a value (2 sites today).
 (`src/styles.css:170,549`, both copies).
 
 ---
+
+### A criterion can be satisfied by code it never named —— counting braces in TypeScript
+
+**Symptom**: `src/siyuan/move-nodes-latency.test.ts` asserted "no fixed sleep outside the loop" and "there
+is a polling loop" against the body of `store.ts:moveNodes`. The body it was handed was **949 lines long,
+ending at the end of the class and swallowing 13 more methods** (the real one is 287 lines). Every
+assertion passed, and one of them was passing *because* of the wrong text: "there is a polling loop"
+required a numeric bound (`i < 12`), the real loop uses `POLL_ROUNDS`, and the criterion was satisfied by
+an unrelated `for (let i = 1; i < ids.length; i++)` further down the file.
+
+**Cause**: `fnBody` cut a function body by counting braces. A brace inside a string literal, a template
+literal or a comment moves the count, so the block never closes where it should —— and the failure is
+invisible, because an over-long body is still a string, and a string is all a regex needs.
+
+**Practice**: `src/plugin/source-probe.ts` asks the **TypeScript parser** where the body ends
+(`fnBody` / `braceBlock`), and strips comments with the compiler's own scanner rather than by tracking
+quotes by hand. A criterion that needs a *value* out of the source (a bound, an interval) resolves it
+through the constants the file defines instead of demanding a literal in the text: "the bound is finite
+and sane" is what the criterion means, and `POLL_ROUNDS = 20` satisfies it, while `i < 12` only ever
+described one spelling.
+
+**Tests**: `src/siyuan/move-nodes-latency.test.ts` (14 checks; `POLL_ROUNDS = 5000` makes the bounded
+criterion go red).
+
+---

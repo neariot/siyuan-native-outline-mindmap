@@ -50,7 +50,7 @@
 export {};
 
 import * as fs from 'node:fs';
-import { braceBlock, stripComments } from '../plugin/source-probe';
+import { braceBlock, fnBody, stripComments } from '../plugin/source-probe';
 
 let pass = 0;
 let fail = 0;
@@ -67,27 +67,24 @@ function check(name: string, cond: boolean, extra = '') {
 
 const store = fs.readFileSync('src/siyuan/store.ts', 'utf8');
 
-/** Slice out the body of moveNodes */
-function moveNodesBody(): string {
-  const start = store.indexOf('private async moveNodes(');
-  if (start < 0) return '';
-  const open = store.indexOf('{', start);
-  let depth = 0;
-  for (let i = open; i < store.length; i++) {
-    if (store[i] === '{') depth++;
-    else if (store[i] === '}') {
-      depth--;
-      if (depth === 0) return store.slice(open, i);
-    }
-  }
-  return store.slice(open);
-}
+// ★ The body comes from the TypeScript parser, not from counting braces: braces inside strings, template
+//   literals and comments moved the count, and the "body" ran on into the rest of the class (measured:
+//   949 lines and 13 extra methods) while every assertion below still passed —— they were being asked
+//   about text nobody meant to probe. `fnBody` strips comments as well, so a comment cannot satisfy a
+//   positive assertion either.
+const body = fnBody(store, 'private async moveNodes(');
+
+/**
+ * The numeric constants `store.ts` defines, so a criterion can read a value that the source writes as a
+ * name. A named bound is not a weaker bound, and demanding a literal is how a criterion ends up being
+ * satisfied by an unrelated loop.
+ */
+const consts: Record<string, number> = {};
+for (const m of store.matchAll(/export const ([A-Z_][A-Z0-9_]*)\s*=\s*(\d+)/g)) consts[m[1]] = Number(m[2]);
 
 // ★ Strip comments before asserting. A positive assertion (like `/for (let i …)/.test(body)`) on text
 //   that still has comments is satisfied by **a code sample inside a comment**: the real loop is deleted, a comment still explains it,
 //   and the criterion still passes. Once comments are stripped, only real code can satisfy it.
-const body = stripComments(moveNodesBody());
-
 // ──────────────────────────────────────────────────────────────────
 console.log('the move loop must no longer contain a "fixed wait per node"');
 
@@ -122,11 +119,7 @@ console.log('the move loop must no longer contain a "fixed wait per node"');
 
   // The polling interval must be clearly below 300ms, otherwise nothing was optimized
   const inLoop = braceBlock(body, loopStart);
-  // The interval may be a constant name; take the value from the constant definition in the source
-  const consts: Record<string, number> = {};
-  for (const m of store.matchAll(/export const ([A-Z_][A-Z0-9_]*)\s*=\s*(\d+)/g)) {
-    consts[m[1]] = Number(m[2]);
-  }
+  // The interval may be a constant name; its value comes from the map above.
   const rawMs = /setTimeout\(\s*\(?r\)?[^,]*,\s*([\w]+)\s*\)/.exec(inLoop)?.[1];
   const pollMs = rawMs ? (/^\d+$/.test(rawMs) ? Number(rawMs) : (consts[rawMs] ?? 0)) : 0;
   check(
@@ -140,9 +133,17 @@ console.log('the move loop must no longer contain a "fixed wait per node"');
 console.log('\npoll until visible instead: query first, break on a hit, bounded');
 
 {
+  // ★ The bound is a literal or a **named constant** (`POLL_ROUNDS`), and what matters is the value it
+  //   resolves to. ✕ The first version demanded a literal, so with the real body in hand it failed on
+  //   correct code while, with the wrong body, it passed on a loop from another method.
+  const boundName = /for \(let i = 0; i < (\d+|[A-Za-z_][\w]*); i\+\+\)/.exec(body)?.[1];
+  const boundValue =
+    boundName === undefined ? 0 : /^\d+$/.test(boundName) ? Number(boundName) : (consts[boundName] ?? 0);
+  check('★ there is a polling loop', boundName !== undefined);
   check(
-    '★ there is a polling loop',
-    /for \(let i = 0; i < \d+; i\+\+\)/.test(body),
+    '★ the polling is bounded (a finite count, no infinite loop)',
+    boundValue > 0 && boundValue <= 100,
+    `bound ${boundName ?? 'not found'} = ${boundValue}`,
   );
 
   // No wait first: inside the loop body, sql comes before sleep
@@ -160,11 +161,7 @@ console.log('\npoll until visible instead: query first, break on a hit, bounded'
       '★ break on a hit (does not waste all polling rounds)',
       /ok = true;\s*break;/.test(loop),
     );
-    check(
-      '★ the polling is bounded (the count is a finite number, no infinite loop)',
-      /for \(let i = 0; i < (\d+|[A-Za-z_][\w]*); i\+\+\)/.test(body) &&
-        /for \(let i = 0; i < (\d+|POLL_ROUNDS); i\+\+\)/.test(loop),
-    );
+    // The bound itself is asserted above, by value.
   }
 
   // The verification SQL is still there (verification must not be dropped for speed)

@@ -16,65 +16,103 @@
 //      deleted still passes, because a comment explains what it used to do.
 //      Strip comments first; assert on code only.
 //
-// So: `fnBody(src, header)` cuts a function body by brace matching, and
+// ★ The structure comes from the TypeScript parser, not from counting braces.
+//   Counting was the first version and it was wrong in the one place it had to
+//   be right: a brace inside a string literal, a template literal
+//   (`${...}` counts as one `{` and one `}` only if the expression is balanced
+//   too) or a comment moves the depth, and the "body" silently runs on into the
+//   next functions. Measured: the body of `store.ts:moveNodes` came out as
+//   **949 lines** -- the rest of the class, 13 more methods -- while every
+//   assertion in the test that used it passed, because they were being asked
+//   about text nobody meant to probe. The parser knows where a block ends, so
+//   the question is asked of the compiler instead of reconstructed by hand.
+//
+// So: `fnBody(src, header)` cuts a function body with the parser, and
 // `stripComments(src)` removes comments without touching string literals.
 // Use both before every source-text assertion.
+
+import * as ts from 'typescript';
+
+/** Parsing the same file once per assertion is wasteful; the text is the cache key. */
+const parsed = new Map<string, ts.SourceFile>();
+
+const parse = (src: string): ts.SourceFile => {
+  let sf = parsed.get(src);
+  if (!sf) {
+    sf = ts.createSourceFile('probe.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    parsed.set(src, sf);
+  }
+  return sf;
+};
+
+/** The function-like declaration that starts at or after `from`, nearest first. */
+const nearestFunctionBody = (src: string, from: number): ts.Node | null => {
+  const sf = parse(src);
+  let best: { body: ts.Node; start: number } | null = null;
+  const visit = (node: ts.Node): void => {
+    const body = (node as { body?: ts.Node }).body;
+    const isFunctionLike =
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isArrowFunction(node) ||
+      ts.isConstructorDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node);
+    if (isFunctionLike && body && ts.isBlock(body)) {
+      const start = node.getStart(sf);
+      // Nearest at or after `from`, and the **outermost** one: for
+      // `const x = () => { const y = () => {...} }` asked about `const x = (`, the answer is x's body,
+      // so a later, inner function must not win.
+      if (start >= from && (best === null || start < best.start)) best = { body, start };
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return best === null ? null : (best as { body: ts.Node }).body;
+};
+
+/** The statement whose `{...}` block starts at or after `from`, nearest first, by the parser. */
+const nearestBlock = (src: string, from: number): ts.Node | null => {
+  const sf = parse(src);
+  let best: { node: ts.Node; start: number } | null = null;
+  const visit = (node: ts.Node): void => {
+    if (ts.isBlock(node)) {
+      const start = node.getStart(sf);
+      if (start >= from && (best === null || start < best.start)) best = { node, start };
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return best === null ? null : (best as { node: ts.Node }).node;
+};
 
 /**
  * Remove line and block comments, leaving string literals alone.
  *
- * A naive one-line regex replace of line comments also eats the tail of a line
- * that contains a URL inside a string, which can delete real code from the
- * probed text and turn a check silently green. So walk the text and track
- * whether we are inside a quote.
+ * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads
+ *   `/` inside a string, a template or a regular expression as a comment opener in the cases where it
+ *   cannot tell them apart, and deleting real code from the probed text turns a check silently green.
  */
 export function stripComments(src: string): string {
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, src);
   let out = '';
-  let i = 0;
-  const n = src.length;
-  // '' = outside a string; otherwise the quote that opened it
-  let quote = '';
-  while (i < n) {
-    const c = src[i];
-    const next = src[i + 1];
-    if (quote) {
-      out += c;
-      if (c === '\\') {
-        // an escape consumes the next character, whatever it is
-        if (i + 1 < n) out += src[i + 1];
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = '';
-      i++;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      quote = c;
-      out += c;
-      i++;
-      continue;
-    }
-    if (c === '/' && next === '/') {
-      while (i < n && src[i] !== '\n') i++;
-      continue;
-    }
-    if (c === '/' && next === '*') {
-      // a block comment becomes a newline, so line structure survives
-      const end = src.indexOf('*/', i + 2);
-      i = end < 0 ? n : end + 2;
+  let token = scanner.scan();
+  while (token !== ts.SyntaxKind.EndOfFileToken) {
+    if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) {
+      out += src.slice(scanner.getTokenStart(), scanner.getTokenEnd());
+    } else {
+      // A comment becomes a newline, so line structure survives.
       out += '\n';
-      continue;
     }
-    out += c;
-    i++;
+    token = scanner.scan();
   }
   return out;
 }
 
 /**
- * Cut the body of the function (or arrow function / method) starting at
- * `header`, by matching braces.
+ * Cut the body of the function (or arrow function / method) that starts at or after `header`, using the
+ * TypeScript parser.
  *
  * Returns `''` when the header is not found, so a check that forgot to assert
  * the header exists fails loudly instead of asserting on an empty string.
@@ -84,27 +122,14 @@ export function stripComments(src: string): string {
 export function fnBody(src: string, header: string, options?: { keepComments?: boolean }): string {
   const start = src.indexOf(header);
   if (start < 0) return '';
-  const open = src.indexOf('{', start);
-  if (open < 0) return '';
-  let depth = 0;
-  for (let j = open; j < src.length; j++) {
-    if (src[j] === '{') depth++;
-    else if (src[j] === '}') {
-      depth--;
-      if (depth === 0) {
-        const body = src.slice(open, j + 1);
-        return options?.keepComments ? body : stripComments(body);
-      }
-    }
-  }
-  // unbalanced source: return the rest, comments stripped, so the check fails
-  // on real content rather than on a truncated one
-  const rest = src.slice(open);
-  return options?.keepComments ? rest : stripComments(rest);
+  const body = nearestFunctionBody(src, start);
+  if (!body) return '';
+  const text = src.slice(body.getStart(parse(src)), body.getEnd());
+  return options?.keepComments ? text : stripComments(text);
 }
 
 /**
- * Cut the body of a function by brace matching **including** its comments.
+ * Cut the body of a function **including** its comments.
  * Use it when the check is about comments themselves (e.g. "the pitfall note
  * is still there"); otherwise prefer `fnBody`, whose result is comment-free.
  */
@@ -113,29 +138,20 @@ export function fnBodyWithComments(src: string, header: string): string {
 }
 
 /**
- * Return the statement whose `{...}` block starts at or after `from`, by brace
- * matching -- **including the header** between `from` and the brace, so a
- * `for (...)` loop's condition is part of the result.
+ * Return the statement whose `{...}` block starts at or after `from` -- **including the header** between
+ * `from` and the brace, so a `for (...)` loop's condition is part of the result.
  *
  * Use it to bound a loop or an `if` inside an already-extracted body, instead
  * of guessing a length (`body.slice(loopStart, loopStart + 700)`): a guessed
  * window silently widens or narrows as the surrounding comments change, so the
  * assertion ends up looking at text nobody intended.
  *
- * Returns `''` when there is no brace at or after `from`, so a mis-anchored
+ * Returns `''` when there is no block at or after `from`, so a mis-anchored
  * caller fails loudly rather than asserting on the wrong text.
  */
 export function braceBlock(src: string, from: number): string {
   if (from < 0) return '';
-  const open = src.indexOf('{', from);
-  if (open < 0) return '';
-  let depth = 0;
-  for (let j = open; j < src.length; j++) {
-    if (src[j] === '{') depth++;
-    else if (src[j] === '}') {
-      depth--;
-      if (depth === 0) return src.slice(from, j + 1);
-    }
-  }
-  return src.slice(from);
+  const block = nearestBlock(src, from);
+  if (!block) return '';
+  return src.slice(from, block.getEnd());
 }

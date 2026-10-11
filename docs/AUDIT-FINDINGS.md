@@ -106,8 +106,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### siyuan
 
-- **high · test-quality** `src/siyuan/move-nodes-latency.test.ts:71`  
-  The local helper `moveNodesBody()` silently returns the whole rest of store.ts (lines 1874-2822) instead of the body of moveNodes, so the file's 'there is a polling loop' check is satisfied by an unrelated loop in another function and every other assertion scans ~950 lines it never named.
 
 ### config
 
