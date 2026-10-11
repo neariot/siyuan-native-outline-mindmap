@@ -484,10 +484,31 @@ export function layoutHorizontal(
    *   recursive layout and both sides of the single-root branch); fixing one and missing the others is
    *   how a chain stayed flat after the first fix.
    */
-  const childCyOf = (parentCy: number, parentH: number, startY: number, bandH: number, siblingCount: number): number => {
+  const childCyOf = (
+    parentCy: number,
+    parentH: number,
+    startY: number,
+    bandH: number,
+    siblingCount: number,
+    childH: number,
+  ): number => {
     const centred = startY + bandH / 2;
     if (siblingCount !== 1) return centred;
-    const minBelow = parentCy + parentH / 2 + Math.max(V_GAP, Math.round(parentH * 0.6));
+    // ★ The parent's height decides **where its bottom edge is**, and the gap below it is the same
+    //   `V_GAP` used between siblings —— nothing else depends on the height.
+    //
+    //   An earlier version used `max(V_GAP, round(parentH * 0.6))` as the gap as well, so the descent
+    //   grew with the parent's height: measured, a one-line parent put its only child 37px below, two
+    //   lines 73px, three lines 108px. The height was standing in for "one line of text", which is not
+    //   what it measures —— the line height is the fixed `NODE_LINE_H`, and a block of text is taller
+    //   than one line precisely because it holds several. Two siblings of different heights were also
+    //   pushed apart by different amounts, so the spacing was uneven for no reason a reader could see.
+    // ★ `minBelow` is the centre that puts the child's **top edge** V_GAP below the parent's bottom edge,
+    //   so it has to be computed from the child's own height, not used as a centre directly. Using it as
+    //   the centre left the boxes overlapping by 3px at every height (measured: parentBottom 94, child
+    //   top 91 —— the child sat *inside* its parent), which is the same "close enough" that made this
+    //   look fixed.
+    const minBelow = parentCy + parentH / 2 + V_GAP + childH / 2;
     return centred < minBelow ? minBelow : centred;
   };
 
@@ -535,7 +556,7 @@ export function layoutHorizontal(
     let startY = cy - totalCh / 2;
     for (const c of n.children) {
       const ch = subtreeH(c);
-      const childCy = childCyOf(cy, m.h, startY, ch, n.children.length);
+      const childCy = childCyOf(cy, m.h, startY, ch, n.children.length, measureNode(c).h);
       layoutSubtree(c, x, w, cy, childCy, side, depth + 1, branchIdx);
       startY += ch;
     }
@@ -595,7 +616,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length);
+          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length, measureNode(c).h);
           layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
           startY += ch;
         });
@@ -640,7 +661,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length);
+          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length, measureNode(c).h);
           layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, branchIdx);
           startY += ch;
         });
@@ -710,7 +731,7 @@ export function layoutHorizontal(
           let startY = rootCy - rightKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           rightKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = childCyOf(rootCy, rm.h, startY, ch, rightKids.length);
+            const childCy = childCyOf(rootCy, rm.h, startY, ch, rightKids.length, measureNode(c).h);
             layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
             startY += ch;
           });
@@ -720,7 +741,7 @@ export function layoutHorizontal(
           let startY = rootCy - leftKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           leftKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = childCyOf(rootCy, rm.h, startY, ch, leftKids.length);
+            const childCy = childCyOf(rootCy, rm.h, startY, ch, leftKids.length, measureNode(c).h);
             layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, rightKids.length + idx);
             startY += ch;
           });

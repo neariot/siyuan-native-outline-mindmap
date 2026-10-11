@@ -582,6 +582,26 @@ console.log('\nedgePath: all three line styles produce a valid SVG path');
     check(`${mode}: no two boxes overlap in a chain`, overlaps === 0);
   }
 
+  // ★★ The descent must not grow with the parent's **text length**. An earlier version used
+  //    `max(V_GAP, round(parentH * 0.6))` as the gap, so a one-line parent put its only child 37px
+  //    below, two lines 73px, three lines 108px —— the parent's height was standing in for "one line of
+  //    text", which is not what it measures. What must stay constant is the **clearance** between the
+  //    parent's bottom edge and the child's top edge.
+  {
+    const clearances: number[] = [];
+    for (const lines of [1, 2, 3]) {
+      const long = 'x'.repeat(lines * 30);
+      const lay = layoutHorizontal([N('p', long, [N('c', 'child')])], 'right', new Set<string>());
+      const by = new Map(lay.boxes.map((b) => [b.node.id, b]));
+      const p = by.get('p')!, c = by.get('c')!;
+      clearances.push(c.y - (p.y + p.h));
+    }
+    check(
+      `a taller parent does not push its only child further away (clearance per height: ${clearances.join(', ')})`,
+      clearances.every((v) => v === clearances[0]) && clearances[0] > 0,
+    );
+  }
+
   // The other half: siblings must still spread **around** the parent, not be pushed below it.
   const tree = [N('p', 'p', [N('c1', 'c1'), N('c2', 'c2'), N('c3', 'c3')])];
   const lay = layoutHorizontal(tree, 'right', new Set<string>());
