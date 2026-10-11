@@ -620,6 +620,52 @@ test.describe('multi-select and batch operations', () => {
     }
   });
 
+  test('★ a to-do with children keeps them', async ({ page }) => {
+    // ★ The leaf case above cannot see this defect: measured on the kernel, updating a list item that has
+    //   children with only its own line makes the kernel **append a nested line** instead of converting the
+    //   block, so the to-do lands beside its children instead of above them. The child staying a child is
+    //   the whole content of this case.
+    const api = await kernelApi(siyuanUrl(), siyuanToken());
+    let docId = '';
+    try {
+      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 分支一\n  - 节点一\n');
+      await openDoc(page, docId);
+      await toOutlineView(page);
+      await ensureOutlineToolbarOpen(page);
+      await page.locator('.node-row').first().click();
+      await page.locator('button[title*="待办"]:visible').first().click();
+
+      await expect(
+        page.locator('.taskbox input[type="checkbox"]:visible').first(),
+        'the outline should show the to-do it was just asked to create',
+      ).toBeVisible();
+
+      let md = '';
+      await expect
+        .poll(async () => {
+          const res = await api.call('/api/export/exportMdContent', { id: docId });
+          md = String(res.data?.content ?? '');
+          return md;
+        }, { message: 'the document should hold a task marker', timeout: 10000 })
+        .toMatch(/\[[ xX]\]/);
+
+      // ★ Structure, not adjacency: a regex for "a marker line, then a line with the child" also matches
+      //   the defective document (`- 分支一` / `  - [ ] 分支一` / child), because there the marker sits on a
+      //   *nested copy* while the real parent stays untasked. So require the parent's single line to carry
+      //   the marker and the child to be the line right after it.
+      const docLines = md.split('\n').map((l) => l.trim()).filter(Boolean);
+      const parentLines = docLines.filter((l) => l.includes('分支一'));
+      expect(parentLines, 'the parent must appear on exactly one line').toEqual(['- [ ] 分支一']);
+      expect(
+        docLines[docLines.indexOf('- [ ] 分支一') + 1],
+        'the child must be the line directly under the to-do',
+      ).toBe('- 节点一');
+    } finally {
+      if (docId) await removeDoc(api, docId);
+      await api.dispose();
+    }
+  });
+
   test('★ a completed task survives reopening the document', async ({ page }) => {
     // `taskStatus` is stored as SiYuan's native task marker, and *done* is the state at risk: creating a
     // task makes a todo, so only the flip to done has to travel through the dedicated kernel call

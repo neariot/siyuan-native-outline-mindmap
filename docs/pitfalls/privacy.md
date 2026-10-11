@@ -83,7 +83,13 @@ from the one under test (340,555).
 * **A red proof that needs a deploy deploys to the working instance.** A deliberately broken plugin must
   never be installed anywhere the user will open it.
 * **Do not let a helper's comment be the isolation.** Check what the tool actually reads; the variable that
-  "redirects" it may not exist.
+  "redirects" it may not exist. Measured twice, the second time in `redproof.py`: it narrowed the deploy by
+  setting `PLUGIN_DIRS` to the test instance, a variable `deploy.py` never reads (it always adds the
+  instance the user works in), so **both** targets survived the "narrowing" and a mutated build was
+  installed into the user's editor. Its guard then counted target lines in the output of a command that
+  never passed `--list`, found none, and —— checking *after* the install —— reported the failure while the
+  damage was already done. Two rules follow: `--test-only` is the only narrowing, and a guard that means
+  to prevent a write must ask **before** it writes.
 * **Reading it is not free either.** The reference instance may be read, and what is read does not travel:
   no name, id, `hpath`, title, content or screenshot of their workspace leaves it (§1, and the live
   cross-check in `scripts/audit-privacy.py --live` exists to catch what does).

@@ -100,34 +100,60 @@ class RedProof:
 
     # ---------- deploy ----------
 
+    def deploy_targets(self):
+        """Every directory a deploy would install into, as `deploy.py --list` reports it.
+
+        ★ The flag is passed through, and it changes the answer: `--list` on its own still reports the
+          instance the user works in, so asking without `--test-only` compares two targets against one
+          and fails while the narrowing in fact works.
+        """
+        done = subprocess.run(["python3", "scripts/deploy.py", "--list", "--test-only"], cwd=REPO_ROOT,
+                              capture_output=True, text=True)
+        output = (done.stdout or "") + (done.stderr or "")
+        targets = []
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("\u00b7"):
+                # "\u00b7 <path>", optionally followed by an annotation. Only an absolute path is a
+                # target: --list also prints a note line beginning the same way, and reading that as a
+                # directory makes this guard report a target that is not one.
+                path = line[1:].split("\u2190")[0].strip()
+                if path.startswith("/"):
+                    targets.append(path)
+        return targets
+
     def deploy(self, when):
         """Build and sync the plugin into the isolated test instance **only**.
 
-        ★ Narrowing is the whole point: `npm run deploy` writes to every directory in
-        `PLUGIN_DIRS`, and the user's own workspace is one of them, so a red proof would hand
-        the user a broken plugin for the length of the run.
+        ★ Narrowing is the whole point: by default `npm run deploy` installs into every plugin
+        directory, the instance the user works in included, so a red proof would hand them a broken
+        plugin for the length of the run. `--test-only` is what actually narrows it.
+
+        ★ `--test-only` is the only narrowing, and that is measured, not assumed: pointing
+          `PLUGIN_DIRS` at the test instance leaves **both** targets in place (`deploy.py` always adds
+          the instance the user works in), so a mutation still reaches their editor. AGENTS.md
+          section 7 used to recommend `PLUGIN_DIRS` here; it no longer does.
         """
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         from env import cfg  # noqa: PLC0415  (imported here so a dry run needs no config)
 
         target = cfg.test_instance_plugin_dir
-        environment = dict(os.environ, PLUGIN_DIRS=target)
+        # ★ Read the target list **before** installing anything. Checking it afterwards notices too late:
+        #   the mutated build is already in the editor the user works in, which is the whole damage this
+        #   guard exists to prevent.
+        listed = self.deploy_targets()
+        if listed != [target]:
+            self.fail(
+                f"--test-only must narrow the deploy to exactly [{target}], deploy.py --list reports "
+                f"{len(listed)}: {listed} ({when})"
+            )
         print(f"\ndeploying to the isolated instance only ({when}):\n  {target}", flush=True)
-        done = subprocess.run("npm run deploy", shell=True, cwd=REPO_ROOT, env=environment,
+        done = subprocess.run("npm run deploy -- --test-only", shell=True, cwd=REPO_ROOT,
                               capture_output=True, text=True)
         output = (done.stdout or "") + (done.stderr or "")
         for line in output.splitlines():
-            if "target" in line or line.strip().startswith("\u00b7"):
+            if "deployed" in line or "checksum" in line:
                 print(f"  {line.strip()}")
-        # ★ Count the target lines rather than searching for the directory: the instance's directory is
-        #   also in the default PLUGIN_DIRS, so a substring test cannot tell "only this one" from
-        #   "several, including this one" -- and the rule is that a mutation deploys to nowhere else.
-        listed = [line for line in output.splitlines() if line.strip().startswith("\u00b7")]
-        if len(listed) != 1 or str(target) not in output:
-            print(tail(output))
-            self.fail(
-                f"expected exactly one deploy target ({target}), the deploy listed {len(listed)} ({when})"
-            )
         if done.returncode != 0:
             print(tail(output))
             detail = (

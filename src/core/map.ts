@@ -663,7 +663,7 @@ export function kramdownToHtml(kd: string): string {
 // ---------------------------------------------------------------- node tree → Kramdown document
 
 /** One node → one line of Kramdown (without indentation) */
-function nodeToLine(n: OutlineNode): string {
+export function nodeToLine(n: OutlineNode): string {
   const body = htmlToKramdown(n.text);
   let prefix = '';
   if (n.taskStatus === 2) prefix = '[x] ';
@@ -691,6 +691,78 @@ function nodeToLine(n: OutlineNode): string {
     return `${hashes} ${prefix}${body}`;
   }
   return `- ${prefix}${body}`;
+}
+
+/**
+ * Append one node and its subtree as Kramdown lines —— the walk `treeToKramdown` performs, shared
+ * so that writing a **single** node back and exporting a whole document cannot drift apart.
+ */
+function walkNodesToLines(list: OutlineNode[], depth: number, lines: string[]): void {
+  for (const n of list) {
+    const line = nodeToLine(n);
+    const indent = '  '.repeat(depth);
+    // Measured: the attribute must be on the "same line" as the list item, after `- `,
+    // in the form `- {: memo="X"}body`, for SiYuan to attach it to the listItem.
+    // On a line of its own (especially indented) it is parsed as an ordinary paragraph block (a pitfall already hit).
+    // ★ Notes no longer go through the `memo` attribute (deprecated) — they are carried by **native attached paragraphs**
+    //   instead (`paragraphs`, see the attached-paragraph serialization below). `memo` is a block attribute
+    //   that full-text search does not find by default, and it shows only as an "M" icon that has to be opened to be seen,
+    //   which contradicts "what you see is what you get in SiYuan's own editing".
+    //   attrs is used only to pass the id through to later parsing.
+    const attrs: string[] = [];
+    // Note: do **not** leave a space before `}`. Measured: `{: a="x" }body` is rendered by SiYuan as
+    // `{: a="x"}}body` (an extra `}` before the body), polluting the content.
+    const attr = attrs.length ? `{: ${attrs.join(' ')}}` : '';
+    const isHeading = line.startsWith('#');
+    if (isHeading) {
+      // A heading block does not support list-item attributes; the attribute goes on its own flush-left line
+      lines.push(`${indent}${line}`);
+      if (attr) lines.push(attr);
+    } else {
+      // Strip nodeToLine's `- ` prefix and reassemble
+      let bodyOnly = line.replace(/^-\s?/, '');
+      // Empty-text node: SiYuan does not keep an empty list item's body, so a zero-width placeholder keeps the node round-trippable.
+      if (!bodyOnly.trim()) bodyOnly = '\u200b';
+      lines.push(`${indent}- ${attr}${bodyOnly}`);
+      // Attached paragraphs: in SiYuan a listItem can have several sibling NodeParagraph blocks.
+      //
+      // ★ **Every attached paragraph must be preceded by a blank line** (confirmed by ablation):
+      //   in markdown two consecutive lines belong to **the same paragraph**; a blank line is the paragraph separator.
+      //   Without the blank line the attached paragraph is taken as a continuation of the first paragraph and the two merge into one block:
+      //     ❌ p 'root⏎attached'      (⏎ = a line break inside the block; two paragraphs merged into one)
+      //     ✅ p 'root' + p 'attached'
+      //
+      // ⚠️ The first paragraph must be non-empty, otherwise **the whole set of attached paragraphs escapes the listItem to the document root**.
+      // `\u200b` already covers that above; the same placeholder is applied to the attached paragraphs themselves here.
+      for (const p of n.paragraphs ?? []) {
+        const kd = htmlToKramdown(p);
+        lines.push('');
+        lines.push(`${indent}  ${kd.trim() ? kd : '\u200b'}`);
+      }
+    }
+    if (n.children?.length) {
+      // **No** blank lines around the child list (ablation conclusion).
+      //
+      // Earlier this said "leave one blank line on each side, otherwise attached paragraphs shift position",
+      // but the ablation could not reproduce that necessity — see the "blank line rules" note at the end of the file.
+      walkNodesToLines(n.children, depth + 1, lines);
+    }
+  }
+}
+
+/**
+ * One node **and its subtree** as Kramdown, with no document title —— what a single block has to be
+ * written back with.
+ *
+ * ★ Writing only the node's own line is not equivalent: measured on the kernel, updating a list item
+ *   that has children with just its own line makes the kernel **append a nested line** instead of
+ *   converting the block, so the to-do ends up beside its children rather than above them. Carrying
+ *   the subtree (`- [ ] parent` plus its indented children) converts it in place and keeps them.
+ */
+export function nodeSubtreeToKramdown(n: OutlineNode): string {
+  const lines: string[] = [];
+  walkNodesToLines([n], 0, lines);
+  return lines.join('\n');
 }
 
 /**
@@ -733,60 +805,7 @@ export function treeToKramdown(
     lines.push('');
   }
 
-  const walk = (list: OutlineNode[], depth: number) => {
-    for (const n of list) {
-      const line = nodeToLine(n);
-      const indent = '  '.repeat(depth);
-      // Measured: the attribute must be on the "same line" as the list item, after `- `,
-      // in the form `- {: memo="X"}body`, for SiYuan to attach it to the listItem.
-      // On a line of its own (especially indented) it is parsed as an ordinary paragraph block (a pitfall already hit).
-      // ★ Notes no longer go through the `memo` attribute (deprecated) — they are carried by **native attached paragraphs**
-      //   instead (`paragraphs`, see the attached-paragraph serialization below). `memo` is a block attribute
-      //   that full-text search does not find by default, and it shows only as an "M" icon that has to be opened to be seen,
-      //   which contradicts "what you see is what you get in SiYuan's own editing".
-      //   attrs is used only to pass the id through to later parsing.
-      const attrs: string[] = [];
-      // Note: do **not** leave a space before `}`. Measured: `{: a="x" }body` is rendered by SiYuan as
-      // `{: a="x"}}body` (an extra `}` before the body), polluting the content.
-      const attr = attrs.length ? `{: ${attrs.join(' ')}}` : '';
-      const isHeading = line.startsWith('#');
-      if (isHeading) {
-        // A heading block does not support list-item attributes; the attribute goes on its own flush-left line
-        lines.push(`${indent}${line}`);
-        if (attr) lines.push(attr);
-      } else {
-        // Strip nodeToLine's `- ` prefix and reassemble
-        let bodyOnly = line.replace(/^-\s?/, '');
-        // Empty-text node: SiYuan does not keep an empty list item's body, so a zero-width placeholder keeps the node round-trippable.
-        if (!bodyOnly.trim()) bodyOnly = '\u200b';
-        lines.push(`${indent}- ${attr}${bodyOnly}`);
-        // Attached paragraphs: in SiYuan a listItem can have several sibling NodeParagraph blocks.
-        //
-        // ★ **Every attached paragraph must be preceded by a blank line** (confirmed by ablation):
-        //   in markdown two consecutive lines belong to **the same paragraph**; a blank line is the paragraph separator.
-        //   Without the blank line the attached paragraph is taken as a continuation of the first paragraph and the two merge into one block:
-        //     ❌ p 'root⏎attached'      (⏎ = a line break inside the block; two paragraphs merged into one)
-        //     ✅ p 'root' + p 'attached'
-        //
-        // ⚠️ The first paragraph must be non-empty, otherwise **the whole set of attached paragraphs escapes the listItem to the document root**.
-        // `\u200b` already covers that above; the same placeholder is applied to the attached paragraphs themselves here.
-        for (const p of n.paragraphs ?? []) {
-          const kd = htmlToKramdown(p);
-          lines.push('');
-          lines.push(`${indent}  ${kd.trim() ? kd : '\u200b'}`);
-        }
-      }
-      if (n.children?.length) {
-        // **No** blank lines around the child list (ablation conclusion).
-        //
-        // Earlier this said "leave one blank line on each side, otherwise attached paragraphs shift position",
-        // but the ablation could not reproduce that necessity — see the "blank line rules" note at the end of the file.
-        walk(n.children, depth + 1);
-      }
-    }
-  };
-
-  walk(nodes, 0);
+  walkNodesToLines(nodes, 0, lines);
   return lines.join('\n') + '\n';
 }
 

@@ -301,10 +301,14 @@ If you touched CSS, layout, or kernel interaction, also run `npm run verify`.
   `mutate -> deploy -> run the check` must not put a deliberately broken plugin in front of the user, and
   both instances are deployment targets by default (section 1) —— so the guard is the flag, and a red
   proof that forgets it installs the broken build into the editor they use. `--target` only
-  *adds*; it does not narrow, so narrow with `PLUGIN_DIRS=<the test instance's plugin dir>`. A helper
-  that claims to redirect the deploy must be checked against what `deploy.py` actually reads —— one
-  asserted a variable the tool never read, so "isolated" deploys installed into the user's editor for
-  weeks (`docs/pitfalls/privacy.md`).
+  *adds* and `PLUGIN_DIRS` is not read at all —— `deploy.py` always adds the instance the user works
+  in, so setting that variable to the test instance leaves **both** targets and the mutation still
+  reaches their editor (measured). `--test-only` is the only narrowing. A helper that claims to
+  redirect the deploy must be checked against what `deploy.py` actually reads and prints, and must
+  ask **before** it installs: `redproof.py` once watched for the target list in the output of a
+  command that never passed `--list`, so it counted none, failed, and deployed the mutation anyway.
+  Two helpers have now sent a broken build to the user's editor, one of them for weeks
+  (`docs/pitfalls/privacy.md`).
 - Assert statically when you can; only open a browser for what needs one, via
   `npm run test:e2e` (`SIYUAN_TEST_NOTEBOOK` optional; the cases really create
   and delete documents, so the target is pinned to the **isolated test

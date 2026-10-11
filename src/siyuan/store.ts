@@ -16,7 +16,7 @@
 
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId } from '../core/map';
+import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown } from '../core/map';
 import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
@@ -1192,9 +1192,13 @@ export class SiYuanStore {
       let liId = this.lastListItems.get(n.id);
       const wantsTask = n.taskStatus === 1 || n.taskStatus === 2;
       if (liId && wantsTask) {
-        const prefix = n.taskStatus === 2 ? '- [X] ' : '- [ ] ';
         try {
-          await this.client.updateBlock(liId, prefix + htmlToKramdown(n.text));
+          // ★ The markdown must carry the node's **subtree**, not just its own line: measured on the kernel,
+          //   updating a list item that has children with only its own line makes the kernel **append a
+          //   nested line** instead of converting the block, so the to-do lands beside its children instead
+          //   of above them. `nodeSubtreeToKramdown` is the same walker the document export uses, so the two
+          //   cannot drift apart, and it writes the task prefix from `taskStatus` itself.
+          await this.client.updateBlock(liId, nodeSubtreeToKramdown(n));
           updated++;
         } catch (e) {
           // Loud rather than swallowed: this is the only call that makes a to-do a to-do in the document.
