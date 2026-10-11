@@ -47,33 +47,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **high · privacy** `e2e/testdoc.ts:213`  
-  The 'only notebooks with these names are accepted as test targets (to avoid damaging user data)' allowlist holds the literal name that BOTH configured instances report as their notebook #1 - i.e. the name of a notebook the user actually works in - so the guard that exists to protect user data instead selects the user's own notebook, and the name itself is a section-1 hard-rule leak in a tracked file.
-
-### e2e-specs-a
-
-### i18n-consistency
-
-### mindmap
-
-### plugin-code
-
-### plugin-tests-a
-
-
-### scripts-gates
-
-
-### scripts-infra
-
-### scripts-live
-
-
-### siyuan
-
-
-### config
-
 - **medium · privacy** `.env.example:107`  
   A machine-specific absolute path is hardcoded in a committed config template, which AGENTS section 1 forbids ('Never hardcode machine absolute paths in docs or scripts').
 - **medium · docs** `.github/workflows/ci.yml:75`  

@@ -62,8 +62,15 @@ def main():
     env["SIYUAN_URL"] = base
     env["SIYUAN_TOKEN"] = cfg.test_token()   # ★ the test instance's own value, from .env
     env["CHROMIUM_PATH"] = cfg.chromium_path   # ★ the browser to launch; no default in the config
-    # Notebook allowlist: E2E really creates and deletes documents, so it only works inside this notebook
-    env.setdefault("SIYUAN_TEST_NOTEBOOK", os.environ.get("SIYUAN_TEST_NOTEBOOK", ""))
+    # ★ The notebook the suites may write in, from `.env` (via env.py) like every other machine-specific
+    #   value —— it used to be taken from the shell only, which is why nobody set it and the specs fell back
+    #   to selecting an open notebook by *name*. Fail here rather than after starting a browser.
+    if not cfg.test_notebook:
+        print("❌ SIYUAN_TEST_NOTEBOOK is not set, so there is no notebook the tests may write in.", file=sys.stderr)
+        print("   The suites create and delete documents. Put the id of a notebook that is free to be", file=sys.stderr)
+        print("   modified in .env as SIYUAN_TEST_NOTEBOOK=<id> (a name is deliberately not accepted).", file=sys.stderr)
+        return 1
+    env["SIYUAN_TEST_NOTEBOOK"] = cfg.test_notebook
 
     cmd = ["npx", "playwright", "test"]
     if args.ui:
@@ -96,7 +103,7 @@ def main():
         cmd += matches
 
     print(f"  E2E target: {env['SIYUAN_URL']}  (isolated test instance)")
-    print(f"  notebook: {env.get('SIYUAN_TEST_NOTEBOOK') or '(use the default allowlist)'}")
+    print(f"  notebook: {env['SIYUAN_TEST_NOTEBOOK']}  (from .env; an id, verified against the instance)")
     print(f"  $ {' '.join(cmd)}")
     _sweep_stale_traces()
     code = subprocess.run(cmd, cwd=ROOT, env=env).returncode

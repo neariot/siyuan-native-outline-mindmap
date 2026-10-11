@@ -198,34 +198,44 @@ export const TOP_BRANCHES = ['分支一', '分支二', '分支三', '分支四']
 
 /** The test notebook (the fixture one; its name is invented, never a real one). */
 /**
- * The notebook used for testing.
+ * The notebook the tests are allowed to write in.
  *
- * ★ Do not hardcode the id —— that is a **machine-specific** value and stops working on another machine (explicitly forbidden by AGENTS.md).
- * Resolution order: the `SIYUAN_TEST_NOTEBOOK` environment variable > the first open notebook.
+ * ★ The target is named **explicitly** —— `SIYUAN_TEST_NOTEBOOK`, an id, from `.env`. There is deliberately no
+ *   name-based selection: this used to accept any open notebook whose *name* was on a short allowlist, which is
+ *   a guess wearing a guard's clothes. A name is not an identity —— anyone can create a notebook called
+ *   `something-test`, and the notebook that matters here is the one somebody actually works in, which the tests
+ *   really do modify and delete from (AGENTS.md section 5.1: no "probe and pick one"). The id is also
+ *   machine-specific, so it belongs in `.env` and not in this file.
  *
- * ⚠️ A notebook the user is actually working in **must not** be a test target ——
- * the tests really delete and modify. So by default only names that clearly mark a test purpose are picked;
- * if none is found it demands an explicit value and **does not guess**.
+ * The value is still **verified** against the instance: an id that is not an open notebook on the instance the
+ * suite is talking to fails loudly instead of sending writes somewhere unexpected.
  */
 const TEST_NOTEBOOK_ENV = process.env.SIYUAN_TEST_NOTEBOOK ?? '';
 
-/** Only notebooks with these names are accepted as test targets (to avoid damaging user data). */
-const SAFE_NOTEBOOK_NAMES = ['e2e-fixture-notebook'];
-
 export async function resolveTestNotebook(api: KernelApi): Promise<string> {
-  if (TEST_NOTEBOOK_ENV) return TEST_NOTEBOOK_ENV;
-
   const r = await api.call('/api/notebook/lsNotebooks', {});
   const list = ((r.data as { notebooks?: { id: string; name: string; closed?: boolean }[] } | null)?.notebooks) ?? [];
   const open = list.filter((n) => !n.closed);
-  const safe = open.find((n) => SAFE_NOTEBOOK_NAMES.includes(n.name));
-  if (safe) return safe.id;
+  const listed = open.map((n) => `${n.name}(${n.id})`).join(', ') || '(none)';
 
-  throw new Error(
-    `No usable test notebook found. Currently open: ${open.map((n) => `${n.name}(${n.id})`).join(', ') || '(none)'}\n` +
-      `pass SIYUAN_TEST_NOTEBOOK=<id> to explicitly name a notebook that is **free to be modified** —— ` +
-      `the tests really create and delete documents, so do not point it at one you are working in.`,
-  );
+  if (!TEST_NOTEBOOK_ENV) {
+    throw new Error(
+      `SIYUAN_TEST_NOTEBOOK is not set, so there is no notebook the tests may write in.\n` +
+        `Open notebooks on this instance: ${listed}\n` +
+        `Put the id of a notebook that is **free to be modified** in .env as SIYUAN_TEST_NOTEBOOK=<id> —— ` +
+        `the tests really create and delete documents, so do not point it at one you are working in.\n` +
+        `(A name is not accepted, on purpose: a notebook that merely looks like a test target can be one somebody works in.)`,
+    );
+  }
+
+  const hit = open.find((n) => n.id === TEST_NOTEBOOK_ENV);
+  if (!hit) {
+    throw new Error(
+      `SIYUAN_TEST_NOTEBOOK=${TEST_NOTEBOOK_ENV} is not an open notebook on this instance.\n` +
+        `Open notebooks: ${listed}`,
+    );
+  }
+  return hit.id;
 }
 
 /**

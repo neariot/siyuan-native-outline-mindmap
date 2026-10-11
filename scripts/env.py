@@ -255,6 +255,18 @@ class Config:
         return self._require("CHROMIUM_PATH")
 
     @property
+    def test_notebook(self):
+        """The notebook the E2E suites may write in —— an **id**, required for the suites to run.
+
+        Read here rather than from the shell so it comes from `.env` like every other machine-specific
+        value. Deliberately **not** a name: the suites create and delete documents, so the target must be
+        named explicitly, and an empty value makes `e2e/testdoc.ts` fail loudly instead of picking an open
+        notebook that merely looks like a test target (5.1: no "probe and pick one"). It is not in REQUIRED
+        because only the E2E layer needs it.
+        """
+        return self.get("SIYUAN_TEST_NOTEBOOK", "")
+
+    @property
     def python(self):
         """Interpreter that runs the verification scripts needing playwright.
 

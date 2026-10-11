@@ -43,7 +43,7 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test('① the mobile shell is ready and the outline panel opens from the bottom menu', async ({ browser }) => {
-    const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
+    const notebook = await resolveTestNotebook(api);
     tempDocId = await createTempDoc(
       api,
       notebook,
@@ -74,7 +74,7 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test('② mobile virtual-keyboard bar buttons: add sibling, add child, task, indent and outdent', async ({ browser }) => {
-    const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
+    const notebook = await resolveTestNotebook(api);
     tempDocId = await createTempDoc(api, notebook, `- 主题甲\n`);
 
     const ctx = await mobileContext(browser, baseURL);
@@ -134,7 +134,7 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test('③ with the iOS Safari soft keyboard up and the viewport panned, the keyboard bar stays locked and the viewport does not drift', async ({ browser }) => {
-    const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
+    const notebook = await resolveTestNotebook(api);
     tempDocId = await createTempDoc(
       api,
       notebook,
@@ -214,7 +214,7 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test('④ both the mobile outline and mindmap containers set data-prevent-swipe to guard gestures', async ({ browser }) => {
-    const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
+    const notebook = await resolveTestNotebook(api);
     tempDocId = await createTempDoc(api, notebook, `- 拖动测试分支\n  - 子项\n`);
 
     const ctx = await mobileContext(browser, baseURL);
@@ -240,7 +240,7 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test('⑤ the mobile narrow-screen format toolbar toggles open and keeps its state', async ({ browser }) => {
-    const notebook = process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api));
+    const notebook = await resolveTestNotebook(api);
     tempDocId = await createTempDoc(api, notebook, `- 格式栏节点\n`);
 
     const ctx = await mobileContext(browser, baseURL);
