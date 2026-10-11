@@ -88,6 +88,31 @@ const nearestBlock = (src: string, from: number): ts.Node | null => {
 };
 
 /**
+ * The call expressions whose **callee** matches `pattern`, read through the parser.
+ *
+ * For an invariant of the shape "this call must not appear outside that helper": a text search cannot
+ * make that statement, because the name is also written in the comments that explain why —— measured on
+ * `mount.ts`, where `guardRef.current.beginApply` appears **0 times** as a call and **4 times** in prose.
+ * Searching the text reports the prose, and the "fix" would be to stop writing the explanation down.
+ */
+export function callSites(src: string, pattern: RegExp): string[] {
+  const sf = parse(src);
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression.getText(sf);
+      if (pattern.test(callee)) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        found.push(`${callee} (line ${line + 1})`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+/**
  * Remove line and block comments, leaving string literals alone.
  *
  * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads

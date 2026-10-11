@@ -81,14 +81,8 @@ conclusion to draw from a complete-looking list of findings.
 
 ### mindmap
 
-- **high · bug** `src/mindmap/Mindmap.tsx:1775`  
-  The attached-paragraph panel uses an inline callback ref that calls el.focus() after every render, so opening the editor steals focus from its own textarea and each keystroke re-steals it — the paragraph editor accepts one character per click.
 ### plugin-code
 
-- **high · bug** `src/plugin/mount.ts:1173`  
-  A failed write-back leaves EchoGuard's applyingCount set, after which isEcho() is true forever: reverse sync stops accepting every external edit and every later change is judged a conflict.
-- **high · bug** `src/plugin/mount.ts:55`  
-  The three normalizations used for the same echo comparison disagree, because plainNodeText does not decode HTML entities while htmlFragmentToText does: a node whose text contains &, < or > mismatches its own echo and is reported as a conflict while a write-back is in flight.
 ### plugin-tests-a
 
 

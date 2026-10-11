@@ -4,13 +4,17 @@
  * Background: `applying` is a **boolean** rather than a counter. When two write-back windows overlap,
  * whichever finishes first sets applying back to false, so the one still writing is misjudged as "not an echo".
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { EchoGuard, withEchoGuard } from './sync';
+import { callSites } from './source-probe';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, extra = ''): void => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
-  else { fail++; console.log(`  ❌ ${name}`); }
+  // The reason matters most when it fails: "what was found instead".
+  else { fail++; console.log(`  ❌ ${name}${extra ? ` —— ${extra}` : ''}`); }
 };
 
 // ── single window: basic semantics ──
@@ -134,6 +138,35 @@ void (async () => {
     return !g.isApplying();
   })());
 
-  console.log(`\n${pass}/${pass + fail} passed`);
+  /**
+ * ★ Every write path must open the echo window through `withEchoGuard`.
+ *
+ * The helper was written for exactly this, and six call sites in `mount.ts` still did it by hand —— in two
+ * different wrong ways: with the release in a `finally` the counter stayed balanced but the blocks were
+ * still recorded as written when the write had failed (a real external change arriving in the short window
+ * afterwards was swallowed as our own echo), and without a `finally` a rejected write left
+ * `applyingCount` above zero for the rest of the session, so `isApplying()` stayed true and reverse sync
+ * accepted no external edit at all —— silently, with no message.
+ *
+ * The cases above test the helper. This one tests that the product uses it, which is what was broken.
+ * The calls are found through the parser: the name also appears in the comments that explain the rule
+ * (4 mentions, 0 calls), so a text search would report the explanation instead of the defect.
+ */
+{
+  const mountSrc = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
+  const handRolled = callSites(mountSrc, /^guardRef\.current\.(beginApply|endApply|abortApply)$/);
+  check(
+    '★ no write path opens or closes the echo window by hand (all of them go through withEchoGuard)',
+    handRolled.length === 0,
+    handRolled.join(', '),
+  );
+  check(
+    '★ the write paths really are guarded (more than one call site uses the helper)',
+    callSites(mountSrc, /^withEchoGuard$/).length >= 2,
+    'this is the precondition of the check above: if nothing called the helper, an empty list of hand-rolled windows would mean nothing',
+  );
+}
+
+console.log(`\n${pass}/${pass + fail} passed`);
   if (fail) process.exit(1);
 })();

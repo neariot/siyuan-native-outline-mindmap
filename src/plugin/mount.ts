@@ -1299,11 +1299,19 @@ function OmTabApp({
       setSaving(true);
       setErr('');
       try {
-        guardRef.current.beginApply();
-        conflictRef.current.noteAllSynced(tree);   // ★ as above: the baseline is registered before the write-back
-        await writeLatest();
-        const allKnownIds = [docId, ...store.blockToNode().keys()];
-        guardRef.current.endApply(allKnownIds, collectWrittenValues(nodesRef.current ?? []));
+        // ★ The echo window is opened and released by `withEchoGuard`, so a failed write cannot leave it
+        //   open. Written out by hand, a rejection jumped past the release: `applyingCount` stayed above
+        //   zero for the rest of the session, every later event was judged our own echo, and reverse sync
+        //   stopped accepting external edits —— silently.
+        await withEchoGuard(
+          guardRef.current,
+          () => [docId, ...store.blockToNode().keys()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            conflictRef.current.noteAllSynced(tree);   // ★ as above: the baseline is registered before the write-back
+            await writeLatest();
+          },
+        );
         lastCommittedRef.current = snapshot(tree);
       } catch (e) {
         setErr(describeWriteError(e));
@@ -1403,32 +1411,38 @@ function OmTabApp({
       setSaving(true);
       setErr('');
       // Lock before writing back: the kernel transactions produced meanwhile are all our own echoes and must be ignored (loop guard)
-      guardRef.current.beginApply();
-      const written: string[] = [];
+      // ★ The window is opened and released by `withEchoGuard`: a hand-written pair released from a `finally`
+      //   still claimed the write on failure, and one without a `finally` left `applyingCount` above zero
+      //   for the rest of the session, after which every later event was judged our own echo.
       try {
-        // Record the blocks involved, as a backstop for the short window after it ends (events may arrive late)
-        for (const [, blockId] of blockToNodeRef.current) written.push(blockId);
-        // ★★★ The baseline is registered before the write-back (audit follow-up).
-        //   Putting it after `await writeLatest()` is too late: echoes that arrive during the write-back round trip
-        //   are compared against the old baseline and judged an external conflict (measured: disabling isOwnValue reproduces it).
-        //   What is registered here is "our intended value" —— only if SiYuan later reports different content is it a real conflict.
-        conflictRef.current.noteSynced(
-          id,
-          plainNodeText(findNode(updated, id)?.text),
+        await withEchoGuard(
+          guardRef.current,
+          // The blocks involved, as a backstop for the short window after it ends (events may arrive late)
+          () => [...blockToNodeRef.current.values()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            // ★★★ The baseline is registered before the write-back (audit follow-up).
+            //   Putting it after `await writeLatest()` is too late: echoes that arrive during the write-back round trip
+            //   are compared against the old baseline and judged an external conflict (measured: disabling isOwnValue reproduces it).
+            //   What is registered here is "our intended value" —— only if SiYuan later reports different content is it a real conflict.
+            conflictRef.current.noteSynced(
+              id,
+              plainNodeText(findNode(updated, id)?.text),
+            );
+            // All three write-back steps go through writeLatest
+            await writeLatest();
+            // Rebuild the reverse tables after the write-back so reverse sync stays usable
+            try {
+              await store.loadBlockMap(docId);
+              blockToNodeRef.current = store.blockToNode();
+            } catch {
+              /* A failed reverse-table rebuild does not affect the main flow */
+            }
+          },
         );
-        // All three write-back steps go through writeLatest
-        await writeLatest();
-        // Rebuild the reverse tables after the write-back so reverse sync stays usable
-        try {
-          await store.loadBlockMap(docId);
-          blockToNodeRef.current = store.blockToNode();
-        } catch {
-          /* A failed reverse-table rebuild does not affect the main flow */
-        }
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {
-        guardRef.current.endApply(written, collectWrittenValues(nodesRef.current ?? []));
         setSaving(false);
       }
       // ★ The baseline advances after a successful write-back (see the long comment in handleDeleteNode for why)
@@ -1496,21 +1510,28 @@ function OmTabApp({
 
       setSaving(true);
       setErr('');
-      guardRef.current.beginApply();
-      const written: string[] = [];
+      // ★ The echo window is opened and released by `withEchoGuard`: releasing it from a `finally` kept the
+      //   counter balanced but still recorded the write as ours when it had failed, which swallows a real
+      //   external change that arrives in the short window afterwards; and a hand-written pair without a
+      //   `finally` left `applyingCount` above zero for the rest of the session.
       try {
-        for (const [, blockId] of blockToNodeRef.current) written.push(blockId);
-        await writeLatest();
-        try {
-          await store.loadBlockMap(docId);
-          blockToNodeRef.current = store.blockToNode();
-        } catch {
-          /* A failed reverse-table rebuild does not affect the main flow */
-        }
+        await withEchoGuard(
+          guardRef.current,
+          () => [...blockToNodeRef.current.values()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            await writeLatest();
+            try {
+              await store.loadBlockMap(docId);
+              blockToNodeRef.current = store.blockToNode();
+            } catch {
+              /* A failed reverse-table rebuild does not affect the main flow */
+            }
+          },
+        );
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {
-        guardRef.current.endApply(written, collectWrittenValues(nodesRef.current ?? []));
         setSaving(false);
       }
       lastCommittedRef.current = snapshot(updated);
@@ -1599,27 +1620,33 @@ function OmTabApp({
       if (!docId || !store) return;
       setSaving(true);
       setErr('');
-      guardRef.current.beginApply();
-      const written: string[] = [];
       // ★★ Also wrapped in a write-back transaction (the fix): an external delete event may arrive while the main write-back
       //   is in flight, and without the wrapper the two would clear each other's placeholders and mapping cache.
       store.beginWrite(docId);
       try {
-        for (const [, blockId] of blockToNodeRef.current) written.push(blockId);
-        const del = await store.syncDeletions(docId, updated);
-        try {
-          const bmap = await store.loadBlockMap(docId);
-          // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
-          //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
-          blockToNodeRef.current = store.blockToNode();
-        } catch {
-          /* A failed reverse-table rebuild does not affect the main flow */
-        }
-        if (!del.removed) setErr(t('errDeleteNotWritten'));
+        // ★ The echo window is opened and released by `withEchoGuard`. Releasing it from a `finally` kept the
+        //   counter balanced but still recorded the blocks as written when the write had failed, so a real
+        //   external change arriving in the short window afterwards was swallowed as our own echo.
+        await withEchoGuard(
+          guardRef.current,
+          () => [...blockToNodeRef.current.values()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            const del = await store.syncDeletions(docId, updated);
+            try {
+              await store.loadBlockMap(docId);
+              // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
+              //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
+              blockToNodeRef.current = store.blockToNode();
+            } catch {
+              /* A failed reverse-table rebuild does not affect the main flow */
+            }
+            if (!del.removed) setErr(t('errDeleteNotWritten'));
+          },
+        );
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {
-        guardRef.current.endApply(written, collectWrittenValues(nodesRef.current ?? []));
         store.endWrite();
         setSaving(false);
       }
@@ -1786,29 +1813,35 @@ function OmTabApp({
         // ★★ Here too it must be **locked before writing** (same reasoning as the long comment in handleOutlineChange):
         //    syncStructure sends insertBlock, and if the lock is not held when the transaction comes back,
         //    reverse sync takes it for an external change and may trigger a false conflict or overwrite the tree back.
-        guardRef.current.beginApply();
         // ★★ This write path used to skip the write-back transaction (the fix):
         //   it bypassed the enqueue serial queue, and running concurrently with the main write-back the two would clear each other's
         //   `pendingPlaceholders` / mapping cache. Wrapping it in beginWrite's depth count
         //   makes it share one transaction semantics with the main write-back (the cache really closes only when the outermost frame ends).
         store.beginWrite(docId);
         try {
-          // ★ Explicitly open one placeholder-collection window and pass the set down:
-          //   same convention as handleOutlineChange. Without it syncStructure falls
-          //   back to the instance-level `pendingPlaceholders` and steps on concurrent write-backs.
-          const phs2 = store.beginPlaceholderScope();
-          await store.syncStructure(docId, next, phs2);
-          try {
-            const bmap = await store.loadBlockMap(docId);
-            // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
-            //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
-            blockToNodeRef.current = store.blockToNode();
-            guardRef.current.endApply(Array.from(bmap.values()), collectWrittenValues(nodesRef.current ?? []));
-          } catch {
-            // A failed reverse-table rebuild does not affect the main flow; but the lock must be released, or every later
-            // external change is ignored silently (real external edits swallowed as echoes).
-            guardRef.current.endApply([]);
-          }
+          // ★ The echo window is opened and released by `withEchoGuard`. Balancing it by hand leaked: when
+          //   `syncStructure` threw, neither release ran, `applyingCount` stayed above zero and every later
+          //   external change was ignored silently (real external edits swallowed as echoes).
+          await withEchoGuard(
+            guardRef.current,
+            () => [...blockToNodeRef.current.values()],
+            () => collectWrittenValues(nodesRef.current ?? []),
+            async () => {
+              // ★ Explicitly open one placeholder-collection window and pass the set down:
+              //   same convention as handleOutlineChange. Without it syncStructure falls
+              //   back to the instance-level `pendingPlaceholders` and steps on concurrent write-backs.
+              const phs2 = store.beginPlaceholderScope();
+              await store.syncStructure(docId, next, phs2);
+              try {
+                await store.loadBlockMap(docId);
+                // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
+                //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
+                blockToNodeRef.current = store.blockToNode();
+              } catch {
+                /* A failed reverse-table rebuild does not affect the main flow */
+              }
+            },
+          );
         } finally {
           store.endWrite();
         }
@@ -1891,26 +1924,34 @@ function OmTabApp({
           if (!docId || !store) return newId;
           setSaving(true);
           setErr('');
-          guardRef.current.beginApply();
-          const written: string[] = [];
+          // ★ The echo window is opened and released by `withEchoGuard`, so a failed write cannot leave it
+          //   open. Written out by hand (`beginApply(); await writeLatest(); endApply(...)`), a rejection
+          //   jumped straight past the release: `applyingCount` stayed above zero for the rest of the
+          //   session and every later event was judged our own echo, so external edits stopped arriving.
           try {
-            for (const [, blockId] of blockToNodeRef.current) written.push(blockId);
-            await writeLatest();
-            try {
-              blockToNodeRef.current = store.blockToNode();
-            } catch {
-              /* A failed reverse-table rebuild does not affect the main flow */
-            }
-            // Keep the "did the addition really land on disk" warning: after write-back the new node should be findable in the reverse tables.
-            //   Not finding it means the block was never created (previously, when resolveListItem could not find a block,
-            //   the UI looked fine while SiYuan had nothing, and **no error was raised** —— measured, whole batches of nodes were lost).
-            if (!blockToNodeRef.current.has(newId)) {
-              setErr(t('errAddNodeNotWritten'));
-            }
+            await withEchoGuard(
+              guardRef.current,
+              // The blocks involved, as a backstop for the short window after it ends (events may arrive late)
+              () => [...blockToNodeRef.current.values()],
+              () => collectWrittenValues(nodesRef.current ?? []),
+              async () => {
+                await writeLatest();
+                try {
+                  blockToNodeRef.current = store.blockToNode();
+                } catch {
+                  /* A failed reverse-table rebuild does not affect the main flow */
+                }
+                // Keep the "did the addition really land on disk" warning: after write-back the new node should be findable in the reverse tables.
+                //   Not finding it means the block was never created (previously, when resolveListItem could not find a block,
+                //   the UI looked fine while SiYuan had nothing, and **no error was raised** —— measured, whole batches of nodes were lost).
+                if (!blockToNodeRef.current.has(newId)) {
+                  setErr(t('errAddNodeNotWritten'));
+                }
+              },
+            );
           } catch (e) {
             setErr(e instanceof Error ? e.message : String(e));
           } finally {
-            guardRef.current.endApply(written, collectWrittenValues(nodesRef.current ?? []));
             setSaving(false);
           }
           // ★ The baseline advances after a successful write-back (see the long comment in handleDeleteNode for why).

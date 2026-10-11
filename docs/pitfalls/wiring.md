@@ -58,3 +58,31 @@ otherwise it is pinned at 298px and still overflows once things wrap.
 so it passed whether or not the defect was present. It now pins three things at once: the controls are inside the viewport, the bar needs no horizontal scrolling, and the bar really did wrap.
 
 ---
+
+### 0.4 A helper that owns an invariant must own it at every call site
+
+**Symptom**: `mount.ts` had six write paths, each opening the echo-guard window by hand
+(`beginApply(); await writeLatest(); endApply(...)`). Two shapes of failure, neither with a message:
+
+- release in a `finally` — the counter stayed balanced, but the blocks were recorded as **written** even
+  when the write had thrown, so a genuine external change arriving in the short window afterwards was
+  swallowed as our own echo;
+- no release on the failure path at all — `applyingCount` stayed above zero for the rest of the session,
+  `isApplying()` stayed true, and from then on **every** event was judged an echo: external edits stopped
+  arriving and local ones were reported as conflicts, until a reload.
+
+**Cause**: the invariant ("every `beginApply` is balanced, and a failed write claims nothing") lived in
+six copies of a three-line pattern. A helper — `withEchoGuard`, which does exactly this — had already been
+written and unit-tested, and was used by **one** of the seven paths. The helper's own test could not see
+the other six: it tests the helper, while the defect is in the wiring.
+
+**Practice**: one helper owns the invariant, and a check asserts that the product **uses** it. Found
+through the parser rather than by searching the text —— `guardRef.current.beginApply` appears **0 times**
+as a call in `mount.ts` and **4 times** in the comments that explain the rule, so a text search reports the
+explanation and the "fix" would be to stop writing it down (`callSites` in `src/plugin/source-probe.ts`).
+And a second check asserts the helper is actually called, because "no hand-rolled window found" means
+nothing if nothing uses the helper either.
+
+**Tests**: `src/plugin/echo-guard.test.ts` (18 checks: the helper's failure path, and the wiring).
+
+---
