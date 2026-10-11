@@ -1011,3 +1011,110 @@ test('★ clicking a to-do checkbox toggles it and never removes the marker', as
     await api.dispose();
   }
 });
+
+test('★ dragging a node onto another nests it — and BOTH views must agree with the document', async ({ page }) => {
+  // Reported: after a drag-to-reparent in the mind map, the SiYuan document is correct but the outline
+  // and the mind map are both wrong.
+  //
+  // Measured before the fix, dragging 乙 onto 甲:
+  //   document : `- 甲` / `  - 乙` / `- 丙`   ← correct, the nesting really landed
+  //   outline  : 甲, 乙, 丙 all at the same indent   ← wrong
+  //   mind map : all three at the same x             ← wrong
+  //
+  // ★ The assertion is deliberately **three-way**: comparing the views only against each other would pass
+  //   for two views that are wrong in the same way, and comparing against the document alone would pass
+  //   for a view that shows the old shape with the document already changed —— which is exactly the state
+  //   this bug leaves behind, and the reason the plugin then writes the wrong picture back.
+  //
+  // ★ Nothing covered this gesture: `mindmap-reparent.test.ts` only re-reads the **source text** of the
+  //   handlers, so no assertion in the repository could disagree with a broken drop.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n- 乙\n- 丙\n');
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    const markdown = async (): Promise<string> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String(res.data?.content ?? '')
+        .split('\n')
+        .filter((l) => l.trim() && !l.startsWith('---') && !l.includes(': ') && !l.startsWith('# '))
+        .join('\n');
+    };
+    // The document's own nesting: 乙 must sit one level under 甲.
+    const assertDocumentNested = async (): Promise<void> => {
+      await expect
+        .poll(markdown, { message: 'the drag must nest 乙 under 甲 in the document', timeout: 20_000 })
+        .toMatch(/- 甲\n {2,}- 乙/);
+    };
+
+    // ---- the drag itself: press on 乙's node, move onto 甲's, release
+    const nodeTexts = () => page.evaluate(() =>
+      [...document.querySelectorAll('.mm-node')].map((n) => (n.textContent || '').trim()),
+    );
+    const texts = await nodeTexts();
+    const from = texts.findIndex((t) => t.startsWith('乙'));
+    const to = texts.findIndex((t) => t.startsWith('甲'));
+    expect(from, 'the fixture must contain a 乙 node').toBeGreaterThanOrEqual(0);
+    expect(to, 'the fixture must contain a 甲 node').toBeGreaterThanOrEqual(0);
+
+    const nodes = page.locator('.mm-node');
+    const srcBox = await nodes.nth(from).boundingBox();
+    const dstBox = await nodes.nth(to).boundingBox();
+    expect(srcBox && dstBox, 'both nodes must be laid out before the drag').toBeTruthy();
+
+    await page.mouse.move(srcBox!.x + srcBox!.width / 2, srcBox!.y + srcBox!.height / 2);
+    await page.mouse.down();
+    // Several steps: the drop is decided from the last position the pointer reported, so a single jump
+    // would not exercise the same path a real drag takes.
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(
+        srcBox!.x + (dstBox!.x - srcBox!.x) * (i / 10) + dstBox!.width / 2,
+        srcBox!.y + (dstBox!.y - srcBox!.y) * (i / 10) + dstBox!.height / 2,
+      );
+      await page.waitForTimeout(40);
+    }
+    await page.mouse.up();
+
+    await assertDocumentNested();
+
+    // ---- the mind map must show it too: 乙 must now sit further right than 甲 (one level deeper)
+    await expect
+      .poll(async () => {
+        const boxes = await page.evaluate(() =>
+          [...document.querySelectorAll('.mm-node')]
+            .map((n) => {
+              const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(n.getAttribute('transform') || '');
+              return { x: m ? parseFloat(m[1]) : NaN, text: (n.textContent || '').trim() };
+            })
+            .filter((n) => Number.isFinite(n.x)),
+        );
+        const parent = boxes.find((b) => b.text.startsWith('甲'));
+        const child = boxes.find((b) => b.text.startsWith('乙'));
+        if (!parent || !child) return 'missing';
+        return child.x > parent.x ? 'nested' : `flat(x ${parent.x} vs ${child.x})`;
+      }, { message: 'the mind map must draw 乙 inside 甲', timeout: 20_000 })
+      .toBe('nested');
+
+    // ---- and the outline, which is the other view of the same tree
+    await toOutlineView(page);
+    await expect
+      .poll(async () => {
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll('.om-outline-wrap .node-row')].map((r) => ({
+            left: Math.round(r.getBoundingClientRect().left),
+            text: (r.querySelector('.node-text')?.textContent || '').trim(),
+          })),
+        );
+        const parent = rows.find((r) => r.text === '甲');
+        const child = rows.find((r) => r.text === '乙');
+        if (!parent || !child) return 'missing';
+        return child.left > parent.left ? 'nested' : `flat(${parent.left} vs ${child.left})`;
+      }, { message: 'the outline must indent 乙 under 甲', timeout: 20_000 })
+      .toBe('nested');
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});

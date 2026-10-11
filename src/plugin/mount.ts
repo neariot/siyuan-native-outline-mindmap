@@ -920,7 +920,27 @@ function OmTabApp({
     let reloading = false;
     let reloadAgain = false;
     const doReload = (): void => {
-      void loadDocRef.current?.().then((tree: OutlineNode[]) => {
+      // ★★★ Let our **own write-back finish before reading** —— measured, this is the whole defect.
+      //
+      //   Drag-to-reparent in the mind map creates a listItem block, and its transaction arrives while the
+      //   write is still running. That ID is neither known nor yet an echo, so it is judged "an external
+      //   change I cannot map" and a whole-document re-read starts. The measured order was:
+      //
+      //     reparent builds and assigns the nested tree      ← the local tree is CORRECT here
+      //     re-read starts, re-read lands: 3 flat roots      ← reads the kernel BEFORE our write landed
+      //     our write finally finishes
+      //
+      //   So the read was not fighting a race against another reader; it was simply **early**. It faithfully
+      //   returned the pre-write shape and overwrote the correct tree, which is why both views stayed flat
+      //   while the document on disk held the nested one —— and why nothing about object identity or a
+      //   "did a local edit happen" counter could catch it: the edit had already finished by then.
+      //
+      //   Waiting for `pendingWriteRef` is what makes the read see our own change. The echo guard is not
+      //   enough on its own here, and this is the general form of the problem: any re-read triggered by a
+      //   transaction we caused must not overtake the write that caused it.
+      const waitForOwnWrite = pendingWriteRef.current ?? Promise.resolve();
+      void waitForOwnWrite.catch(() => undefined).then(() => loadDocRef.current?.()).then((tree: OutlineNode[] | undefined) => {
+        if (!tree) return;
         nodesRef.current = tree;
         setNodes(tree);
       }).catch(() => {
