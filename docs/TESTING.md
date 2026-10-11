@@ -152,11 +152,27 @@ table below is its output, and the phases are the ones `openSiYuan` + `openDoc` 
 | `openSiYuan`: `goto "/"` | 1.2s | yes |
 | `openSiYuan`: the other four waits + the screenshot gate | 1.4s | yes |
 | `openDoc`: `goto "/?id=<doc>"` (**a second full page load**) | 0.3s | yes |
-| the same `goto "/"` again, in the same browser | 0.3s | —— |
+| **`openDoc`: `ensureDockOpen` (the panel really open)** | **0.7s** | yes |
+| the same `goto "/"` again, in the same browser | 0.2s | —— |
 
-**About 6.6s of a case's 16.5s median is startup**, and the two entries that are actually large are the
-SQL-index wait and the page load itself. Three corrections to what this document and the config comment
-say:
+**The whole suite, measured on the same machine:**
+
+| | cases | wall clock | median case | slowest |
+|---|---|---|---|---|
+| before | 103 | **33.0 min** | 16.5s | 55.4s |
+| after | 104 | **13.1 min** | 6.4s | 26.0s |
+
+That is **20 minutes off every full run**, and it came from one helper's wrong criterion rather than from
+anything about browsers or cold starts.
+
+★ **`ensureDockOpen` used to be 10.4s on every case**, and this table did not have a row for it — the
+first version of the probe stopped one step before it and concluded that startup was cheap. That was the
+one genuinely expensive per-case item in the whole startup path, it was in a *helper*, and no amount of
+reasoning about browsers would have found it. See `pitfalls/testing.md`, "A helper that clicks to make
+something open, when it is already opening".
+
+**A case pays about 7s before its first assertion**, and the visible items are the SQL-index wait, the two
+page loads, and the dock. Three corrections to what this document and the config comment say:
 
 1. **"Measured cold start (launch Chromium → UI interactive) is about 11 seconds" is not what a case
    pays.** The browser launches in **0.3s** (it is a system Chromium, already warm in the page cache) and
