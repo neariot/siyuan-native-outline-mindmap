@@ -70,8 +70,13 @@ cannot see any of your notebooks, and has `sync.enabled` false.
 ```bash
 npm run deploy                                    # deploy the plugin to the workspace first
 SIYUAN_URL=<your instance URL> \
-SIYUAN_TOKEN=<your token> npx playwright test     # ★ call playwright directly, bypassing run-e2e.py
+SIYUAN_TOKEN=<your token> \
+CHROMIUM_PATH=<your chromium binary> npx playwright test   # ★ call playwright directly, bypassing run-e2e.py
 ```
+
+★ All three variables are **required, with no default** (`e2e/env.ts`): the address decides which documents
+  get created and deleted, and the binary decides which rendering engine the run measures. `npm run test:e2e`
+  injects them from `.env`; a command that omits one stops at the missing key rather than guessing.
 
 ★ This is not "optional by default" -- `npm run test:e2e` only targets the isolated instance.
   To target another instance you must write the address on the command line yourself; no fallback will pick it for you.

@@ -1,5 +1,5 @@
 import { chromium, request } from '@playwright/test';
-import { siyuanUrl } from './env';
+import { chromiumPath, siyuanUrl } from './env';
 
 /**
  * E2E global setup.
@@ -39,7 +39,10 @@ export default async function globalSetup(): Promise<void> {
   // ② Warm up: load the SiYuan frontend once, so the cold-start cost is paid here
   const browser = await chromium.launch({
     headless: true,
-    executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
+    // ★ No fallback: `chromiumPath()` throws when the key is missing, naming it. The literal that used to
+    //   sit here was both a silent switch (a run with the key unset measured a different rendering engine
+    //   while every case stayed green) and a machine absolute path, which section 1 forbids.
+    executablePath: chromiumPath(),
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   try {

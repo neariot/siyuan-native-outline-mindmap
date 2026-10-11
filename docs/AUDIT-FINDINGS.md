@@ -105,8 +105,6 @@ conclusion to draw from a complete-looking list of findings.
   The manual E2E job cannot run as committed and its dispatch input contradicts the entry point: run-e2e.py takes the target from .env (cfg.siyuan_test / cfg.test_token() / cfg.chromium_path), and the job never creates a .env and never calls setup-python, while the input still claims SIYUAN_URL is what selects the instance.
 - **medium · docs** `README.zh-CN.md:74`  
   The Chinese README still documents a build flag that no longer exists (TARGET=plugin) and a dev server port that is not configured anywhere — the dev server in fact binds :3000 — and this stale text is shipped to users, because the build copies both READMEs into the package.
-- **medium · fallback** `e2e/global-setup.ts:42`  
-  The global setup silently substitutes a hardcoded browser when CHROMIUM_PATH is missing — the exact `process.env.X || '<literal>'` shape AGENTS 5.1 #3 bans — even though every other consumer makes the key mandatory, so a run with the key unset measures /usr/bin/chromium while the config layer promises no silent switch.
 - **medium · type-escape** `tsconfig.json:15`  
   `include: ["src"]` is the whole scope of the only type gate, so the two build config files at the repository root are never compiled either — including a property the config type does not have, verified by a controlled probe.
 
@@ -131,8 +129,6 @@ conclusion to draw from a complete-looking list of findings.
   'Expand into a sub-document ... + a backlink attribute' claims a private attribute that the implementation deliberately does not write.
 - **medium · docs** `docs/TESTING.md:568`  
   The allowlist inventory contradicts both scripts/language-allowlist.txt and the same document twenty lines above it.
-- **medium · docs** `docs/TESTING.md:72`  
-  The documented manual E2E command cannot run: it omits CHROMIUM_PATH, which playwright.config.ts requires with no default.
 - **medium · docs** `docs/TESTING.md:603`  
   The backup instruction in the doc still says `cp file file.bak` in the project root, which the current AGENTS.md section 1 hard rule forbids.
 
@@ -151,8 +147,6 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · type-escape** `e2e/fixtures.ts:2`  
   No e2e file is typechecked at all, so real type errors sit in the helpers: tsconfig's include is `src` only, and compiling the eight helper files with the project's own strict settings yields two errors - `pngjs` has no declaration (the whole frameStats implementation is `any`) and e2e/mindmap.ts:104 reads `window.siyuan`, which does not exist on Window.
-- **medium · fallback** `e2e/global-setup.ts:42`  
-  `process.env.CHROMIUM_PATH || '/usr/bin/chromium'` is exactly the forbidden `process.env.X || '<some literal>'` default (AGENTS 5.1.3) plus a machine absolute path (section 1), and it names the very literal that scripts/env.py:250 records as forbidden for this key.
 - **medium · test-quality** `e2e/mindmap.ts:222`  
   contentBox returns Infinity/-Infinity sentinels when it measured nothing (it even filters zero-width nodes out), and one caller compares those sentinels with >= and <=, so 'fit fits all the nodes' passes with zero measured nodes - a missing precondition reported as a pass instead of a failure (AGENTS section 7 forbids a helper that returns sentinels for a missing precondition).
 - **medium · test-quality** `e2e/testdoc.ts:62`  
