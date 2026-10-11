@@ -32,7 +32,7 @@ console.log('=== Actually observed "target no longer exists" messages ===');
 // insertBlock into a deleted document
 check(
   'parent block not found (insertBlock into a deleted document)',
-  isTargetGoneError(err('parent block not found: 20261005160951-cgtixm8')),
+  isTargetGoneError(err('parent block not found: 20260101000000-pbbaaaa')),
 );
 // updateBlock onto a deleted block
 check(
@@ -56,22 +56,22 @@ check('undefined is not misjudged', !isTargetGoneError(undefined));
 
 // ★★★ False-positive regression ("the original document was deleted" struck again).
 //
-//   That document `20261009154100-mpqi2c7` was **alive and well**
+//   That document was **alive and well**
 //   (25 blocks, getBlockKramdown returned normally),
 //   it was just that some **child block ID had gone stale**, and the kernel answered `block not found` ——
 //   **exactly the same** as the "document deleted" error message, so the plugin falsely reported "the target document has been deleted".
 //
 //   Fix: when docId is passed, the error must contain **this document's own ID** for the document to count as gone.
 {
-  const DOC = '20261009154100-mpqi2c7';
+  const DOC = '20260101000000-docaaaa';
   // Stale child block: the ID reported is a **child** ID → must not count as a deleted document
   check(
     '★ A stale child ID does not falsely report "document deleted"',
-    !isTargetGoneError(err('load block tree [20261009154117-uh5jq6l] failed: tree not found'), DOC),
+    !isTargetGoneError(err('load block tree [20260101000000-cccaaaa] failed: tree not found'), DOC),
   );
   check(
     '★ block not found for a child does not falsely report',
-    !isTargetGoneError(err('block not found: 20261009154117-uh5jq6l'), DOC),
+    !isTargetGoneError(err('block not found: 20260101000000-cccaaaa'), DOC),
   );
   // The document really is gone: the ID reported is the **document** ID → must be detected
   check(

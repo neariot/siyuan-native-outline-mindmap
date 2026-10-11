@@ -7,7 +7,7 @@
 // Root cause: this used to be a four-layer DOM heuristic, one layer being "take the .protyle that contains the focused element".
 // With several tabs open that matches **the one that was just opened**, not the one the user is looking at. The captured scene:
 //
-//     1656ms  matched=focused  id=20260919155158-a93feye   ← the just-opened empty document
+//     1656ms  matched=focused  id=<the just-opened empty document>
 //             protyles=[the one the user is reading, the just-opened one]   URL=the one the user is reading
 //
 // So the panel read that still-empty document and showed "This document has no content yet".

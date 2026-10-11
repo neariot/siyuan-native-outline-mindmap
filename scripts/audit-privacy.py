@@ -363,6 +363,51 @@ def count_live_findings(counts, findings, rule):
     return len(findings)
 
 
+def live_id_findings(base, token, paths):
+    """Every id-shaped literal in the repository, asked of a running instance: does it still name a block?
+
+    ★★★ Why this exists (measured). The notebook and title passes cross-check *names and paths*; nothing
+    asked whether an **id in the tree** still resolves. A comment in a test file carried the id of a live
+    document in the user's workspace —— the repository's own static rule excused it as fixture data
+    ("an id in a test file is fixture data"), which is exactly right for an invented one and exactly wrong
+    for a copied one. Only the instance can tell those apart, and nothing was asking it.
+
+    An id that no longer resolves identifies nothing readable today, so it is listed for reading rather
+    than failed: documents get deleted, and a dead id is the normal state of a fixture. A **live** one is
+    a finding, because it pinpoints a document somebody has right now.
+    """
+    literals = {}
+    for relpath in paths:
+        if Path(relpath).suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        try:
+            text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for match in ID_PATTERN.finditer(text):
+            literals.setdefault(match.group(0), set()).add(relpath)
+
+    findings = []
+    for literal in sorted(literals):
+        statement = "SELECT id FROM blocks WHERE id='%s' LIMIT 1" % literal
+        request = urllib.request.Request(
+            base + "/api/query/sql", data=json.dumps({"stmt": statement}).encode(),
+            headers={"Authorization": "Token " + token, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                rows = json.load(response).get("data") or []
+        except (urllib.error.URLError, ValueError):
+            print("  -- the id lookup failed —— %d literal(s) not checked, which is not the same as clean"
+                  % len(literals))
+            return findings, 0
+        if rows:
+            for relpath in sorted(literals[literal]):
+                findings.append(Finding(relpath, 0, "live-block-id",
+                                        "an id here resolves on a running instance"))
+    return findings, len(literals)
+
+
 def check_notebooks(targets, paths):
     findings, scanned = [], 0
     for relpath in paths:
@@ -417,6 +462,25 @@ def selftest():
     probe_dir = REPO_ROOT / ".tmp" / "audit-privacy-selftest"
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe = probe_dir / "probe.md"
+    # ★ The live id rule cannot be exercised without an instance, so what is asserted here is its
+    #   *selection*: it must offer every id-shaped literal to the instance, and it must not decide by
+    #   itself that a fixture id is safe —— that judgement is the instance's, which is the whole point
+    #   (a static rule cannot tell an invented id from one copied out of a workspace).
+    probe = probe_dir / "id-probe.md"
+    try:
+        # Assembled, not typed: this tool must not flag its own source (the same reason the id at the
+        # top of this function is assembled), and "the tool flags itself" is the failure that trains
+        # people to add an exemption.
+        sample_id = "20260101000000" + "-" + "aaaaaaa"
+        probe.write_text("comment with %s in it\n" % sample_id, encoding="utf-8")
+        seen = {}
+        for match in ID_PATTERN.finditer(probe.read_text(encoding="utf-8")):
+            seen.setdefault(match.group(0), set()).add(str(probe))
+        cases.append(("the live id pass selects every id-shaped literal, whatever file it is in",
+                      sample_id in seen))
+    finally:
+        probe.unlink(missing_ok=True)
+
     try:
         probe.write_text("notebook: %s\n" % live_name, encoding="utf-8")
         live_counts = {}
@@ -475,6 +539,17 @@ def main():
             print("  -- cross-checked %d notebook identity/identities of the user's instance over %d "
                   "file(s): %d finding(s) (the isolated instance's are the fixtures)"
                   % (len(user_targets), live_scanned, len(live_findings)))
+
+        # ★★★ The ids in the tree, asked of the instance that owns documents: a static rule cannot tell an
+        #   invented id from a copied one, and this is the one class of leak where "the document was
+        #   deleted" and "the document is fine" produce the same text in the repository.
+        id_findings, id_checked = live_id_findings(env.cfg.siyuan, env.cfg.token(), tracked + artifacts)
+        if id_checked:
+            findings += id_findings
+            count_live_findings(counts, id_findings, "live-block-id")
+            print("  -- cross-checked %d id-shaped literal(s) against the user's instance: "
+                  "%d still resolve (the rest identify nothing)"
+                  % (id_checked, len(id_findings)))
 
         # ★ Notebook names are not the whole story: a document title is just as pinpointing, and it is
         #   the shape this rule is tuned to.

@@ -24,7 +24,7 @@ function check(name: string, got: boolean, want: boolean): void {
   }
 }
 
-const BLOCK = '20261005120000-aaaaaaa';
+const BLOCK = '20260101000000-aaaaaaa';
 
 console.log('Intermediate-state echoes of incremental typing:');
 {
@@ -58,7 +58,7 @@ console.log('\nA block that was never registered:');
   const g = new EchoGuard(1500);
   g.beginApply();
   g.endApply([BLOCK], new Map([[BLOCK, 'a']]));
-  check('another block is not misjudged', g.isOwnValue('20261005120000-bbbbbbb', 'a'), false);
+  check('another block is not misjudged', g.isOwnValue('20260101000000-bbbbbbb', 'a'), false);
 }
 
 console.log('\nnoteWrittenValues (registered **before** the write-back is sent):');
