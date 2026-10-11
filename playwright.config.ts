@@ -21,7 +21,11 @@ import { defineConfig, devices } from '@playwright/test';
  * - it neither occupies nor depends on the CDP port that is already in use
  * - it does not depend on "the user happens to have a page open" -- every run is a clean context
  *
- * Measured cold start (launch Chromium -> UI interactive): about 11 seconds.
+ * Measured (scripts/e2e-coldstart.py): the browser launches in 0.3s and `goto "/"` is 1.2s to
+ * DOM-content-loaded, 2.6s to a fully drawn page. A case pays about 6.6s in total, and the two large
+ * items are the kernel's own SQL-index wait (1~3s, not removable) and the page load itself -- "launch
+ * Chromium is 11 seconds" was measured through the whole fixture chain on a first-ever load, and
+ * attributing all of it to the browser is what made it look unavoidable.
  *
  * ## Which browser gets launched
  *

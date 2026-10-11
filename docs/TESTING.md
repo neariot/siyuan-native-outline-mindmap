@@ -137,6 +137,45 @@ the previous UI layout, and once the plugin panel sits in an "unmounted" layout,
 
 **Isolation matters more than saving those few seconds.** Let the warm-up pay the cold-start bill.
 
+#### What a case's startup actually costs (measured, `scripts/e2e-coldstart.py`)
+
+"Avoid the cold start" has an obvious answer —— reuse the context —— and it is already answered above:
+tried, and reverted for leakage. So the question becomes whether there is a *second* cold start nobody
+named. `scripts/e2e-coldstart.py` drives one startup in the fixtures' own order and costs each phase; the
+table below is its output, and the phases are the ones `openSiYuan` + `openDoc` really take.
+
+| phase | cost | per case? |
+|---|---|---|
+| create the test document (kernel call) | 0.3s | yes |
+| **wait for the SQL index (`waitUntilIndexed`)** | **2.0s** (1.2~2.8s) | yes |
+| launch the browser | 0.3s | **once per worker** |
+| `openSiYuan`: `goto "/"` | 1.2s | yes |
+| `openSiYuan`: the other four waits + the screenshot gate | 1.4s | yes |
+| `openDoc`: `goto "/?id=<doc>"` (**a second full page load**) | 0.3s | yes |
+| the same `goto "/"` again, in the same browser | 0.3s | —— |
+
+**About 6.6s of a case's 16.5s median is startup**, and the two entries that are actually large are the
+SQL-index wait and the page load itself. Three corrections to what this document and the config comment
+say:
+
+1. **"Measured cold start (launch Chromium → UI interactive) is about 11 seconds" is not what a case
+   pays.** The browser launches in **0.3s** (it is a system Chromium, already warm in the page cache) and
+   `goto "/"` costs 1.2s before DOM-content-loaded and 2.6s to a fully drawn page. The 11 seconds was
+   measured through the whole fixture chain, on a first-ever load, and attributing all of it to the
+   browser is what makes the number look unavoidable.
+2. **The expensive per-case item is the kernel's SQL index**, not the browser: `waitUntilIndexed` waits
+   for a flush that the kernel performs on its own schedule (1~3s). It is not removable by warming up
+   anything —— it is the kernel making progress, and shortening the budget would turn a slow machine into
+   a false failure (which is why the budget is 45s).
+3. **Reloading the page to open a document is what the design chose.** `openDoc` does a full `goto`, and
+   its *entire* cost is 0.3s in the table above —— a soft in-app open would save less than the isolation
+   it would risk, and none of the measured instability came from this step.
+
+★ So the honest answer to "can the suite avoid a cold start every time" is: **the parts that are cold are
+already warm, and what remains is either the kernel's index or a deliberately clean page.** The tool is
+kept because the next person will ask the same question, and re-measuring it by hand is how the 11-second
+number survived.
+
 ### After creating a document, wait for the index
 
 After creating a document, `ensureTestDoc` / `createTempDoc` poll the `blocks` table
