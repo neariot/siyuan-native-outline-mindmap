@@ -7,7 +7,21 @@ The verdict columns count the verifier's entries that name the same file as a fi
 verifier also records what it checked and found clean, which is not a verdict on anything here. It recorded
 no per-entry verdict, so "refuted 2" does not say *which* two —— that gap is in the run, not in the entries.
 
-237 findings: 16 high, 79 medium, 142 low.
+**237 findings when this was written: 16 high, 79 medium, 142 low.** The queue has moved since —— the
+table below is the original run's tally and is kept as the record of what that review produced, while the
+**current** count is derived from the entries themselves so it cannot drift:
+
+| | now |
+|---|---|
+| entries in this file | **206** (16 fixed or refuted, counted by `check-audit-findings.py`) |
+| severity | 137 low, 69 medium |
+| by category | test-quality 63, docs 51, dead-code 34, bug 34, fallback 8, type-escape 7, language 5, ux 4 |
+
+★ `python3 scripts/check-audit-findings.py` is the authority for whether an entry's citation still
+resolves, and it **fails** on one that does not. It cannot tell whether a defect is fixed. Entries that
+leave the queue are recorded, with the commit that resolved them, in `docs/TODO.md` —— the audit's own
+contract says an entry leaves "by being fixed, or by being refuted in writing", and the refutations live
+there rather than here.
 
 | Area | Findings | Confirmed | Refuted | Uncertain |
 |---|---|---|---|---|
@@ -131,7 +145,7 @@ conclusion to draw from a complete-looking list of findings.
 
 ### mindmap
 
-- **medium · bug** `src/mindmap/Mindmap.tsx:2014`  
+- **medium · bug** `src/mindmap/Mindmap.tsx:1905`  
   No context-menu close path gives focus back to .mm-canvas, so after any menu command (delete / focus this node / back to full map) the canvas keyboard — Tab, Enter, Delete, F2, Ctrl+Z — is dead until the user clicks a node again.
 - **medium · fallback** `src/mindmap/Mindmap.tsx:654`  
   fit() substitutes the window size when the container measures 0 — the container→window stand-in this repository's own ledger calls its most repeated mistake (AGENTS 5.1 #2/#3: a path/size has exactly one legitimate source).
@@ -157,8 +171,6 @@ conclusion to draw from a complete-looking list of findings.
   MapModel re-implements SiYuanStore.loadBlockMap and the file mirrors only one of its two retention branches; the preferred getBlockDOM branch has different retention semantics, so the headline claims are not invariants of the shipped method.
 - **medium · test-quality** `src/plugin/empty-node-echo.test.ts:52`  
   The invariant the file claims to guard is between two implementations, but the mind-map side is a copy pasted into the test, so drift in mount.ts's normaliser keeps the test green.
-- **medium · test-quality** `src/plugin/kernel-bugs.test.ts:5`  
-  The header promises the checks go red when the kernel is fixed, but every case runs a local stand-in of the kernel, so the file is green no matter what the kernel or the plugin does.
 - **medium · test-quality** `src/plugin/kernel-side-effects.test.ts:31`  
   The file is a set of assertions about mock functions and object literals defined inside the same block, so no check can go red; one check even invents a hypothesis string and asserts it contains a substring of itself.
 
@@ -168,8 +180,6 @@ conclusion to draw from a complete-looking list of findings.
   The test re-implements the guard instead of reading it, so a threshold change in store.ts leaves it green, contradicting the file's own claim that it pins that criterion.
 - **medium · test-quality** `src/plugin/minify-tdz.test.ts:58`  
   When dist-plugin/index.js is absent the only real assertion is skipped and the file still exits 0, so the minifier-TDZ guard reports a pass having asserted nothing; neither `npm test` nor `npm run check` builds first, and dist-plugin/ is gitignored, so on a fresh checkout the guard is dead.
-- **medium · test-quality** `src/plugin/panel-escape-focus.test.ts:129`  
-  The 'every key listed in the help is really implemented in code' assertion compares two byte-identical hardcoded arrays, so it is true by construction and can never fail; the array it calls the help text is also a stale 15-key copy of the real 26-key SHORTCUTS table.
 - **medium · test-quality** `src/plugin/paragraphs-ui.test.ts:52`  
   The replicated hover-tooltip text already disagrees with the i18n catalogue the product actually renders from, so section 3 asserts a string the plugin no longer produces.
 - **medium · test-quality** `src/plugin/ref-nav.test.ts:57`  
@@ -412,8 +422,6 @@ conclusion to draw from a complete-looking list of findings.
   The comment above the getActiveDocId re-export still describes a sample-data fallback that active-doc.ts deliberately removed, so it contradicts the module it documents.
 - **low · ux** `src/plugin/outline/Outliner.tsx:918`  
   Closing the find bar through its own toggle (toolbar/dock button, Ctrl+F) skips the focus restore, so typing afterwards goes to BODY - the exact 'one-way focus migration' the code comments describe.
-- **low · dead-code** `src/plugin/outline/Outliner.tsx:4721`  
-  handleMentionClick is exported but nothing calls it (its comment refers to a retired App module).
 - **low · dead-code** `src/plugin/outline/indent.test.ts:63`  
   The module-level readBool helper is unused - the only call site resolves to a second, block-scoped copy declared inside the same block.
 - **low · test-quality** `src/plugin/outline/keyboard-offset.test.ts:123`  
@@ -431,8 +439,6 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/pitfalls/editor.md:82`  
   The §2.3 entry 'Paired reverse keys (Backspace / Delete)' points its Test line at a file that has no key-handling coverage at all.
-- **low · test-quality** `src/plugin/blockmap-namespace.test.ts:143`  
-  The 'SQL wins' check cannot fail: the stale entry is registered under key N1 while the assertion reads key L1, which the row loop sets unconditionally.
 - **low · test-quality** `src/plugin/doc-switch-is-event-driven.test.ts:51`  
   One of the four assertions runs against the raw source with comments included while its sibling deliberately strips them, so documenting the removed polling in a code comment can turn the test red for a non-defect.
 - **low · test-quality** `src/plugin/echo-own-value.test.ts:85`  
@@ -446,8 +452,8 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · test-quality** `src/plugin/mindmap-focus.test.ts:17`  
   Some files in scope are replica-only: they assert a model the test itself defines, with no assertion on the product, which is below the standard the repository applies to its own replicas.
-- **low · test-quality** `src/plugin/mindmap-reparent.test.ts:88`  
-  The check's name claims the drag is allowed while the assertion requires it to be rejected, so the printed line states the opposite of what it verified.
+- **low · test-quality** `src/plugin/mindmap-reparent.test.ts:51`  
+  The check is named for a behaviour ("a drop onto itself, or onto the root, is not a reparent") but asserts that the handler's **source text** contains `tgt !== src` and `'__root__'` —— so it can only go red when those characters are rewritten, never when the drop misbehaves. It is one of several checks in the file with this shape: the file reads `Mindmap.tsx` / `mount.ts` and regex-matches the handler bodies instead of driving the gesture.
 - **low · type-escape** `src/plugin/mobile-swipe.test.ts:74`  
   The component is rendered through `as never` with props it does not accept and a required prop missing, and the third case's 'algorithm matches SiYuan' check is a locally built two-object walk that cannot fail.
 - **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  
@@ -460,7 +466,7 @@ conclusion to draw from a complete-looking list of findings.
   The file's 'Run:' instruction points at a stale compiled copy of the test instead of the sanctioned runner.
 - **low · test-quality** `src/plugin/wording-honesty.test.ts:76`  
   The premise that decides whether both fullscreen wording checks run at all is a regex over raw file text including comments, so a comment mentioning requestFullscreen() silently disables them while the output still claims they passed.
-- **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  ← the last test file that reaches nothing  
+- **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
   See the entry below; this is the same file, and it is now the only one the vacuous-test tool still lists as
   unable to go red.
 

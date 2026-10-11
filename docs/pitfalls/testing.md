@@ -931,3 +931,35 @@ the `0` is the child count of the row actually being moved.
   the next person does not "simplify" it back to a row that proves nothing.
 - **A case that cannot go red is not coverage.** Both this file and `docs/TESTING.md` already say it; the
   only way it gets caught is by running the mutation, every time, before keeping the case.
+
+## A work queue whose citations rot is a queue nobody can act on
+
+**Symptom**: `docs/AUDIT-FINDINGS.md` had been sitting as the repository's only work queue for days. Nothing
+had noticed that **five** of its entries cited a place that no longer existed: two test files deleted by the
+commits that fixed them, and three files shrunk past the cited line (one by 61 lines).
+
+**Cause**: an entry leaves the queue "by being fixed, or by being refuted in writing", and **neither half
+had a check**. The fixed half left a commit behind but the entry stayed; the refuted half left nothing at
+all, because the reasoned refutations happened in a run whose reports were deleted. So every entry —— live,
+fixed, or stale —— rendered identically, and the file's own header still advertised a tally from the day it
+was written.
+
+**Practice**:
+- **A queue needs a staleness check, not just a format.** `scripts/check-audit-findings.py` resolves every
+  citation and fails on the two states with no judgement in them: the file is gone, or the line is past the
+  end. Those have exactly two meanings (fixed, or moved) and both are actionable.
+- **Do not let a tool decide whether a defect is fixed.** A substring search cannot tell a fixed defect from
+  an edited line, and a gate that guessed would train people to silence it. The tool reports `drifted` and
+  `cannot-judge` and says plainly that those need a person —— the second is the list of entries to open
+  first, because the finding names no symbol to search for.
+- **A tool that drops input and reports success is worse than one that fails.** The first version parsed 205
+  entries out of a file holding 206 and said nothing: one entry carried trailing prose after its citation,
+  which the strict pattern rejected. Counting the entries the *loose* pattern sees and refusing to run on a
+  mismatch is what caught it —— the same "fail loudly rather than pass vacuously" rule as everywhere else.
+- **Re-derive totals instead of transcribing them.** The header's per-area table is the record of what that
+  review produced and is kept; the current count is computed from the entries, so it cannot drift again.
+- The first version of *this tool* searched for any word of seven characters or more, so the README finding
+  ("The Chinese README still documents …") searched for `Chinese` and `documents` —— prose no source file
+  contains —— and reported **60** entries `drifted` on a criterion that meant nothing. Only
+  **identifier-shaped** tokens (underscores, SCREAMING_CASE, camelCase) are useful signal; when a finding
+  names none, the honest answer is `cannot-judge`.

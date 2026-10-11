@@ -81,6 +81,19 @@ GATES = [
         "why": "every entry docs/PITFALLS.md advertises really exists",
     },
     {
+        # ★ The audit queue's citations rot silently: a file moves, a defect is fixed, and the entry keeps
+        #   reading like a live one. Measured before this gate existed: 6 entries pointed at a file that was
+        #   deleted or a line past the end of its file, one of them by 61 lines.
+        #   It fails only on `stale-file` / `stale-line` —— the two states with no judgement in them (the
+        #   defect was fixed, or the code moved). `drifted` and `cannot-judge` are printed, not failed:
+        #   deciding whether a defect is fixed needs a person, and a gate that guessed would train people
+        #   to silence it.
+        "name": "audit-findings",
+        "command": "python3 scripts/check-audit-findings.py",
+        "why": "every finding in the audit queue still cites a place that exists",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-audit-findings.py").is_file(),
+    },
+    {
         "name": "language",
         "command": "python3 scripts/audit-language.py",
         "why": "the section 2 language policy, over every file type at once",

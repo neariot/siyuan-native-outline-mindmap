@@ -365,6 +365,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 | `python3 scripts/check-vacuous-tests.py` | a test a doc cites that no longer exists, and the test files that import nothing —— they cannot go red, so they cannot defend anything |
 | `node scripts/check-dead-css.mjs` | a class in `src/styles.css` that no element can wear —— legal CSS, applies to nothing, fails nothing; the reverse of the scoping gate, and how `.om-outline` was found to be dead twice over |
 | `python3 scripts/check-unsaved-fields.py` | a node model field no reader restores —— the defect behind summary, link lines, the mask and the due date; fold state is printed, not failed |
+| `python3 scripts/check-audit-findings.py` | which findings in `docs/AUDIT-FINDINGS.md` still point at code that exists —— `stale-file` / `stale-line` / `drifted`, and the `cannot-judge` ones a reader must open first. It cannot tell whether a defect is *fixed*, and says so instead of guessing |
 | `python3 scripts/e2e-coldstart.py` | where an E2E case's startup time goes, phase by phase —— "can we avoid the cold start" is answered with a table instead of from memory, and it says which phases are paid per case and which are one-off |
 
 **Where knowledge lives.** Anything another developer or agent needs —— a measured fact, a pitfall, a
@@ -414,6 +415,7 @@ Rules that follow from the above:
 | Document | What it covers |
 |---|---|
 | [`docs/PITFALLS.md`](docs/PITFALLS.md) -> [`docs/pitfalls/`](docs/pitfalls/) | **Pitfall ledger** (one file per topic): symptom -> cause -> practice |
+| [`docs/TODO.md`](docs/TODO.md) | **What is left to do**: the front door. Current work, gaps in our own tooling, entries refuted in writing, and what is deferred on purpose |
 | [`docs/AUDIT-FINDINGS.md`](docs/AUDIT-FINDINGS.md) | **Audit work queue**: every finding from the one whole-repository review, high first |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test and verification strategy: how to test, the layers of verification, the case list |
 | [`docs/kernel-api.md`](docs/kernel-api.md) | What the SiYuan kernel API actually does (holds for other projects too) |
