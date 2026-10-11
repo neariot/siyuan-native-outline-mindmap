@@ -26,12 +26,24 @@ assuming they are is how a feature gets built twice with different semantics.
 | Change depth by one level | Shift+Tab / Tab | Not supported (drag onto another node instead) |
 
 ★ **How well each row above is verified.** The map's single zone and its no-op on blank space are
-verified end-to-end (`e2e/mindmap.spec.ts`, the drag cases). The outline's three zones are verified at the
-**rule** level only (`src/plugin/outline/drop-zone.test.ts` pins `above` / `child` / `below` against a row's
-own rect) —— no E2E case drives a real HTML5 drag in the outline, and an attempt to drive it synthetically
-did **not** reproduce a reorder, so "the outline reorders siblings by dragging above/below" rests on the
-unit-tested rule plus the `moveDrop` branch that inserts at the target's index. Treat the outline half as
-**unverified end-to-end** rather than as established.
+verified end-to-end (`e2e/mindmap.spec.ts`, the drag cases). The outline's three zones were verified by
+driving a real drag against a live instance, measuring the document after each release:
+
+| Drop (as a fraction of the row's height) | Zone | Document afterwards |
+|---|---|---|
+| 8% (top) | `above` | `丙` / `甲` / `乙` —— the dragged row becomes the first sibling |
+| 50% (middle) | `child` | `甲` / `  - 丙` / `乙` —— the dragged row is nested under the target |
+| 92% (bottom) | `below` | `甲` / `丙` / `乙` —— the dragged row becomes the second sibling |
+
+The 25% / 75% boundaries themselves are pinned separately by `src/plugin/outline/drop-zone.test.ts`.
+
+★★ **Two ways this gesture is easy to "measure" wrongly, both of which produced a false "it is broken".**
+  · The only `draggable` element is the **bullet** (`.om-bullet`), not the row's text. A gesture that
+    presses on the text never starts a drag at all, so the drop does nothing and the product looks
+    broken while it is merely untouched.
+  · A summary that joins the document's lines (e.g. with `> `) **flattens the indentation**, so a
+    successful `child` drop is indistinguishable from a `below` drop. Assert on the indented markdown, or
+    on the row's own geometry —— never on a flattened rendering of the tree.
 
 ★ **Exact order is an outline edit.** A list has a meaningful "between two rows"; a map does not. Its drop
 position can only mean *which node you aimed at*, so the map keeps **one** zone while the outline keeps

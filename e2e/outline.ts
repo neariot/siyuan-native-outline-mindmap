@@ -136,3 +136,45 @@ export async function selectedTexts(page: Page, maxLen: number = 4): Promise<str
     maxLen,
   );
 }
+
+/**
+ * Drag an outline row onto another row, aiming at a fraction of the **target row's height**.
+ *
+ * `fraction` selects the drop zone (the boundaries are 25% / 75%, pinned by `drop-zone.test.ts`):
+ * below 0.25 → `above`, above 0.75 → `below`, in between → `child`.
+ *
+ * ★★★ Two measured traps, each of which produced a false "reordering is broken" while the product was
+ *     fine —— so this helper encodes the correct gesture rather than leaving it to each caller:
+ *
+ *     1. The only `draggable` element is the **bullet** (`.om-bullet`), not the row. A gesture that
+ *        presses on the row's text never starts a drag, so nothing happens and it looks like a defect.
+ *        Hence the press lands on the bullet, offset a few pixels in from its left edge.
+ *     2. The zone comes from `dropZoneFor(e.clientY, rect.top, rect.height)` against the **row's** rect,
+ *        so the hover coordinates have to be computed from the row, not from the bullet.
+ *
+ * The gesture is a real press-move-release: Playwright's synthetic `DragEvent` dispatch does not drive
+ * this path (the drop handler reads React state set by `dragstart`, so a hand-dispatched sequence leaves
+ * `dragIds` empty and the drop is ignored).
+ */
+export async function dragRowOnto(
+  page: Page,
+  fromIndex: number,
+  toIndex: number,
+  fraction: number,
+): Promise<void> {
+  const rows = page.locator('.om-outline-wrap .node-row');
+  const srcBox = await rows.nth(fromIndex).boundingBox();
+  const dstBox = await rows.nth(toIndex).boundingBox();
+  if (!srcBox || !dstBox) throw new Error('dragRowOnto: a row has no box (is the outline rendered?)');
+
+  // On the bullet, which is the draggable element.
+  await page.mouse.move(srcBox.x + 14, srcBox.y + srcBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  for (let i = 1; i <= 12; i += 1) {
+    // Move in steps: the zone is decided by the last `clientY` the row saw.
+    const targetY = dstBox.y + dstBox.height * fraction * Math.min(1, i / 8);
+    await page.mouse.move(dstBox.x + dstBox.width / 2, targetY);
+  }
+  await page.mouse.up();
+}

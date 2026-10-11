@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { openDoc, toMindmapView, toOutlineView, mindmapState, ensureOutlineToolbarOpen } from './mindmap';
-import { outlineState, firstParentBullet, selectedTexts } from './outline';
+import { outlineState, firstParentBullet, selectedTexts, dragRowOnto } from './outline';
 import { siyuanUrl, siyuanToken } from './env';
 import {
   kernelApi, ensureTestDoc, createTempDoc, removeDoc,
@@ -1048,6 +1048,54 @@ test('★ Backspace at the start of a to-do turns it into a plain node', async (
     ).toBe(0);
   } finally {
     if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
+
+test('★ dragging a row above, onto, and below another gives three different results', async ({ page }) => {
+  // Gap this closes: the outline's three drop zones had a **unit test for the rule** (`drop-zone.test.ts`)
+  // and **no end-to-end case at all**, so "dragging reorders siblings" was an assumption rather than a
+  // fact. Measuring it produced a false "it is broken" twice — pressing the row's text instead of the
+  // bullet never starts a drag, and a summary that flattens indentation cannot see a `child` drop.
+  //
+  // ★ Each zone is asserted against the document's **indented markdown**, because the three outcomes are
+  //   distinguished by nesting as well as order: `above` and `below` move the row among its siblings,
+  //   `child` puts it inside the target. A flattened comparison would call the last two the same.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  const cases: { fraction: number; zone: string; want: RegExp; why: string }[] = [
+    // ★ Every pattern tolerates the kernel's **trailing space** on a list line (it emits `- 甲 `, a
+    //   continuation marker). Requiring `- 甲\n` outright failed against a **correct** document —— the
+    //   same mistake as the mind-map case, which is why it is written down here instead of fixed twice.
+    { fraction: 0.08, zone: 'above', want: /- 丙\s*\n\s*- 甲\s*\n\s*- 乙/, why: 'dragged row becomes the first sibling' },
+    { fraction: 0.92, zone: 'below', want: /- 甲\s*\n\s*- 丙\s*\n\s*- 乙/, why: 'dragged row becomes the second sibling' },
+    { fraction: 0.5, zone: 'child', want: /- 甲\s*\n {2,}- 丙/, why: 'dragged row is nested under the target' },
+  ];
+  try {
+    for (const c of cases) {
+      const docId = await createTempDoc(
+        api,
+        notebook || (await resolveTestNotebook(api)),
+        '- 甲\n- 乙\n- 丙\n',
+      );
+      try {
+        await openDoc(page, docId);
+        await toOutlineView(page);
+        // Rows are 甲 乙 丙; drag the third onto the first at the chosen fraction.
+        await dragRowOnto(page, 2, 0, c.fraction);
+        await expect
+          .poll(
+            async () => {
+              const res = await api.call('/api/export/exportMdContent', { id: docId });
+              return String(res.data?.content ?? '');
+            },
+            { message: `drop at ${c.fraction} (zone ${c.zone}): ${c.why}`, timeout: 15_000 },
+          )
+          .toMatch(c.want);
+      } finally {
+        await removeDoc(api, docId);
+      }
+    }
+  } finally {
     await api.dispose();
   }
 });

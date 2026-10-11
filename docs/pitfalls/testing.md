@@ -880,3 +880,33 @@ closing brace, a string holding slashes, JSX text), and `npm run check` as the b
 no existing check went red, which is the evidence that none of them had been matching prose.
 
 ---
+
+## A probe that drives the gesture wrongly reports the product as broken
+
+**Symptom**: "the outline's drag-to-reorder is broken —— dropping a row above another does nothing." Believed,
+written into `docs/MAPPING.md`, and about to be reported as a bug. The gesture works in all three zones.
+
+**Cause**: two independent mistakes in the **probe**, neither in the product.
+
+1. The press landed on the row's **text**, but the only `draggable` element is the **bullet**
+   (`.om-bullet`). No drag ever starts, so the drop does nothing — and a gesture that does nothing is
+   indistinguishable, from outside, from a gesture that is broken.
+2. The summary compared the document's lines **joined with a separator** (`.join(' > ')`), which flattens
+   indentation. A successful `child` drop (`甲` / `  - 丙`) and a `below` drop (`甲` / `丙` / `乙`) then
+   print identically, so a working nesting looked like a plain reorder.
+
+**Practice**:
+- Press the element that actually carries `draggable`, and say so in the helper: `dragRowOnto` presses the
+  bullet, deliberately. A helper is where this knowledge belongs — a caller re-deriving the gesture is how
+  the same wrong probe gets written twice.
+- Never assert on a **flattened** rendering of a tree. Assert on the indented markdown, or on the row's own
+  geometry; indentation *is* the data in an outline.
+- `e2e/outline.spec.ts` now covers all three zones end-to-end. It was written *because* the zones had only a
+  rule-level unit test and no case at all —— which is what let "it works" and "it is broken" both be
+  believeable without evidence.
+- Shown red before keeping: disabling `moveDrop`'s `child` branch fails the case on **that zone only**, with
+  the other two still green.
+
+★ The same shape as the mind map's descent bug and the dock helper: the criterion was wrong, the product was
+fine. When a measurement says "broken", suspect the measurement first — this repository has now paid for that
+lesson five times.
