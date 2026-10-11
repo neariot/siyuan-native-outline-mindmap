@@ -46,10 +46,19 @@ test('clicking a node marks it as selected, and only one is selected', async ({ 
   expect(before.selected, 'no node should be selected initially').toBe(0);
 
   await page.locator('.mm-node').nth(1).click();
-  await page.waitForTimeout(300);
+
+  // ★ Do not sleep a fixed 300 ms and then assert. Measured: under a full-suite run this case took 46.5 s
+  //   and failed, while alone it took 8 s and passed —— the wait was a guess about how long the selection
+  //   takes to render, and the guess is what broke, not the selection. Poll for the condition instead, so
+  //   a slow first case in the suite costs time rather than a red result.
+  await expect
+    .poll(async () => (await mindmapState(page)).selected, {
+      message: 'one click should leave exactly one node selected',
+      timeout: 15_000,
+    })
+    .toBe(1);
 
   const after = await mindmapState(page);
-  expect(after.selected, 'one click should leave exactly one node selected').toBe(1);
   expect(after.nodes, 'selection should not change the node count').toBe(before.nodes);
 });
 

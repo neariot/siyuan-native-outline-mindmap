@@ -13,6 +13,7 @@ import {
   removeNode,
   touch,
 } from '../../model/tree';
+import { escapeAttr, escapeHtml } from '../../model/html-escape';
 // Collapse granularity (recursive semantics) lives in tree-ops, where it is unit-testable offline.
 // Alias it to avoid clashing with the local `toggleCollapse` below (the one wrapping mutate).
 import { toggleCollapse as toggleCollapseAt } from '../tree-ops';
@@ -265,17 +266,6 @@ function hydrateEditable(el: HTMLElement): void {
     span.setAttribute('data-rendered', '1'); // guard against double rendering
     void renderFormula(tex, span);
   });
-}
-
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 /** Insert html at saved range (or end of el). Returns nothing; caller syncs. */
@@ -1870,7 +1860,7 @@ export default function Outliner(props: OutlinerProps) {
         const nn: OutlineNode = {
           id: makeSiyuanId(),
           modified: now(),
-          text: `<span>${body.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`,
+          text: `<span>${escapeHtml(body)}</span>`,
           children: [],
         };
         while (stack.length > 0 && stack[stack.length - 1].d >= depth) stack.pop();

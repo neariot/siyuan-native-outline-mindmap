@@ -20,6 +20,7 @@ import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
 import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText } from './sync';
+import { escapeHtml } from '../model/html-escape';
 import { makeSiyuanId } from '../core/map';
 import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } from './tree-ops';
 import type { IEventBus } from 'siyuan';
@@ -2321,12 +2322,5 @@ function mapNodes(nodes: OutlineNode[], id: string, text: string): OutlineNode[]
     }
     return n;
   });
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 

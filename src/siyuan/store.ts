@@ -14,6 +14,7 @@
 //   - deletion goes through removeDocByID, i.e. into the SiYuan trash
 //   - writes always use `dataType=dom` (see core/blockdom.ts) to avoid markdown's blank-line semantics
 
+import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
@@ -1601,14 +1602,7 @@ export class SiYuanStore {
 
   /** Convert an HTML fragment to plain text (for comparison with the kernel's content) */
   private async plainOfHtml(html: string): Promise<string> {
-    return html
-      .replace(/<[^>]*>/g, '')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&');
+    return unescapeHtml(html.replace(/<[^>]*>/g, ''));
   }
 
   /**

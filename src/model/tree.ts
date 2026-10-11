@@ -1,6 +1,7 @@
 import type { OutlineNode } from './types';
 import { now } from './ids';
 import { t } from '../plugin/i18n';
+import { unescapeHtml } from './html-escape';
 
 export function cloneNodes(nodes: OutlineNode[]): OutlineNode[] {
   return JSON.parse(JSON.stringify(nodes)) as OutlineNode[];
@@ -163,13 +164,12 @@ export function htmlToText(html: string): string {
     .replace(/<br\s*\/?>/g, '\n')
     .replace(/<\/p>/g, '\n')
     .replace(KNOWN_TAG, '');
-  s = s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"');
-  return s;
+  // ★ `&amp;` must be decoded **last**. Decoding it before the others turns a user's literal text into the
+  //   character it names: measured, a node whose text is `type &nbsp; to make a space` was stored by the
+  //   kernel as `type &amp;nbsp; to make a space` and displayed here as `type   to make a space` —— the
+  //   five characters the user typed were replaced by one space, silently. The shared decoder in
+  //   `model/html-escape` has this order; this call site used the reverse.
+  return unescapeHtml(s);
 }
 
 function unescapeAttr(s: string): string {

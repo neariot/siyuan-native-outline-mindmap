@@ -1,3 +1,5 @@
+import { unescapeHtml } from '../model/html-escape';
+
 /**
  * Bidirectional sync: SiYuan → mind map.
  *
@@ -149,15 +151,13 @@ export function htmlFragmentToText(html: string): string | null {
  *   `incoming="\u200b\u200b"  current=""  ownVals=[""]`.
  */
 export function visibleText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/g, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
+  // The entity decoding is shared (`core/html-escape`); the `<br>` and whitespace handling below is
+  // specific to turning HTML into a single-line visible string, so it stays here.
+  return unescapeHtml(
+    html
+      .replace(/<br\s*\/?>/g, '\n')
+      .replace(/<[^>]+>/g, ''),
+  )
     .replace(/\u200b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
