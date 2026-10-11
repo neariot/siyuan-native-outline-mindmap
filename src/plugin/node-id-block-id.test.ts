@@ -1,81 +1,113 @@
 /**
- * A node ID **must** equal the SiYuan listItem block ID —— otherwise the mapping keys drift → duplicate insertion.
+ * A node's identity must survive the write-back, or the mapping keys drift and the node is **duplicated**.
  *
  * Corresponds to .logs/API-GOTCHAS.md §109, defect #54.
  *
- * ★ Design premise: with no private attribute present, `loadBlockMap`
- *   takes the listItem's **block ID** straight as the key. So `node.id` must be exactly that block ID.
- *   If the id is not written into the markdown on insert, the kernel assigns a **brand-new block ID** → key drift.
+ * ★ The mechanism has changed since this file was written, and the old version pinned the *old* one: it
+ *   asserted that inserting writes `- {: id="…"}body` into the markdown so the kernel keeps the ID. The
+ *   write-back goes through the block-DOM path now (`store.ts`, `updateBlockDom`), where every
+ *   `data-node-id` is generated fresh and the node's own ID is deliberately **not** reused. Identity is
+ *   re-established afterwards by `refreshMapsAfterCreate`, whose documented basis is:
+ *
+ *     "the order of listItems in the DOM == the pre-order order of the node tree, and the block tree uses
+ *      the same order, so a one-to-one match by index is enough."
+ *
+ *   So what has to hold is: **one list item per node, in pre-order, each carrying a valid unique ID**.
+ *   If a node is dropped, reordered, or gets a malformed ID, that index alignment shifts by one and the
+ *   tail of the document is judged "new" —— silent duplicate insertion, the very defect this file is about.
+ *
+ * ★ Every case below reads the product: `treeToBlockDom` serialises, `parseDomToTree` (the parser the
+ *   write-back itself uses to read a document back) parses, and the assertions are made on **its** view of
+ *   the order. The previous version re-implemented the serialiser and the alignment as local closures and
+ *   asserted on those, so no change to the plugin could turn it red.
  */
 export {};
 
+import type { OutlineNode } from '../model/types';
+import { treeToBlockDom } from '../core/blockdom';
+import { SIYUAN_ID_RE, makeSiyuanId } from '../core/map';
+import { parseDomToTree, type BlockTreeState } from '../siyuan/dom-tree';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
-  if (cond) { pass++; console.log(`  ✅ ${name}`); }
-  else { fail++; console.log(`  ❌ ${name}`); }
+const check = (name: string, cond: boolean, detail = ''): void => {
+  if (cond) {
+    pass++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    fail++;
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
+  }
+};
+
+const node = (id: string, text: string, children: OutlineNode[] = []): OutlineNode =>
+  ({ id, modified: 0, text, children }) as OutlineNode;
+
+/** The listItem IDs of a parsed document, in pre-order —— the order `refreshMapsAfterCreate` aligns by. */
+function preOrderItems(st: BlockTreeState): string[] {
+  const out: string[] = [];
+  const walkList = (listId: string): void => {
+    for (const li of st.childrenOf.get(listId) ?? []) {
+      out.push(li);
+      const childList = st.itemToChildList.get(li);
+      if (childList) walkList(childList);
+    }
+  };
+  if (st.topListId) walkList(st.topListId);
+  return out;
 }
 
-const SIYUAN_ID_RE = /^\d{14}-[0-9a-z]{7}$/;
-
-/** Building the markdown on insert —— the two forms before and after the fix */
-const mdBefore = (text: string): string => `- ${text}`;
-const mdAfter = (id: string, text: string): string =>
-  SIYUAN_ID_RE.test(id) ? `- {: id="${id}"}${text}` : `- ${text}`;
-
-console.log('=== how the key drift happens ===');
+console.log('=== the ID shape both sides agree on ===');
 {
-  const nodeId: string = '20261005223702-kv25149';   // generated client-side by makeSiyuanId()
-  const realBlockId: string = '20261005223703-ovmfqd7'; // assigned separately by the kernel (the md carries no id)
-
-  check('★ both IDs are in valid SiYuan ID format', SIYUAN_ID_RE.test(nodeId) && SIYUAN_ID_RE.test(realBlockId));
-  check('★★ but they are **not the same** ID', nodeId !== realBlockId);
-
-  // the key syncStructure registers with = the node ID
-  const lastBlockMap = new Map<string, string>();
-  lastBlockMap.set(nodeId, 'para-1');
-  // the key loadBlockMap rebuilds with = the block ID
-  const rebuilt = new Map<string, string>();
-  rebuilt.set(realBlockId, 'para-1');
-
-  check('★ syncStructure uses the **node ID** as the key', lastBlockMap.has(nodeId));
-  check('★ loadBlockMap uses the **block ID** as the key', rebuilt.has(realBlockId));
-  check('★★★ the two keys differ ⇒ the next write-back cannot find it ⇒ judged a new node ⇒ **duplicate insertion**', !rebuilt.has(nodeId));
+  // The generator and the validator must agree, or a node's ID is one the plugin will not recognise on re-read.
+  const generated = makeSiyuanId();
+  check(`★ makeSiyuanId() produces an ID SIYUAN_ID_RE accepts (${generated})`, SIYUAN_ID_RE.test(generated));
+  check('★ the validator is not vacuous: a malformed ID is rejected', !SIYUAN_ID_RE.test('bogus'));
+  check('★★ a well-formed-but-different ID is not equal to a fresh one', makeSiyuanId() !== generated);
 }
 
-console.log('\n=== the fix: write the id into the inserted markdown ===');
+console.log('\n=== one list item per node, in pre-order ===');
 {
-  const nodeId = '20261005224814-fg40bcy';
-  const md = mdAfter(nodeId, '同E');
-  check(`★ the generated md: ${md}`, md === `- {: id="${nodeId}"}同E`);
+  // 甲 ─ 子T, 同E        (three nodes, one of them nested)
+  // 乙
+  const tree: OutlineNode[] = [
+    node('n1', '甲', [node('n2', '子T'), node('n3', '同E')]),
+    node('n4', '乙'),
+  ];
+  const dom = treeToBlockDom(tree);
+  const state = parseDomToTree(dom, '20260101000000-aaaaaaa');
 
-  // the keys now agree
-  const lastBlockMap = new Map<string, string>([[nodeId, 'para']]);
-  const rebuilt = new Map<string, string>([[nodeId, 'para']]);
-  check('★★ it is still found after the rebuild ⇒ it is not taken for a new node', rebuilt.has(nodeId));
-  check('★ ⇒ no duplicate insertion', lastBlockMap.has(nodeId) && rebuilt.has(nodeId));
+  const items = preOrderItems(state);
+  check('★★ every node has exactly one list item (4 nodes → 4 items)', items.length === 4, `got=${items.length}`);
+  check('★ every list item carries a paragraph block (the node text)',
+    items.every((li) => state.itemToParagraph.has(li)),
+    `missing=${items.filter((li) => !state.itemToParagraph.has(li)).length}`);
 
-  // an invalid id falls back to the old form (the kernel never receives a bad ID)
-  check('★ an invalid ID falls back to the id-less form (a safety net)', mdAfter('bogus', 'x') === '- x');
-  check('★ only a valid ID is inlined', mdAfter('20261005224814-fg40bcy', 'x').includes('{: id='));
+  const top = state.childrenOf.get(state.topListId) ?? [];
+  check('★★ the top level has one item per top-level node (2 → 2)', top.length === 2, `got=${top.length}`);
+
+  // Nesting: 甲's item owns a child list holding its two children. This is what makes the pre-order walk
+  // match the node tree's pre-order —— with a flat list, index alignment would pair 子T with 乙.
+  const childList = state.itemToChildList.get(top[0]);
+  check('★★ the first node owns a child list', !!childList, `itemToChildList=${!!childList}`);
+  check('★★ that child list holds its children, in order (2 → 2)',
+    childList ? (state.childrenOf.get(childList) ?? []).length === 2 : false);
 }
 
-console.log('\n=== measured hard evidence ===');
+console.log('\n=== the IDs the kernel receives are valid and unique ===');
 {
-  const evidence = { node: '20261005223702-kv25149', block: '20261005223703-ovmfqd7' };
-  check('★★ probe measurement: the node ID and the mapped block ID prefixes differ by 1 second', evidence.node.slice(0, 14) !== evidence.block.slice(0, 14));
+  const tree: OutlineNode[] = [node('n1', '甲', [node('n2', '子T')]), node('n3', '乙')];
+  const state = parseDomToTree(treeToBlockDom(tree), '20260101000000-aaaaaaa');
+  const ids = [...state.aliveIds];
+  check('★★ every block ID is in SiYuan format', ids.every((id) => SIYUAN_ID_RE.test(id)),
+    `bad=${ids.filter((id) => !SIYUAN_ID_RE.test(id)).join(',')}`);
+  // Duplicate keys would make one node's mapping overwrite another's, which looks exactly like a lost node.
+  check('★★★ no two blocks share an ID', new Set(ids).size === ids.length,
+    `unique=${new Set(ids).size} total=${ids.length}`);
 
-  const dupBefore = ['甲', '  子T', '    孙X', '  同E', '  同E', '乙', '丙'];
-  const countBefore = dupBefore.filter((s) => s.trim() === '同E').length;
-  check(`★★ before the fix the document holds **${countBefore}** 同E`, countBefore === 2);
-
-  const fixed = ['甲', '  子T', '    孙X', '  同E', '乙', '丙'];
-  const countAfter = fixed.filter((s) => s.trim() === '同E').length;
-  check('★★ after the fix there is only 1 同E', countAfter === 1);
-  check('★★ the three-level nesting is correct (子T > 孙X)', fixed.indexOf('    孙X') === fixed.indexOf('  子T') + 1);
-
-  const childLists = 1; // measured by SQL: 甲 has only one child list
-  check('★★ 甲 has **only 1** child list under its listItem (not one created per insertion)', childLists === 1);
+  const items = preOrderItems(state);
+  check('★ the node IDs from the tree are not reused as block IDs (identity is re-aligned, not inherited)',
+    !items.some((li) => li === 'n1' || li === 'n2' || li === 'n3'));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

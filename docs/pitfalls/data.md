@@ -221,9 +221,24 @@ mapped block = <block-id>     <- one second apart: two different IDs
 
 -> the next write-back finds no mapping for that node, judges it new and **inserts a second copy**. The symptom of a key mismatch is a duplicate block, not an error.
 
-**Practice**: inline the node's own id into the inserted markdown so the kernel **adopts** it —— `- {: id="<node id>"}text`, with a non-conforming id falling back to the id-less form so the kernel never receives a bad one. Node ID then equals the listItem block ID, and in kramdown every listItem carries it as `{: id="…"}` —— which is also what lets a structural assertion compare ids without an SQL round trip.
+**Practice**: the write-back goes through the **block-DOM path** (`updateBlockDom`, `dataType=dom`), so the
+kernel assigns every block ID itself and a node's own ID is not carried in at all. Identity is re-established
+*after* the insert by `refreshMapsAfterCreate`, which aligns by **index** —— its documented basis is "the order
+of listItems in the DOM == the pre-order order of the node tree, and the block tree uses the same order".
 
-Measured after the fix: only **1** `同E`, the nesting `子T > 孙X` correct, still stable after 18 s.
+★ This paragraph used to prescribe the opposite: inline the node's id into the inserted markdown
+(`- {: id="<node id>"}text`) so the kernel adopts it. That was a real fix on the markdown write path, and that
+path is gone —— `treeToBlockDom` generates every `data-node-id` fresh on purpose, and `treeToKramdown` writes
+no id attribute in either direction (its `attrs` list is deliberately empty). A note that keeps prescribing it
+describes code the repository no longer has, and it is what let the test below go vacuous: the file pinned the
+old mechanism with a local copy of it, so nothing in the plugin could turn it red.
+
+So the invariant to keep is the premise of the index alignment: **one list item per node, in pre-order, each
+with a valid unique ID**. Drop a node, reorder them, or emit a malformed ID and the alignment shifts by one,
+which is the duplicate below.
+
+Measured after the fix (markdown path, when it was the write path): only **1** `同E`, the nesting `子T > 孙X`
+correct, still stable after 18 s.
 
 ★ **Lesson**: the mapping table's key must stay in **one namespace across every write path**. "The read path uses the block ID, the write path uses the client ID" looks identical in normal operation and only diverges when the kernel assigns an id itself —— and the symptom is a duplicate, not an error.
 

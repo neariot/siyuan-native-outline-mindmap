@@ -21,6 +21,23 @@ import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
 /**
+ * Whether a mapping read is so incomplete that the write-back must be refused.
+ *
+ * ★ Exported as a **function of two numbers** rather than left as a closure over the tree it was written
+ *   for: the criterion decides whether a document is rewritten, so its boundaries have to be pinned by a
+ *   test that fails when they move —— and a closure inside a method can only be tested by a copy of itself.
+ *   The copy is what the unit test used to hold, which is why changing these two numbers turned nothing red.
+ *
+ * `missingCount` is how many of the tree's nodes the mapping could not resolve. Small documents are exempt
+ * on purpose: with fewer nodes than SiYuan's row cap they are all new anyway, and blocking them would
+ * refuse a legitimate first write.
+ */
+export function mappingLooksIncomplete(treeSize: number, missingCount: number): boolean {
+  if (treeSize <= 80) return false;
+  return missingCount > treeSize * 0.5;
+}
+
+/**
  * Parameters of the write-then-read polling (**the budget must exceed the kernel's worst-case flush interval**).
  *
  * ──────────────────────────────────────────────────────────────────
@@ -1556,11 +1573,8 @@ export class SiYuanStore {
       collectAll(nodes);
       // only validate when "the tree is clearly larger than SiYuan's default cap of 64",
       // otherwise small documents (which are all new nodes anyway) would be wrongly blocked.
-      const looksBroken = (m: Map<string, string>): boolean => {
-        if (flat.length <= 80) return false;
-        const miss = flat.filter((n) => !m.get(n.id)).length;
-        return miss > flat.length * 0.5;
-      };
+      const looksBroken = (m: Map<string, string>): boolean =>
+        mappingLooksIncomplete(flat.length, flat.filter((n) => !m.get(n.id)).length);
       if (looksBroken(blockMap)) {
         // read once more to rule out a false incomplete read caused by "index lag"
         await new Promise((r) => setTimeout(r, 500));
