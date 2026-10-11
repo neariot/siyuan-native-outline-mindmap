@@ -1,197 +1,109 @@
 /**
- * Reuse of `loadBlockMap` inside a write-back transaction, and the empty-node delete semantics of the Delete key.
+ * The **Delete** key's branch order, and the wiring that carries it out.
  *
- * Corresponds to .logs/API-GOTCHAS.md §94 / §95.
+ * Corresponds to .logs/API-GOTCHAS.md §95 and `docs/pitfalls/editor.md` §2.3.
+ *
+ * ★ The measured defect: a single selection whose caret is **not** at the end of the line fell through the
+ *   handler and reached the browser's native forward-delete —— the text disappeared while the node stayed:
+ *
+ *     measured (click a node, press Home, press Delete):
+ *       UI:     ['A','B','C'] → ['A','','C']   ← empty shell
+ *       SiYuan: ['A','B','C'] → ['A','','C']   ← persisted, too
+ *
+ *   and pressing Delete again could not remove it (for an empty node "caret at the end" is true, so it joined
+ *   the next node instead).
+ *
+ * ★ This file used to hold two replicas: a §94 `Loader` modelling the write-back transaction, and a §95
+ *   `deleteAction` modelling the key. The first contradicted `write-depth-nesting.test.ts` —— it modelled the
+ *   **boolean** transaction that `store.ts` documents as replaced, while the sibling modelled the depth
+ *   counter that actually ships —— so it is gone: the real store is driven over there. The key semantics now
+ *   drive the real `deleteKeyAction` (extracted from the handler into `src/core/delete-key.ts` because the
+ *   branch order *is* the fix), and the handler's use of it is read through the parser.
  */
 export {};
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { deleteKeyAction } from '../core/delete-key';
+import { callSites, enclosingBody } from './source-probe';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-// ---------------------------------------------------------------- §94 write-back transaction cache
+/** `['A','B','C']` with the caret in a middle node —— the state the shell bug was measured in. */
+const at = (over: Partial<Parameters<typeof deleteKeyAction>[0]> = {}) =>
+  deleteKeyAction({ atLineEnd: false, textEmpty: false, childCount: 0, index: 1, visibleCount: 3, ...over });
 
-interface Loader {
-  writeEpochOpen: boolean;
-  cacheDocId: string;
-  cacheLimit: number;
-  value: Map<string, string> | null;
-  realQueries: number;
-  cacheHits: number;
-}
-
-function makeLoader(): Loader {
-  return { writeEpochOpen: false, cacheDocId: '', cacheLimit: -1, value: null, realQueries: 0, cacheHits: 0 };
-}
-
-/** Replicates loadBlockMap's cache criterion */
-function loadBlockMap(L: Loader, docId: string, limit = 5000): Map<string, string> {
-  if (L.writeEpochOpen && L.cacheDocId === docId && L.cacheLimit === limit && L.value) {
-    L.cacheHits++;
-    return L.value;
-  }
-  L.realQueries++;
-  const m = new Map<string, string>([['n1', 'b1']]);
-  if (L.writeEpochOpen) {
-    L.cacheDocId = docId;
-    L.cacheLimit = limit;
-    L.value = m;
-  }
-  return m;
-}
-
-function beginWrite(L: Loader): void {
-  L.writeEpochOpen = true;
-  L.cacheDocId = '';
-  L.cacheLimit = -1;
-  L.value = null;
-}
-
-function endWrite(L: Loader): void {
-  L.writeEpochOpen = false;
-  L.cacheDocId = '';
-  L.cacheLimit = -1;
-  L.value = null;
-}
-
-console.log('=== §94 loadBlockMap reuse inside a write-back transaction ===');
+console.log('=== the empty-shell case: caret not at the end of the line ===');
 {
-  const L = makeLoader();
-  beginWrite(L);
-  loadBlockMap(L, 'docA');
-  loadBlockMap(L, 'docA');
-  loadBlockMap(L, 'docA');
-  endWrite(L);
-  check('★ 3 calls inside one write-back -> 1 real query + 2 hits', L.realQueries === 1 && L.cacheHits === 2);
-}
-{
-  const L = makeLoader();
-  // No transaction open -> a real query every time (an external call must not be cached)
-  loadBlockMap(L, 'docA');
-  loadBlockMap(L, 'docA');
-  check('★ no caching outside a transaction (so external client changes stay visible)', L.realQueries === 2 && L.cacheHits === 0);
-}
-{
-  const L = makeLoader();
-  beginWrite(L);
-  loadBlockMap(L, 'docA');
-  endWrite(L);
-  beginWrite(L);
-  loadBlockMap(L, 'docA');
-  endWrite(L);
-  check('★ the cache does not survive across write-backs (otherwise external changes are missed)', L.realQueries === 2 && L.cacheHits === 0);
-}
-{
-  const L = makeLoader();
-  beginWrite(L);
-  loadBlockMap(L, 'docA');
-  loadBlockMap(L, 'docB'); // different documents must not share
-  endWrite(L);
-  check('★ different documents do not share the cache', L.realQueries === 2 && L.cacheHits === 0);
-}
-{
-  const L = makeLoader();
-  beginWrite(L);
-  loadBlockMap(L, 'docA', 5000);
-  loadBlockMap(L, 'docA', 100); // different limit -> different result set, must not be reused
-  endWrite(L);
-  check('★ different limits do not share the cache', L.realQueries === 2 && L.cacheHits === 0);
-}
-{
-  const L = makeLoader();
-  beginWrite(L);
-  loadBlockMap(L, 'docA');
-  endWrite(L);
-  endWrite(L); // a repeated endWrite must be idempotent
-  loadBlockMap(L, 'docA');
-  check('★ endWrite is idempotent, and nothing is cached afterwards', L.realQueries === 2 && L.cacheHits === 0);
+  // ★★★ The whole defect: this used to fall through to the browser (nothing handled), which deleted the text
+  //     and left the node.
+  check('★★★ with text after the caret, Delete joins the next node —— it never leaves the browser to do it',
+    at() === 'mergeNext', at());
+  check('★★ the same node with nothing after it is still handled (no native delete, nothing changes)',
+    at({ index: 2 }) === 'none', at({ index: 2 }));
 }
 
-// ---------------------------------------------------------------- §95 Delete key semantics
-
-type Act = 'deleteNode' | 'mergeNext' | 'native' | 'none';
-
-/**
- * Replicates the Delete branch decision after the fix.
- * atEnd: whether the caret is at the line end; empty: whether the node text is empty; kids: number of child nodes; idx/len: position
- */
-function deleteAction(atEnd: boolean, empty: boolean, kids: number, idx: number, len: number): Act {
-  // Same order as the real code: first check "at line end and there is a next one" -> merge
-  if (atEnd && idx < len - 1) return 'mergeNext';
-  // empty node (wherever the caret is) -> delete the whole block
-  if (empty && kids === 0) return len > 1 ? 'deleteNode' : 'none';
-  // non-empty and not at the line end -> take it over too, merge into the next one
-  if (idx < len - 1) return 'mergeNext';
-  return 'none';
-}
-
-/**
- * The special case of an empty node **sitting in the last position**:
- * the at-line-end branch matches first, but idx is already the last one -> it falls through to the empty-node branch -> delete.
- */
-function deleteActionTailEmpty(len: number): Act {
-  return deleteAction(true, true, 0, len - 1, len);
-}
-
-/** The behavior before the fix (only the "merge at line end" and "multi-select delete" paths exist) */
-function deleteActionOld(atEnd: boolean, idx: number, len: number): Act {
-  if (atEnd && idx < len - 1) return 'mergeNext';
-  return 'native';
-}
-
-console.log('\n=== §95 The three cases of the Delete key ===');
+console.log('\n=== an empty leaf is removed, whatever the caret position ===');
 {
-  check(
-    '★ empty node (at line end, not the last position) -> merge into the next one (the at-line-end branch wins)',
-    deleteAction(true, true, 0, 1, 4) === 'mergeNext',
-  );
-  check(
-    '★ empty node (at line end, **the last one**) -> delete the whole block (before the fix it left an empty shell)',
-    deleteActionTailEmpty(4) === 'deleteNode',
-  );
-  check('★ empty node with the caret not at the line end -> delete the whole block as well', deleteAction(false, true, 0, 1, 4) === 'deleteNode');
-  check('non-empty + caret at the line end -> merge into the next one', deleteAction(true, false, 0, 1, 4) === 'mergeNext');
-  check('non-empty + caret not at the line end -> taken over too (merge), no degradation to the native delete', deleteAction(false, false, 0, 1, 4) === 'mergeNext');
-  check('non-empty + has child nodes -> not deleted as an empty node', deleteAction(true, false, 2, 1, 4) !== 'deleteNode');
-  check('last node + caret at the line end -> no merge (nothing follows)', deleteAction(true, false, 0, 3, 4) === 'none');
-  check('the only node is empty -> not deleted (otherwise the document goes empty)', deleteAction(true, true, 0, 0, 1) === 'none');
+  check('★★★ an empty node with a sibling after it is deleted outright',
+    at({ textEmpty: true }) === 'deleteNode', at({ textEmpty: true }));
+  // ★ The case that decides the branch order: an empty node's caret is **always** "at the end"
+  //   (`getCaretOffset` is 0 and the plain length is 0), so an empty node with a following node takes the
+  //   join branch above and is *not* deleted. The branch that deletes is only reached by a node with
+  //   nothing after it. Asserted because it is easy to "fix" into the opposite and never notice.
+  check('★★ an empty node with a following node joins it (the at-line-end branch matches first)',
+    at({ textEmpty: true, atLineEnd: true }) === 'mergeNext',
+    at({ textEmpty: true, atLineEnd: true }));
+  // ★ The special case that made this subtle: for an empty node the caret is *always* "at the end", so the
+  //   at-line-end branch matches first —— but there is no next node, so it must fall through to the empty branch.
+  check('★★★ an empty **last** node is deleted, not left behind by the at-line-end branch',
+    at({ textEmpty: true, atLineEnd: true, index: 2 }) === 'deleteNode',
+    at({ textEmpty: true, atLineEnd: true, index: 2 }));
+  check('★★ the last remaining node is never deleted —— there has to be somewhere to type',
+    at({ textEmpty: true, atLineEnd: true, index: 0, visibleCount: 1 }) === 'none');
+  check('★ whitespace-only text counts as empty (the caller trims), so it is still removed',
+    at({ textEmpty: true, index: 0, visibleCount: 2 }) === 'deleteNode');
 }
 
-console.log('\n=== §95 Contrast with the state before the fix (the defect really existed) ===');
+console.log('\n=== a node with content is never deleted by Delete ===');
 {
-  check(
-    '★ before the fix: empty node + caret not at the line end -> handed to the browser native delete (leaves an empty shell)',
-    deleteActionOld(false, 1, 4) === 'native',
-  );
-  check(
-    '★ before the fix: non-empty + caret not at the line end -> also goes native (deletes characters, not the node)',
-    deleteActionOld(false, 1, 4) === 'native',
-  );
-  check('before the fix only "merge at line end" was taken over', deleteActionOld(true, 1, 4) === 'mergeNext');
+  check('★★★ an empty node that **has children** is not deleted —— its subtree would go with it',
+    at({ textEmpty: true, childCount: 2 }) !== 'deleteNode', at({ textEmpty: true, childCount: 2 }));
+  check('★ it joins the next node instead, like any other non-empty node',
+    at({ textEmpty: true, childCount: 2 }) === 'mergeNext', at({ textEmpty: true, childCount: 2 }));
+  check('★★ and at the end of the line with nothing after it, nothing happens at all',
+    at({ textEmpty: true, childCount: 2, atLineEnd: true, index: 2 }) === 'none',
+    at({ textEmpty: true, childCount: 2, atLineEnd: true, index: 2 }));
 }
 
-console.log('\n=== §95 Symmetry with Backspace ===');
+console.log('\n=== the handler carries out the decision, and never lets the key reach the browser ===');
 {
-  // Backspace: empty node with the caret at the line start -> delete; non-empty -> merge into the previous one
-  const backspace = (atStart: boolean, empty: boolean, kids: number, idx: number, len: number): Act => {
-    if (atStart && empty && kids === 0) return len > 1 ? 'deleteNode' : 'none';
-    if (atStart && idx > 0) return 'mergeNext';
-    return 'none';
-  };
-  check('Backspace on an empty node -> delete', backspace(true, true, 0, 1, 4) === 'deleteNode');
-  check('Delete on an empty node -> delete (consistent with Backspace)', deleteAction(false, true, 0, 1, 4) === 'deleteNode');
-  check(
-    '★ both treat "empty node" the same way -- this is the symmetry requirement',
-    backspace(true, true, 0, 1, 4) === deleteAction(false, true, 0, 1, 4),
-  );
+  const src = fs.readFileSync(path.join(__dirname, 'outline', 'Outliner.tsx'), 'utf8');
+  const calls = callSites(src, /^deleteKeyAction$/);
+  check('★★ the Delete branch decides with deleteKeyAction()', calls.length === 1, calls.join(', '));
+
+  // ★ The defect reached the browser because the handler did not preventDefault on the falling-through path.
+  // Read through `enclosingBody`, which strips comments: the block carries a long explanation of the defect,
+  // and a pattern that had to step over it would be measuring comment length instead of code order.
+  const deleteBlock = enclosingBody(src, 'const action = deleteKeyAction({');
+  check('★ the Delete branch was located (precondition)', deleteBlock.length > 200, `len=${deleteBlock.length}`);
+  check('★★★ every decided branch is carried out only after the native default is suppressed',
+    /const action = deleteKeyAction\(\{[\s\S]{0,300}?\}\);[\s\S]{0,200}?e\.preventDefault\(\);[\s\S]{0,200}?if \(action === 'deleteNode'\)/.test(deleteBlock),
+    'the browser must never perform its own forward-delete');
+  check("★★ both non-trivial actions are handled ('deleteNode' and 'mergeNext')",
+    deleteBlock.includes("if (action === 'deleteNode')") && deleteBlock.includes("if (action === 'mergeNext') mergeWithNext(id)"));
+  check('★★ deleting hands focus to a neighbour so focus never dangles',
+    /if \(action === 'deleteNode'\)[\s\S]{0,300}?focusReq\(next, 'end'\)/.test(deleteBlock));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

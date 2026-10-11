@@ -79,7 +79,18 @@ so that only continuous typing enters the merge window.
 **Practice**: `Backspace` and `Delete` are a pair of reverse operations; changing one means looking at the other at the same time.
 At the time the `Backspace` branches were complete while `Delete` missed the non-end-of-line case.
 
-**Test**: `e2e/ctxmenu.spec.ts` (deleting a node deletes its children and writes back to SiYuan)
+★ The branch **order** is part of the fix, not an implementation detail, and one consequence of it is easy to
+"correct" into the opposite: for an empty node the caret is always "at the end of the line" (the caret offset
+and the plain length are both 0), so an empty node that has a following node takes the *join* branch and is not
+deleted —— only an empty node with nothing after it is removed. Both are asserted.
+
+**Test**: `src/plugin/delete-key.test.ts`, which drives `deleteKeyAction` (the extracted decision in
+`src/core/delete-key.ts` —— it lives in `core/` because the handler around it needs the DOM and `siyuan`) over
+every branch, and reads the handler's use of it through the parser: the decision, the `deleteNode` /
+`mergeNext` handling, the focus hand-off, and that the native default is suppressed before either is carried
+out (a branch that lets the key through is exactly how the shell node appeared).
+The context-menu suite it used to cite covers a *different* mechanism —— deleting through the menu, not the
+Delete key.
 
 ---
 

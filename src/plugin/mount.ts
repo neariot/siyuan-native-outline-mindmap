@@ -7,6 +7,7 @@
 // so the container carries a dedicated class and all styles are scoped under it (see plugin.css.js).
 
 import * as React from 'react';
+import { joinsUndoWindow } from '../core/undo-window';
 import * as ReactDOM from 'react-dom/client';
 import type { Custom } from 'siyuan';
 import Mindmap from '../mindmap/Mindmap';
@@ -692,7 +693,6 @@ function OmTabApp({
    * are merged into a single step: no repeated pushes inside the window, and the pre-edit state is recorded only on the first edit.
    */
   const mergeRef = React.useRef<{ key: string; at: number }>({ key: '', at: 0 });
-  const MERGE_MS = 1200;
 
   /**
    * Load a document from SiYuan (both the initial load and "use SiYuan as the source of truth" go through here).
@@ -1248,10 +1248,12 @@ function OmTabApp({
       //   Structural operations always **become their own step**: when `kind === 'struct'`
       //   the window is neither reused nor refreshed —— every structural operation pushes a new undo point.
       const isStruct = kind === 'struct';
-      const inWindow = !isStruct
-        && mergeKey !== ''
-        && mergeRef.current.key === mergeKey
-        && now - mergeRef.current.at < MERGE_MS;
+      const inWindow = joinsUndoWindow({
+        kind,
+        mergeKey,
+        lastKey: mergeRef.current.key,
+        elapsedMs: now - mergeRef.current.at,
+      });
       if (!inWindow) {
         // The snapshot takes "the tree the last successful write-back sent to SiYuan" —— a pre-edit state with clear meaning
         pushUndo(prevTreeRef.current);

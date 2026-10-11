@@ -47,17 +47,15 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **medium · test-quality** the four test files nothing cites that still reach nothing  
-  `scripts/check-vacuous-tests.py` now passes in full: every test a doc cites exists **and** can reach the
-  product (the sixteen citations that named a hollow file were converted —— see the git history for the
-  per-file reasoning, and the pattern: a file that models the kernel becomes either a product-side check or a
-  documented measurement, never a stub compared with itself). The tool still prints the files that import
-  nothing and read nothing, as a lower bound, and four remain. They are not cited by any document, so nothing
-  ever claimed they were evidence —— but they cannot fail either:
-  · `src/plugin/undo-merge-kind.test.ts`
-  · `src/plugin/write-depth-nesting.test.ts`
-  · `src/plugin/write-epoch-delete.test.ts`
-  · `src/plugin/zoom-title-sync.test.ts`
+- **medium · test-quality** the one test file nothing cites that still reaches nothing  
+  `scripts/check-vacuous-tests.py` passes in full: every test a doc cites exists **and** can reach the
+  product, and the count of files that import nothing and read nothing is down to **one**
+  (`src/plugin/zoom-title-sync.test.ts`, also flagged just above). The pattern that converted the rest: a file
+  that models the kernel becomes either a product-side check or a documented measurement, never a stub
+  compared with itself. Two of the four took a small extraction so the rule could be driven directly ——
+  `joinsUndoWindow` (`src/core/undo-window.ts`, the undo merge window) and `deleteKeyAction`
+  (`src/core/delete-key.ts`, the Delete key's branch order) —— and `write-depth-nesting.test.ts` now drives the
+  real store's `beginWrite` / `endWrite` / `loadBlockMap` over a counting fake client.
 
 - **high · privacy** `e2e/testdoc.ts:213`  
   The 'only notebooks with these names are accepted as test targets (to avoid damaging user data)' allowlist holds the literal name that BOTH configured instances report as their notebook #1 - i.e. the name of a notebook the user actually works in - so the guard that exists to protect user data instead selects the user's own notebook, and the name itself is a section-1 hard-rule leak in a tracked file.
@@ -501,10 +499,9 @@ conclusion to draw from a complete-looking list of findings.
   The file's 'Run:' instruction points at a stale compiled copy of the test instead of the sanctioned runner.
 - **low · test-quality** `src/plugin/wording-honesty.test.ts:76`  
   The premise that decides whether both fullscreen wording checks run at all is a regex over raw file text including comments, so a comment mentioning requestFullscreen() silently disables them while the output still claims they passed.
-- **low · dead-code** `src/plugin/write-epoch-delete.test.ts:51`  
-  This replica models the boolean write-back transaction that store.ts documents as replaced, contradicting the sibling write-depth-nesting.test.ts which models the depth counter that is actually shipped.
-- **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
-  The paragraph 0.96 case presents a simulation of 'does mount.ts pass the zoom props' whose input is the test's own boolean, so the wiring it claims to check is unchecked.
+- **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  ← the last test file that reaches nothing  
+  See the entry below; this is the same file, and it is now the only one the vacuous-test tool still lists as
+  unable to go red.
 
 ### scripts-gates
 

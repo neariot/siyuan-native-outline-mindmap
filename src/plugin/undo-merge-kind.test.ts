@@ -7,134 +7,76 @@
  *   · continuous typing (kind='text' / undefined) -> **merge** (otherwise Ctrl+Z has to walk back one character at a time)
  *   · structural operations (kind='struct')        -> **each becomes its own step** (they are independent user decisions)
  *
- * Replicates the decision in mount.ts `handleOutlineChange` to pin this semantics down.
+ * ★ The criterion itself now lives in `src/core/undo-window.ts` (`joinsUndoWindow`), called by the change
+ *   handler in `mount.ts`. This file used to hold a `MergeModel` class that "replicates the decision in
+ *   mount.ts" —— a copy compared against itself, so the plugin's rule could be changed freely (including back
+ *   to the wrong one: the measured defect was 3 Tab indents producing a single undo point).
  */
 export {};
 
-const MERGE_MS = 1200;
-
-interface Step {
-  inWindow: boolean;
-  pushed: boolean;
-  key: string;
-  at: number;
-}
-
-/** Replicates the merge decision in mount.ts */
-class MergeModel {
-  private key = '';
-  private at = 0;
-  readonly steps: Step[] = [];
-
-  edit(mergeKey: string, kind: 'struct' | 'text' | undefined, now: number): boolean {
-    const isStruct = kind === 'struct';
-    const inWindow =
-      !isStruct && mergeKey !== '' && this.key === mergeKey && now - this.at < MERGE_MS;
-    let pushed = false;
-    if (!inWindow) {
-      pushed = true;
-      // Clear the key after a structural operation so an immediately following text edit does not "join" the previous window
-      this.key = isStruct ? '' : mergeKey;
-      this.at = now;
-    } else {
-      this.at = now;
-    }
-    this.steps.push({ inWindow, pushed, key: this.key, at: this.at });
-    return pushed;
-  }
-}
+import fs from 'node:fs';
+import path from 'node:path';
+import { UNDO_MERGE_MS, joinsUndoWindow } from '../core/undo-window';
+import { callSites } from './source-probe';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-console.log('=== Continuous typing: should merge ===');
+console.log('=== continuous typing merges; a structural operation never does ===');
 {
-  const m = new MergeModel();
-  let pushes = 0;
-  for (let i = 0; i < 6; i++) if (m.edit('node-A', undefined, i * 250)) pushes++;
-  check('6 typing events (250ms apart) -> merged into 1 undo point', pushes === 1);
-}
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  for (let i = 0; i < 10; i++) if (m.edit('node-A', 'text', i * 300)) pushes++;
-  check('explicit text 6~10 times -> still merged into 1', pushes === 1);
+  const type = (elapsedMs: number, key = 'n1#text') =>
+    joinsUndoWindow({ kind: 'text', mergeKey: key, lastKey: key, elapsedMs });
+
+  check('★★ typing inside the window joins the step (Ctrl+Z must not walk back one character)',
+    type(500) === true);
+  check('★ the boundary is exclusive: exactly at the window it is a new step',
+    type(UNDO_MERGE_MS) === false, `elapsedMs=${UNDO_MERGE_MS}`);
+  check('★ typing after the window starts a new step', type(UNDO_MERGE_MS + 1) === false);
+
+  // ★★ The measured defect: same node, well inside the window, but a structural operation.
+  for (const kind of ['struct'] as const) {
+    check('★★★ a structural operation never joins the window, however recent it is',
+      joinsUndoWindow({ kind, mergeKey: 'n1#text', lastKey: 'n1#text', elapsedMs: 1 }) === false,
+      'three indents must be three undo steps');
+  }
+  // The kind is also absent for the text path —— an undefined kind must still merge like text.
+  check('★ an undefined kind behaves like text (the helpers pass it that way)',
+    joinsUndoWindow({ kind: undefined, mergeKey: 'n1#text', lastKey: 'n1#text', elapsedMs: 10 }) === true);
 }
 
-console.log('\n=== Structural operations: each should be its own step ===');
+console.log('\n=== the key decides *which* step, not just how recent ===');
 {
-  const m = new MergeModel();
-  let pushes = 0;
-  for (let i = 0; i < 3; i++) if (m.edit('node-A', 'struct', i * 500)) pushes++;
-  check('★ three indents (500ms apart) -> 3 separate undo points', pushes === 3);
-}
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  for (let i = 0; i < 3; i++) if (m.edit('node-A', 'struct', i * 100)) pushes++;
-  check('★ very fast consecutive structural operations (100ms apart) -> still 3', pushes === 3);
-}
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  if (m.edit('node-A', 'struct', 0)) pushes++;
-  if (m.edit('node-A', 'struct', 30000)) pushes++;
-  check('structural operations far apart in time -> each becomes its own step', pushes === 2);
+  check('★★ a different node does not join the previous step',
+    joinsUndoWindow({ kind: 'text', mergeKey: 'n2#text', lastKey: 'n1#text', elapsedMs: 10 }) === false);
+  check('★ the same node but a different field does not join either',
+    joinsUndoWindow({ kind: 'text', mergeKey: 'n1#title', lastKey: 'n1#text', elapsedMs: 10 }) === false);
+  check('★★ an empty key never merges (that is how a structural operation blanks it)',
+    joinsUndoWindow({ kind: 'text', mergeKey: '', lastKey: '', elapsedMs: 10 }) === false);
 }
 
-console.log('\n=== Mixed sequence ===');
+console.log('\n=== the product uses this rule, and refreshes the window only when it merges ===');
 {
-  const m = new MergeModel();
-  let pushes = 0;
-  if (m.edit('node-A', undefined, 0)) pushes++;      // typing -> push
-  if (m.edit('node-A', undefined, 200)) pushes++;    // typing -> merge
-  if (m.edit('node-A', 'struct', 400)) pushes++;     // structural -> push
-  check('typing x2 + structural x1 -> 2 undo points', pushes === 2);
-}
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  if (m.edit('node-A', 'struct', 0)) pushes++;
-  if (m.edit('node-A', undefined, 100)) pushes++;    // typing right after a structural operation
-  if (m.edit('node-A', undefined, 200)) pushes++;    // keep typing
-  check('★ typing after a structural operation does not merge with it -> 2 undo points', pushes === 2);
-}
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  if (m.edit('node-A', 'struct', 0)) pushes++;
-  if (m.edit('node-B', 'struct', 100)) pushes++;
-  check('structural operations on different nodes -> each becomes its own step', pushes === 2);
-}
+  // ★ Precondition: a rule nothing calls defends nothing. Read through the parser, because the name also
+  //   appears in the comments that explain it.
+  const src = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
+  const calls = callSites(src, /^joinsUndoWindow$/);
+  check('★★ the change handler decides with joinsUndoWindow()', calls.length === 1, calls.join(', '));
 
-console.log('\n=== Boundaries ===');
-{
-  const m = new MergeModel();
-  let pushes = 0;
-  if (m.edit('node-A', undefined, 0)) pushes++;
-  if (m.edit('node-A', undefined, 2000)) pushes++;
-  check('typing more than 1.2 seconds apart -> split into 2 undo points', pushes === 2);
-}
-{
-  const m = new MergeModel();
-  const p1 = m.edit('node-A', undefined, 0);
-  m.edit('node-A', undefined, 500);
-  const p3 = m.edit('node-A', undefined, 2000);
-  check('no push inside the window, push again once past it', p1 === true && p3 === true);
-}
-{
-  const m = new MergeModel();
-  const pushed = m.edit('', 'struct', 0);
-  check('a structural operation pushes onto the stack even when mergeKey is empty', pushed === true);
+  // The window is refreshed on a merge and re-opened otherwise; and a structural operation blanks the key, so
+  // the next text edit cannot join a window that a structural operation just ended.
+  check('★★ a merged change refreshes the window timestamp only',
+    /else \{\s*mergeRef\.current\.at = now;/.test(src), 'the else branch');
+  check('★★★ when the window is (re)opened, a structural operation stores an empty key',
+    /mergeRef\.current = \{ key: isStruct \? '' : mergeKey, at: now \}/.test(src));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

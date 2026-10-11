@@ -8,149 +8,130 @@
  *
  * Fix: switch to a depth counter, so only the **outermost** endWrite really closes it.
  *
- * This test replicates the behavior of beginWrite/endWrite/loadBlockMap's cache criterion in store.ts,
- * with no dependency on the kernel -- pure logic verification.
+ * ★ This file used to carry a `Guard` class that "replicates the write-back transaction state machine of
+ *   `SiYuanStore`" —— a copy compared against itself, so the plugin's own state machine could change freely
+ *   (including back to the boolean that caused this defect). It drives the **real** `beginWrite` / `endWrite` /
+ *   `loadBlockMap` through a counting fake client now, so "the second read was served from the cache" is
+ *   observed as an SQL call that did **not** happen.
  */
+export {};
 
-{
-  let pass = 0;
-  let fail = 0;
-  function check(name: string, cond: boolean): void {
-    if (cond) {
-      pass++;
-      console.log('  ✓ ' + name);
-    } else {
-      fail++;
-      console.log('  ✗ ' + name);
-    }
+import { SiYuanClient } from '../siyuan/api';
+import { SiYuanStore } from '../siyuan/store';
+
+let pass = 0;
+let fail = 0;
+const check = (name: string, cond: boolean, detail = ''): void => {
+  if (cond) {
+    pass++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    fail++;
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
+};
 
-  /** Replicates the write-back transaction state machine of SiYuanStore */
-  class Guard {
-    private open = false;
-    private depth = 0;
-    cacheDocId = '';
-    cacheLimit = -1;
-    cacheValue: Map<string, string> | null = null;
-    queries = 0;
+const LI = '20260101000000-li00001';
+const PARA = '20260101000000-p000001';
 
-    beginWrite(docId = ''): void {
-      this.depth++;
-      this.open = true;
-      if (this.depth === 1) {
-        this.cacheDocId = docId;
-        this.cacheLimit = -1;
-        this.cacheValue = null;
-      } else if (docId && this.cacheDocId !== docId) {
-        this.cacheDocId = docId;
-        this.cacheLimit = -1;
-        this.cacheValue = null;
-      }
-    }
-
-    endWrite(): void {
-      if (this.depth > 0) this.depth--;
-      if (this.depth > 0) return;
-      this.open = false;
-      this.cacheDocId = '';
-      this.cacheLimit = -1;
-      this.cacheValue = null;
-    }
-
-    /** Replicates loadBlockMap's cache-hit criterion */
-    loadBlockMap(docId: string, limit: number, value: Map<string, string>): Map<string, string> {
-      if (this.open && this.cacheDocId === docId && this.cacheLimit === limit && this.cacheValue) {
-        return this.cacheValue;
-      }
-      this.queries++;
-      this.cacheDocId = docId;
-      this.cacheLimit = limit;
-      this.cacheValue = value;
-      return value;
-    }
-
-    get isOpen(): boolean {
-      return this.open;
-    }
-    get nestingDepth(): number {
-      return this.depth;
-    }
+/** Answers the mapping query and counts how often the store actually asks the document. */
+class CountingClient {
+  sqlCalls = 0;
+  async getBlockDOM(_id: string): Promise<{ dom: string }> {
+    return { dom: '' }; // no DOM available → the SQL path, which is what the counter measures
   }
+  async sql<T>(stmt: string, _limit?: number): Promise<T[]> {
+    this.sqlCalls++;
+    if (stmt.includes("b.type = 'i'")) return [{ id: LI, ial: '', child: PARA, childList: null }] as unknown as T[];
+    return [];
+  }
+  async getBlockKramdown(_id: string): Promise<string> {
+    return '';
+  }
+}
 
-  console.log('\n=== Write-back transaction nesting depth ===');
+const mkStore = (c: CountingClient): SiYuanStore =>
+  new SiYuanStore({ client: c as unknown as SiYuanClient, notebook: 'nb', basePath: '/x' });
 
-  // (1) Single level: behavior matches the old implementation
+async function main(): Promise<void> {
+  console.log('=== outside a transaction the cache never survives a read ===');
   {
-    const g = new Guard();
-    g.beginWrite('docA');
-    const v = new Map([['a', 'b']]);
-    g.loadBlockMap('docA', -1, v);
-    check('cache hits inside a single-level transaction', g.loadBlockMap('docA', -1, new Map()) === v && g.queries === 1);
-    g.endWrite();
-    check('closes after a single level ends', !g.isOpen && g.cacheValue === null);
+    const c = new CountingClient();
+    const store = mkStore(c);
+    await store.loadBlockMap('doc1');
+    const first = c.sqlCalls;
+    check('★ a load reads the document', first >= 1, `sql=${first}`);
+    await store.loadBlockMap('doc1');
+    check('★★ a second load (no transaction) reads it again —— the cache must not outlive a write-back',
+      c.sqlCalls > first, `sql=${c.sqlCalls}`);
   }
 
-  // (2) ★ Core regression: an inner endWrite must not shut down a cache the outer level still uses
+  console.log('\n=== inside a transaction the mapping is reused ===');
   {
-    const g = new Guard();
-    g.beginWrite('docA');
-    const v = new Map([['a', 'b']]);
-    g.loadBlockMap('docA', -1, v);
-    g.beginWrite('docA'); // second write-back, concurrent/nested
-    check('depth is 2 after the inner begin', g.nestingDepth === 2);
-    g.endWrite(); // inner level ends -- the old implementation would set open to false and clear the cache here
-    check('★ the transaction is still open after the inner endWrite', g.isOpen, );
-    check('★ the cache is still valid after the inner endWrite', g.cacheValue === v);
-    check('★ the cache still hits after the inner endWrite (no repeated SQL query)', g.loadBlockMap('docA', -1, new Map()) === v && g.queries === 1);
-    g.endWrite(); // outermost level ends
-    check('really closes only after the outermost endWrite', !g.isOpen && g.cacheValue === null && g.nestingDepth === 0);
+    const c = new CountingClient();
+    const s = mkStore(c);
+    s.beginWrite('doc1');
+    const m1 = await s.loadBlockMap('doc1');
+    const afterFirst = c.sqlCalls;
+    check('★ the first load inside the transaction reads', afterFirst >= 1, `sql=${afterFirst}`);
+
+    const m2 = await s.loadBlockMap('doc1');
+    check('★★ a second load inside the same transaction is served from the cache —— no SQL at all',
+      c.sqlCalls === afterFirst, `sql=${c.sqlCalls} (was ${afterFirst})`);
+    check('★ and it is the same mapping', m2.get(LI) === m1.get(LI), JSON.stringify([...m2.entries()]));
+
+    // ★★★ The defect: the inner end used to close everything, so the outer transaction lost its cache.
+    s.beginWrite('doc1');
+    s.endWrite();
+    await s.loadBlockMap('doc1');
+    check('★★★ a nested transaction keeps the cache open when the inner one ends',
+      c.sqlCalls === afterFirst, `sql=${c.sqlCalls} (was ${afterFirst})`);
+
+    s.endWrite();
+    await s.loadBlockMap('doc1');
+    check('★★ the outermost end closes it —— the next load reads again',
+      c.sqlCalls > afterFirst, `sql=${c.sqlCalls}`);
   }
 
-  // (3) Repeated endWrite is idempotent (must not push the depth negative)
+  console.log('\n=== the cache is keyed by document and by row limit ===');
   {
-    const g = new Guard();
-    g.beginWrite('docA');
-    g.endWrite();
-    g.endWrite();
-    g.endWrite();
-    check('repeated endWrite is idempotent, depth never negative', g.nestingDepth === 0 && !g.isOpen);
+    const c = new CountingClient();
+    const s = mkStore(c);
+    s.beginWrite('doc1');
+    await s.loadBlockMap('doc1');
+    const afterFirst = c.sqlCalls;
+    await s.loadBlockMap('doc1', 10);
+    check('★★ a different row limit is a different query, not a cache hit',
+      c.sqlCalls > afterFirst, `sql=${c.sqlCalls}`);
+    const afterLimit = c.sqlCalls;
+    await s.loadBlockMap('doc2');
+    check('★★ another document is not served the previous document\'s mapping',
+      c.sqlCalls > afterLimit, `sql=${c.sqlCalls}`);
+    s.endWrite();
   }
 
-  // (4) Nesting across documents: the cache must reset for the new document, otherwise it reads the wrong document's map
+  console.log('\n=== an unmatched endWrite cannot corrupt the depth ===');
   {
-    const g = new Guard();
-    g.beginWrite('docA');
-    const vA = new Map([['a', 'A']]);
-    g.loadBlockMap('docA', -1, vA);
-    g.beginWrite('docB');
-    const vB = new Map([['b', 'B']]);
-    const got = g.loadBlockMap('docB', -1, vB);
-    check('★ the cache of the old document is not reused when nesting across documents', got === vB && got !== vA);
-    g.endWrite();
-    g.endWrite();
-    check('closes after a cross-document nesting ends completely', !g.isOpen);
-  }
-
-  // (5) Counter-example for the old implementation: proves the boolean breaks (so nobody changes it back)
-  {
-    let open = false;
-    let value: Map<string, string> | null = null;
-    // Simulates the old implementation: no depth, endWrite just sets false and clears
-    const oldBegin = (): void => {
-      open = true;
-      value = null;
-    };
-    const oldEnd = (): void => {
-      open = false;
-      value = null;
-    };
-    oldBegin();
-    value = new Map([['a', 'b']]);
-    oldBegin(); // second write-back
-    oldEnd(); // first one ends
-    check('★ counter-example: the old implementation has already closed wrongly here', !open && value === null);
+    const c = new CountingClient();
+    const s = mkStore(c);
+    s.endWrite(); // no matching begin
+    await s.loadBlockMap('doc1');
+    const first = c.sqlCalls;
+    await s.loadBlockMap('doc1');
+    check('★★ a stray endWrite does not open a transaction (the next load still reads)',
+      c.sqlCalls > first, `sql=${c.sqlCalls}`);
+    // …and a stray end after a real transaction still leaves it closed.
+    s.beginWrite('doc1');
+    s.endWrite();
+    s.endWrite();
+    await s.loadBlockMap('doc1');
+    const second = c.sqlCalls;
+    await s.loadBlockMap('doc1');
+    check('★ and the depth cannot go negative into "open"', c.sqlCalls > second, `sql=${c.sqlCalls}`);
   }
 
   console.log(`\n${pass}/${pass + fail} passed`);
   if (fail > 0) process.exit(1);
 }
+
+void main();

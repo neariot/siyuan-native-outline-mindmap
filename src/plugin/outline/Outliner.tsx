@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { deleteKeyAction } from '../../core/delete-key';
 import type { DocMeta, OutlineNode } from '../../model/types';
 import { TASK_DONE, TASK_NONE, TASK_TODO, NODE_WORD_LIMIT, TITLE_MAX, nextTaskStatus } from '../../model/types';
 import {
@@ -2314,14 +2315,18 @@ export default function Outliner(props: OutlinerProps) {
       if (sel && sel.isCollapsed) {
         const plainLen = htmlToText(el.textContent ? `<span>${el.textContent}</span>` : '').length;
         const atEnd = getCaretOffset(el) >= plainLen;
-        if (atEnd) {
-          const vis = flattenVisible(displayedNodes);
-          if (vis.findIndex((x) => x.node.id === id) < vis.length - 1) {
-            e.preventDefault();
-            mergeWithNext(id);
-            return;
-          }
-        }
+        const vis = flattenVisible(displayedNodes);
+        const i = vis.findIndex((x) => x.node.id === id);
+        const cur0 = nodeById.get(id);
+        // ★ The branch order is the fix, so it lives in `deleteKeyAction` where it can be tested on its own;
+        //   this handler only carries out what it decides (see that function for the measured defect).
+        const action = deleteKeyAction({
+          atLineEnd: atEnd,
+          textEmpty: cur0 ? htmlToText(cur0.text).trim() === '' : false,
+          childCount: cur0 ? cur0.children.length : 0,
+          index: i,
+          visibleCount: vis.length,
+        });
         // ★★★ Delete must also be handled when the caret is **not at the end of the line** (a measured **empty shell node** bug).
         //
         //   The original implementation had only two paths:
@@ -2341,21 +2346,15 @@ export default function Outliner(props: OutlinerProps) {
         //
         //   Fix: match Backspace's symmetric semantics -- an empty node is deleted outright,
         //   otherwise it merges with the next one (same as end-of-line behavior, which matches outline-editing intuition).
-        const vis = flattenVisible(displayedNodes);
-        const i = vis.findIndex((x) => x.node.id === id);
-        const cur = nodeById.get(id);
-        if (cur && htmlToText(cur.text).trim() === '' && cur.children.length === 0) {
-          e.preventDefault();
-          if (vis.length > 1) {
-            deleteNodes([id]);
-            // Hand focus to the next one (or the previous one if there is none) so focus never dangles
-            const next = vis[i + 1]?.node.id ?? vis[i - 1]?.node.id;
-            if (next) focusReq(next, 'end');
-          }
+        e.preventDefault();
+        if (action === 'deleteNode') {
+          deleteNodes([id]);
+          // Hand focus to the next one (or the previous one if there is none) so focus never dangles
+          const next = vis[i + 1]?.node.id ?? vis[i - 1]?.node.id;
+          if (next) focusReq(next, 'end');
           return;
         }
-        e.preventDefault();
-        if (i < vis.length - 1) mergeWithNext(id);
+        if (action === 'mergeNext') mergeWithNext(id);
         return;
       }
       if (selected.length > 1 && selected.includes(id)) {
