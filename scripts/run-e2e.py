@@ -98,9 +98,27 @@ def main():
     print(f"  E2E target: {env['SIYUAN_URL']}  (isolated test instance)")
     print(f"  notebook: {env.get('SIYUAN_TEST_NOTEBOOK') or '(use the default allowlist)'}")
     print(f"  $ {' '.join(cmd)}")
+    _sweep_stale_traces()
     code = subprocess.run(cmd, cwd=ROOT, env=env).returncode
     _sweep_traces(code)
     return code
+
+
+def _sweep_stale_traces():
+    """Delete the previous run's artifacts before starting a new one.
+
+    A failed run keeps its traces so the failure can be read, and that is the right thing for the session
+    that saw it —— but they are also live request data sitting in a gitignored directory, and "kept for
+    debugging" turns into "kept" once the debugging is over and nobody comes back to delete them. Starting
+    a run is the moment the previous one's evidence has stopped being evidence.
+
+    These are the copies `audit-privacy.py --live` finds: it scans the local artifacts (`.logs/`,
+    `test-results/`, `.tmp/`) precisely because a committed-file scan would never see them.
+    """
+    target = os.path.join(ROOT, "test-results")
+    if os.path.isdir(target):
+        shutil.rmtree(target, ignore_errors=True)
+        print("  removed test-results/ from the previous run (it holds live request data)")
 
 
 def _sweep_traces(code):
