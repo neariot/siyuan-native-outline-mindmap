@@ -574,6 +574,37 @@ The remaining allowlist is 391 tokens (186 `fixture:`, 164 `i18n:`, 41 `kernel:`
 entries, and it self-cleans: an entry that no longer covers anything is reported as `ALLOWLIST-STALE`
 and fails the run, which is how the 186 obsolete ones were found and removed.
 
+## A test that models the product defends nothing
+
+**The shape**: a test file writes its own version of the rule it claims to protect —— an `UndoStack` class, a
+`hitTest()`, a `FocusModel`, an `OutlinerProps` interface plus a `renderOutliner(withZoomProps: boolean)` that
+decides the wiring from its own boolean —— and then asserts on that. Every assertion passes, the file reads
+like a specification, and **no change to the plugin can turn it red**. It is worse than no test: the coverage
+it advertises is the reason nobody looks again. Seventeen files were in this state.
+
+**What to do instead**, in rough order of preference:
+
+1. **Drive the real thing.** `write-depth-nesting.test.ts` drives `SiYuanStore.beginWrite` / `endWrite` /
+   `loadBlockMap` over a counting fake client, so "the second read was served from the cache" is an SQL call
+   that did *not* happen. `zoom-title-sync.test.ts` drives `renameDoc` / `setHeadingTitle` over a recording
+   client and reads the props off the two `React.createElement` call sites.
+2. **Extract the decision so it can be driven directly.** The rule has to be pure for that: `joinsUndoWindow`
+   (the undo merge window), `deleteKeyAction` (the Delete key's branch order) —— both moved into `src/core/`
+   precisely because the code around them needs the DOM and `siyuan`, which a unit test cannot import. The
+   extraction is not a test-only refactor: it is what makes the rule expressible.
+3. **Read the shipped code structurally**, through `src/plugin/source-probe.ts` (parser-based: bodies, call
+   sites, JSX attributes, assignments). Weaker than driving the code, and only honest when the claim is about
+   structure —— "every panel container carries `tabIndex`", "the handler suppresses the native default before
+   it acts", "the rename path writes the heading block too".
+4. **A measurement, written down as a measurement.** When neither of the above fits (the kernel's own
+   behaviour, a caret position in a real browser), it belongs in `docs/kernel-api.md` or the pitfall entry as a
+   dated measurement, **not** as a local model pretending to be a test.
+
+**The gate**: `scripts/check-vacuous-tests.py` fails the build when a document cites a test that does not
+exist, and when a cited test imports nothing and reads nothing. It is deliberately a lower bound —— it can see
+that a file reaches nothing, not that its assertions are weak —— so it is a floor, not a substitute for the
+list above. It stands at **0 files reaching nothing**, and the check runs strictly: a new one fails the build.
+
 ## Pitfalls we stepped on
 
 ### CDP-related

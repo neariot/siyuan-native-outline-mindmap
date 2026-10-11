@@ -186,6 +186,23 @@ export interface SiYuanDocEntry {
   updated: string;
 }
 
+/**
+ * The document title as `loadDoc` reads it: the `# heading` **heading block**, not the document name.
+ *
+ * ★ This is the half of the "two titles" problem that made a rename look like it worked and then vanish:
+ *   the plugin's title box shows the document name, while loading a document takes the title from the body's
+ *   heading block. Changing only the name therefore diverges permanently —— the new value is visible until
+ *   the document is reopened, and then the old one comes back, with no error anywhere (`store.setHeadingTitle`
+ *   is the other half: the rename writes the heading block too).
+ *
+ * Extracted so the parsing rules are testable on their own: only an H1 at the **start of a line** counts, so
+ * a `#` inside body text is not a title and `##` is not one either.
+ */
+export function titleFromKramdown(kramdown: string): string {
+  const m = /^#\s+(.+)$/m.exec(kramdown);
+  return m ? m[1].trim() : '';
+}
+
 export class SiYuanStore {
   private readonly client: SiYuanClient;
   private readonly notebook: string;
@@ -426,8 +443,7 @@ export class SiYuanStore {
       // when SQL is unavailable fall back to heading-block parsing; a failed title read must not sink the whole load
     }
     if (!title) {
-      const titleMatch = /^#\s+(.+)$/m.exec(kramdown);
-      title = titleMatch ? titleMatch[1].trim() : '';
+      title = titleFromKramdown(kramdown);
     }
     // ★ The variable is named now rather than t —— `t` is this module's i18n lookup function and must not be shadowed
     const now = Date.now();

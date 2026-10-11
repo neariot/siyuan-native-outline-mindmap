@@ -135,6 +135,16 @@ export function callArgProps(
       for (const arg of node.arguments) {
         if (!ts.isObjectLiteralExpression(arg)) continue;
         for (const p of arg.properties) {
+          // ★ Shorthand matters: `{ zoomId }` is a ShorthandPropertyAssignment, and skipping it made this
+          //   probe answer "no call passes that property" for a property that is passed —— the vacuous-pass
+          //   direction. A spread cannot be expanded from here, so it makes the answer *incomplete* rather
+          //   than wrong; callers that need completeness should ask `createElementProps`, which reports them.
+          if (ts.isShorthandPropertyAssignment(p)) {
+            if (p.name.getText(sf) !== prop) continue;
+            const { line } = sf.getLineAndCharacterOfPosition(p.getStart(sf));
+            found.push({ value: p.name.getText(sf), line: line + 1 });
+            continue;
+          }
           if (!ts.isPropertyAssignment(p)) continue;
           if (p.name.getText(sf).replace(/['"]/g, '') !== prop) continue;
           const { line } = sf.getLineAndCharacterOfPosition(p.initializer.getStart(sf));
@@ -215,6 +225,75 @@ export function jsxElementsWithAttrContaining(
           out.push({ init, line: line + 1 });
         }
       }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * The props a component is given at a `React.createElement(Component, { ... })` call site.
+ *
+ * ★ Two reasons this is not `callArgProps`: the plugin renders its two big views with `createElement` rather
+ *   than JSX (so the JSX probes do not see them), and the answer has to name the **component** —— the defect
+ *   this exists for is "one view got `zoomId` / `onZoomChange` and the other did not", which a search for the
+ *   prop alone cannot tell apart.
+ *
+ * Spread elements are reported rather than expanded: a props object that arrives through `{...common}` cannot
+ * be judged from here, and a check that silently saw an empty list would call it "wired".
+ */
+export function createElementProps(
+  src: string,
+  component: string,
+): Array<{ props: string[]; spreads: string[]; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ props: string[]; spreads: string[]; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      /(^|\.)createElement$/.test(node.expression.getText(sf)) &&
+      node.arguments.length >= 2 &&
+      node.arguments[0].getText(sf) === component &&
+      ts.isObjectLiteralExpression(node.arguments[1])
+    ) {
+      const props: string[] = [];
+      const spreads: string[] = [];
+      for (const p of node.arguments[1].properties) {
+        if (ts.isPropertyAssignment(p)) props.push(p.name.getText(sf).replace(/['"]/g, ''));
+        else if (ts.isSpreadAssignment(p)) spreads.push(p.expression.getText(sf));
+        else if (ts.isShorthandPropertyAssignment(p)) props.push(p.name.getText(sf));
+      }
+      const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      out.push({ props, spreads, line: line + 1 });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * Every JSX element with this tag name, with its attribute names —— for "which props does this component get".
+ *
+ * ★ The question a hand-written simulation cannot answer: a test that models `renderOutliner(withZoomProps)`
+ *   with its own boolean checks its own boolean. This reads the element that is really rendered.
+ */
+export function jsxElementsByName(
+  src: string,
+  tagName: string,
+): Array<{ attrs: string[]; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ attrs: string[]; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    const opening =
+      ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null;
+    if (opening && opening.tagName.getText(sf) === tagName) {
+      const attrs = opening.attributes.properties
+        .filter((a): a is ts.JsxAttribute => ts.isJsxAttribute(a))
+        .map((a) => a.name.getText(sf));
+      const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      out.push({ attrs, line: line + 1 });
     }
     ts.forEachChild(node, visit);
   };

@@ -2,143 +2,154 @@
  * Local view (zoom) wiring, and the two representations of a document title must stay in sync.
  *
  * Corresponds to .logs/API-GOTCHAS.md §96 / §97.
+ *
+ * ★ Both defects are the same shape: **a callback that is never given a value** (`onZoomChange` missing from
+ *   the props, the heading block never written), where the optional chain or the missing write swallows the
+ *   failure silently —— the menu opens and clicking does nothing, or the new title is visible until the
+ *   document is reopened and then the old one is back.
+ *
+ * ★ This file used to model both: an `OutlinerProps` interface written inside the test plus
+ *   `renderOutliner(withZoomProps: boolean)` deciding the wiring **from its own boolean**, and a
+ *   `changeTitleNew(d, next)` that "writes both places". Its own inputs were its own answer, so the real
+ *   question —— does `mount.ts` pass these props, and does the rename write the heading block —— could not be
+ *   asked. It is asked here: the props are read off the two `React.createElement` call sites, and both title
+ *   writes are driven through the real `SiYuanStore` over a recording fake client.
  */
 export {};
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { SiYuanClient } from '../siyuan/api';
+import { SiYuanStore, titleFromKramdown } from '../siyuan/store';
+import { callArgProps, createElementProps, enclosingBody } from './source-probe';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-// ------------------------------------------------------- §96 Optional props missing -> the whole UI silently breaks
+const mountSrc = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
 
-interface OutlinerProps {
-  nodes: string[];
-  zoomId?: string | null;
-  onZoomChange?: (id: string | null) => void;
-}
-
-/**
- * Replicates the zoom call in Outliner.
- * ★ The key is the **optional chaining** on `onZoomChange?.()` --
- *   when props are not passed it silently does nothing: no error, no trace.
- */
-function enterZoom(props: OutlinerProps, id: string): void {
-  props.onZoomChange?.(id);
-}
-
-/** Simulates whether mount.ts passes zoom props when rendering Outliner */
-function renderOutliner(withZoomProps: boolean): OutlinerProps {
-  const p: OutlinerProps = { nodes: ['甲', '节点一', '节点二', '乙'] };
-  if (withZoomProps) {
-    p.zoomId = null;
-    p.onZoomChange = () => {};
+console.log('=== §96 a view without the zoom props has dead zoom UI ===');
+{
+  // ★★ Both views, because that is how this defect presented twice: `Outliner` was wired, `Mindmap` was
+  //    missed, and the optional chain made the miss silent (measured: the menu opened, nothing moved).
+  for (const component of ['Outliner', 'Mindmap'] as const) {
+    const els = createElementProps(mountSrc, component);
+    check(`★★ ${component} is rendered once (precondition)`, els.length === 1, `got=${els.length}`);
+    check(`★★★ ${component} receives both zoom props`,
+      els[0]?.props.includes('zoomId') === true && els[0]?.props.includes('onZoomChange') === true,
+      JSON.stringify(els[0]?.props.filter((p) => /zoom/i.test(p))));
+    check(`★ ${component} does not receive them through a spread (so the list above is the whole story)`,
+      els[0]?.spreads.length === 0, JSON.stringify(els[0]?.spreads));
   }
-  return p;
+
+  // …and both are handed the **same** state, so switching view keeps the local view.
+  const values = callArgProps(mountSrc, /createElement$/, 'zoomId').map((v) => v.value);
+  check('★★ both views are given the same zoom state, not a copy',
+    values.length === 2 && values.every((v) => v === 'zoomId'), JSON.stringify(values));
+
+  // Why a missing prop is silent rather than loud: the call site is optional.
+  const outlinerSrc = fs.readFileSync(path.join(__dirname, 'outline', 'Outliner.tsx'), 'utf8');
+  check('★★ the call site is optional, which is exactly why the wiring has to be checked',
+    outlinerSrc.includes('onZoomChange?.('), 'a missing prop would otherwise raise');
 }
 
-console.log('=== §96 zoom silently fails when props are not passed ===');
+console.log('\n=== §97 the title lives in two places, and a rename must write both ===');
 {
-  let called = false;
-  const props = renderOutliner(false);
-  props.onZoomChange = undefined; // not passed
-  const spy: OutlinerProps = { ...props, onZoomChange: (id) => { called = true; void id; } };
-  enterZoom(spy, '甲');
-  check('onZoomChange passed -> callback is called', called);
+  const body = enclosingBody(mountSrc, 'await store?.renameDoc(docId, name);');
+  check('★ the rename path was found (precondition)', body.length > 100, `len=${body.length}`);
+  check('★★★ it writes the heading block as well, or the new title survives only until the next load',
+    body.includes('setHeadingTitle'), body.slice(0, 160));
+  check('★ the document name is changed through the kernel rename API (not an attribute write)',
+    body.includes('renameDoc('));
+}
 
-  const missing: OutlinerProps = { nodes: ['甲'] }; // left out
-  let threw = false;
-  try {
-    enterZoom(missing, '甲'); // optional chaining: silently skipped
-  } catch {
-    threw = true;
+const H1 = '20260101000000-h000001';
+
+/** Records what the store asks the kernel to do. */
+class RecordingClient {
+  calls: Array<{ method: string; args: unknown[] }> = [];
+  headingId: string | null = H1;
+  async sql<T>(stmt: string, _limit?: number): Promise<T[]> {
+    this.calls.push({ method: 'sql', args: [stmt] });
+    if (stmt.includes("type='h'")) return (this.headingId ? [{ id: this.headingId }] : []) as unknown as T[];
+    return [];
   }
-  check('★ onZoomChange left out -> no throw (so the defect is completely silent)', !threw);
-  check('★ when left out, zoomId stays undefined -> displayedNodes always shows everything', missing.zoomId === undefined);
-}
-{
-  // Derivation of displayedNodes: only when zoomNode exists does it show just that one
-  const displayed = (zoomId: string | null | undefined, all: string[]): string[] => {
-    const zoomNode = zoomId ? all.find((x) => x === zoomId) : null;
-    return zoomNode ? [zoomNode] : all;
-  };
-  const all = ['甲', '节点一', '节点二', '乙'];
-  check('not wired (zoomId=undefined) -> always shows all nodes', displayed(undefined, all).length === 4);
-  check('wired and zoomId="甲" -> shows only the "甲" subtree', displayed('甲', all).join(',') === '甲');
-  check('wired and zoomId=null -> shows everything', displayed(null, all).length === 4);
-}
-{
-  // Criterion for deciding whether the wiring is complete
-  const isWired = (props: OutlinerProps): boolean =>
-    props.zoomId !== undefined && typeof props.onZoomChange === 'function';
-  check('★ wiring criterion: zoomId and onZoomChange must both be present', isWired(renderOutliner(true)));
-  check('★ passing only one is not wiring (this is the shape of this round\'s defect)', !isWired({ nodes: [], zoomId: null }));
-  check('★ passing neither is not wiring either', !isWired({ nodes: [] }));
+  async renameDoc(id: string, title: string): Promise<null> {
+    this.calls.push({ method: 'renameDoc', args: [id, title] });
+    return null;
+  }
+  async updateBlock(id: string, data: string): Promise<null> {
+    this.calls.push({ method: 'updateBlock', args: [id, data] });
+    return null;
+  }
+  async setBlockAttrs(id: string, attrs: Record<string, string>): Promise<null> {
+    this.calls.push({ method: 'setBlockAttrs', args: [id, attrs] });
+    return null;
+  }
+  async getBlockDOM(_id: string): Promise<{ dom: string }> {
+    return { dom: '' };
+  }
+  async getBlockKramdown(_id: string): Promise<string> {
+    return '';
+  }
 }
 
-// ------------------------------------------------------- §97 The two representations of the title
+const mkStore = (c: RecordingClient): SiYuanStore =>
+  new SiYuanStore({ client: c as unknown as SiYuanClient, notebook: 'nb', basePath: '/x' });
 
-interface DocState {
-  /** The document's own name (the one renameDocByID changes) */
-  docName: string;
-  /** The `# Title` block on the first body line (the one loadDoc trusts) */
-  heading: string;
+async function main(): Promise<void> {
+  {
+    const c = new RecordingClient();
+    await mkStore(c).renameDoc('doc1', 'NewName');
+    check('★★ renaming goes through the kernel\'s rename API',
+      c.calls.length === 1 && c.calls[0].method === 'renameDoc' && c.calls[0].args[1] === 'NewName',
+      JSON.stringify(c.calls));
+    // ★ The measured defect this guards: `setBlockAttrs(id, {title})` leaves an "untitled document" residue,
+    //   because the kernel treats a title attribute change as a rename event.
+    check('★★★ … and never by writing a title attribute',
+      !c.calls.some((x) => x.method === 'setBlockAttrs'), JSON.stringify(c.calls.map((x) => x.method)));
+  }
+  {
+    const c = new RecordingClient();
+    await mkStore(c).setHeadingTitle('doc1', 'NewName');
+    const writes = c.calls.filter((x) => x.method === 'updateBlock');
+    check('★★★ the heading block is rewritten with the new title, as markdown',
+      writes.length === 1 && writes[0].args[0] === H1 && writes[0].args[1] === '# NewName',
+      JSON.stringify(writes));
+  }
+  {
+    // ★ A document with no heading block (hand-written, untitled) must not gain one: the plugin is not the
+    //   author of that document's structure.
+    const c = new RecordingClient();
+    c.headingId = null;
+    await mkStore(c).setHeadingTitle('doc1', 'NewName');
+    check('★★ when there is no heading block, nothing is written at all',
+      !c.calls.some((x) => x.method === 'updateBlock'), JSON.stringify(c.calls.map((x) => x.method)));
+  }
+
+  console.log('\n=== §97 the load path reads the title from the heading block ===');
+  {
+    // ★ The reason both writes are needed: this is what the title box shows after a reopen.
+    check('★★ `# Title` is the title', titleFromKramdown('# 标题二\n\n- 甲\n') === '标题二');
+    check('★ surrounding spaces are trimmed', titleFromKramdown('#   多空格   \n') === '多空格');
+    check('★★ `## Sub` is not the document title', titleFromKramdown('## 二级\n') === '');
+    check('★★★ and a `#` inside body text is not one either (the match is anchored to a line start)',
+      titleFromKramdown('- 甲 # not a title\n') === '', JSON.stringify(titleFromKramdown('- 甲 # not a title\n')));
+    check('★ a document with no heading yields an empty title, not a guess',
+      titleFromKramdown('- 甲\n- 乙\n') === '');
+  }
+
+  console.log(`\n${pass}/${pass + fail} passed`);
+  if (fail > 0) process.exit(1);
 }
 
-/** Replicates loadDoc's title parsing: only the body heading block counts */
-function titleOnLoad(d: DocState): string {
-  return d.heading;
-}
-
-/** Before the fix: only the document name is changed */
-function changeTitleOld(d: DocState, next: string): DocState {
-  return { ...d, docName: next };
-}
-
-/** After the fix: both places are written */
-function changeTitleNew(d: DocState, next: string): DocState {
-  return { docName: next, heading: next };
-}
-
-console.log('\n=== §97 The title must be synced in both places ===');
-{
-  const init: DocState = { docName: '标题二', heading: '标题二' };
-  check('initially the two agree', init.docName === init.heading);
-
-  const old1 = changeTitleOld(init, '标题二XYZ');
-  check('★ before the fix: looks fine right after the change (the UI reads state)', old1.docName === '标题二XYZ');
-  check('★ before the fix: after reopening, the heading block overwrites it with the old value -> the title is "lost"', titleOnLoad(old1) === '标题二');
-  check('★ before the fix: the two diverge permanently', old1.docName !== old1.heading);
-
-  const nu = changeTitleNew(init, '标题二XYZ');
-  check('after the fix: reopening still keeps the new title', titleOnLoad(nu) === '标题二XYZ');
-  check('after the fix: the two stay consistent', nu.docName === nu.heading);
-}
-{
-  // Regression: renaming also rewrites the heading block, so the next load parses the new value
-  let d: DocState = { docName: 'A', heading: 'A' };
-  for (const t of ['B', 'C', 'D']) d = changeTitleNew(d, t);
-  check('still consistent after repeated renames', d.docName === 'D' && d.heading === 'D');
-  check('load parsing is correct', titleOnLoad(d) === 'D');
-}
-{
-  // The load-parsing regex must handle every shape of `# Heading`
-  const parse = (kramdown: string): string => {
-    const m = /^#\s+(.+)$/m.exec(kramdown);
-    return m ? m[1].trim() : '';
-  };
-  check('parses `# 标题`', parse('# 标题\n\n- 甲\n') === '标题');
-  check('parses `#   多空格`', parse('#   多空格\n') === '多空格');
-  check('★ does not treat `## 二级` as the document title', parse('## 二级\n') === '');
-  check('★ does not mistake a `# ` in the body for the title (must be at line start)', parse('- 甲 # 不是标题\n') === '');
-}
-
-console.log(`\n${pass}/${pass + fail} passed`);
-if (fail > 0) process.exit(1);
+void main();
