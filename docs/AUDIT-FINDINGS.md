@@ -45,6 +45,31 @@ conclusion to draw from a complete-looking list of findings.
 
 ## Findings
 
+### test-suite
+
+- **high · test-quality** `scripts/check-vacuous-tests.py`  
+  13 files are cited by `docs/**` as the test that freezes a behaviour, and each of them reaches
+  nothing at all: no import, no file read, no child process. Every assertion in them compares a literal
+  the file itself wrote with another literal the file itself wrote, so no change to the product can turn
+  any of them red. The tool could already list the files, but it exited 0 while doing so, so a document
+  could name one as its evidence and nothing objected; it now pairs the two and fails on it. Fixing a
+  file means making it read the product (the shipped function, or `src/styles.css` through postcss), the
+  way `edge-autoscroll.test.ts` now does.
+
+  · `src/plugin/blockmap-namespace.test.ts`
+  · `src/plugin/kernel-bugs.test.ts`
+  · `src/plugin/kernel-side-effects.test.ts`
+  · `src/plugin/map-coverage-guard.test.ts`
+  · `src/plugin/mindmap-focus.test.ts`
+  · `src/plugin/mindmap-reparent.test.ts`
+  · `src/plugin/node-id-block-id.test.ts`
+  · `src/plugin/panel-escape-focus.test.ts`
+  · `src/plugin/panel-focus.test.ts`
+  · `src/plugin/ref-nav.test.ts`
+  · `src/plugin/single-child-list.test.ts`
+  · `src/plugin/stale-mapping.test.ts`
+  · `src/plugin/undo-first-edit.test.ts`
+
 ### e2e-helpers
 
 - **high · privacy** `e2e/testdoc.ts:213`  

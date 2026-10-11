@@ -23,6 +23,9 @@ records several), and only reading them finds that.
     python3 scripts/check-vacuous-tests.py            # both halves
     python3 scripts/check-vacuous-tests.py --list     # every test file and what it reaches
     python3 scripts/check-vacuous-tests.py --selftest # the citation rule, no I/O
+    python3 scripts/check-vacuous-tests.py --hollow-advisory
+                                              # report, but do not fail on, citations that name a
+                                              # vacuous test. The default fails; this is the exception.
 """
 
 from __future__ import annotations
@@ -105,14 +108,37 @@ def main() -> int:
         print(f"vacuous tests: {len(missing)} doc citation(s) name a file that does not exist:")
         for f, i, c in missing:
             print(f"  - {f}:{i} -> {c}")
+    # ★ A citation that names a test which reaches nothing promises that the behaviour is frozen.
+    #   `edge-autoscroll.test.ts` was cited twice as the test that freezes the auto-scroll rules while
+    #   comparing its own literals, and nothing could tell the difference: the tool listed it among the
+    #   vacuous files and still exited 0. This is the pair the tool can judge —— a vacuous file is only
+    #   harmless while no document leans on it.
+    hollow = [(f, i, c) for f, i, c in cites if c in empty]
+    if hollow:
+        print(f"vacuous tests: {len(hollow)} doc citation(s) name a test that reaches nothing, so the "
+              f"document is citing a test that cannot fail:")
+        for f, i, c in hollow:
+            print(f"  - {f}:{i} -> {c}")
     if empty:
         print(f"vacuous tests: {len(empty)} test file(s) import nothing and read nothing, so no change to "
               "the product can turn them red —— they are a lower bound, not the whole list:")
         for f in empty:
             print(f"  · {f}")
-    if missing:
+    if hollow and "--hollow-advisory" in args:
+        # ★ Named on the command line, and it says what it gives up: the default still fails. Used only by
+        #   the `check.py` gate, because 16 of these files predate the rule and fixing them is queued work
+        #   (`docs/AUDIT-FINDINGS.md`, `test-suite`). Quietly passing them would be exactly the failure
+        #   this tool exists to prevent, so the line above is printed either way.
+        print(f"vacuous tests: {len(hollow)} hollow citation(s) are **deferred** by --hollow-advisory "
+              f"(queued in docs/AUDIT-FINDINGS.md, test-suite); the default fails on them")
+    if missing or (hollow and "--hollow-advisory" not in args):
         return 1
-    print("vacuous tests: every cited test exists")
+    if hollow:
+        # Not an all-clear, and must not read like one.
+        print(f"vacuous tests: every cited test exists; {len(hollow)} of them reach nothing "
+              f"(see the lines above)")
+    else:
+        print("vacuous tests: every cited test exists, and every cited test can reach the product")
     return 0
 
 
