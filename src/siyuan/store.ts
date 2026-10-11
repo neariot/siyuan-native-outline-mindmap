@@ -1217,11 +1217,11 @@ export class SiYuanStore {
           } else {
             // ★ Creating a to-do (0 → task) and clearing one (task → 0) are both markdown-only: no other
             //   call can introduce or remove the task subtype. The markdown must carry the node's
-            //   **subtree**, not just its own line: measured, updating a list item that has children with
-            //   only its own line makes the kernel append a nested line instead of converting the block,
-            //   so the to-do lands beside its children instead of above them. Measured the other way too:
-            //   clearing through the same call drops the marker and keeps the children.
-            //   `nodeSubtreeToKramdown` is the walker the document export uses, so the two cannot drift
+            //   **subtree**: writing only the node's own line does not convert the block in place, and
+            //   what it does instead was measured both ways on a node that has children —— without a
+            //   marker the kernel adds a nested copy beside the children and leaves the node itself
+            //   untouched, with a marker it drops the children. Carrying the subtree converts in place,
+            //   keeps every block id in it, and shows the text once.
             //   apart, and it writes the prefix from `taskStatus` itself.
             await this.client.updateBlock(liId, nodeSubtreeToKramdown(n));
           }

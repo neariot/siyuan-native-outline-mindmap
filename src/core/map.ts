@@ -755,9 +755,10 @@ function walkNodesToLines(list: OutlineNode[], depth: number, lines: string[]): 
  * written back with.
  *
  * ★ Writing only the node's own line is not equivalent: measured on the kernel, updating a list item
- *   that has children with just its own line makes the kernel **append a nested line** instead of
- *   converting the block, so the to-do ends up beside its children rather than above them. Carrying
- *   the subtree (`- [ ] parent` plus its indented children) converts it in place and keeps them.
+ *   that has children with just its own line does not convert the block in place —— without a marker the
+ *   kernel **appends a nested copy** beside the children, with a marker it **drops the children**.
+ *   Carrying the subtree (`- [ ] parent` plus its indented children) converts it in place, keeps every
+ *   block id in it, and shows the text once.
  */
 export function nodeSubtreeToKramdown(n: OutlineNode): string {
   const lines: string[] = [];
