@@ -441,7 +441,11 @@ panel that renders nothing are both invisible to that assertion.
 (group count, entry count), and keep the measured numbers with their date -- the number in the case is a
 **measurement, not a constant**.
 
-**Tests**: `src/plugin/panel-escape-focus.test.ts`
+**Tests**: this claim needs focus inside the panel container, so it is asserted with the focus cases:
+`src/plugin/panel-focus.test.ts` checks that every one of the five panel containers carries `tabIndex` and
+wires the key handler (a container that cannot take focus never receives Escape), that the handler closes the
+panel, that opening moves focus **into** the container, and that both the panel and the find bar give focus
+back on close. Its own file, `panel-escape-focus.test.ts`, held a `PanelSpec[]` table written inside the test.
 
 ---
 

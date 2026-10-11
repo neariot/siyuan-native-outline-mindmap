@@ -149,6 +149,80 @@ export function callArgProps(
 }
 
 /**
+ * Every JSX element whose `name` attribute's initialiser is written `value`, with all its attribute names.
+ *
+ * The invariant this exists for: "every element that carries this ref must also carry these attributes".
+ * A panel container that can be focused needs `tabIndex`, or `box.focus()` silently does nothing and the
+ * container's `onKeyDown` never receives Escape —— a defect that no type check and no browser error reports.
+ *
+ * ★ Read through the parser because the same ref name appears in the JSX, in the `useRef` declaration and in
+ *   the prose that explains the rule; and because "the attribute is present" has to be asked of the element
+ *   it is present **on**, not of the file.
+ */
+export function jsxElementsWithAttr(
+  src: string,
+  name: string,
+  value: string,
+): Array<{ attrs: string[]; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ attrs: string[]; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const attrs = (ts.isJsxElement(node) ? node.openingElement : node).attributes.properties;
+      let match = false;
+      const names: string[] = [];
+      for (const a of attrs) {
+        if (!ts.isJsxAttribute(a)) continue;
+        const attrName = a.name.getText(sf);
+        names.push(attrName);
+        if (attrName === name && a.initializer?.getText(sf) === value) match = true;
+      }
+      if (match) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        out.push({ attrs: names, line: line + 1 });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * Every JSX element whose `name` attribute's initialiser **contains** `needle`.
+ *
+ * For the question "which element wires a handler that does this?" —— e.g. the find bar's Escape lives in the
+ * input's own inline `onKeyDown`, not in the panel container's, so it has to be found on the element rather
+ * than by looking for the nearest function body (the inline arrow sits inside a large component callback, and
+ * a body search walks out to that callback instead).
+ */
+export function jsxElementsWithAttrContaining(
+  src: string,
+  name: string,
+  needle: string,
+): Array<{ init: string; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ init: string; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const attrs = (ts.isJsxElement(node) ? node.openingElement : node).attributes.properties;
+      for (const a of attrs) {
+        if (!ts.isJsxAttribute(a)) continue;
+        if (a.name.getText(sf) !== name) continue;
+        const init = a.initializer?.getText(sf) ?? '';
+        if (init.includes(needle)) {
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          out.push({ init, line: line + 1 });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
  * Remove line and block comments, leaving string literals alone.
  *
  * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads

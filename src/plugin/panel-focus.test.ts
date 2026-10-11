@@ -1,5 +1,5 @@
 /**
- * **Focus restoration** semantics for panels / overlays.
+ * **Focus restoration** semantics for panels / overlays —— and the reason Escape needs it.
  *
  * See .logs/API-GOTCHAS.md §91.
  *
@@ -15,162 +15,96 @@
  *   Contrast: the "Emoji" and "table" panels have no autoFocus, focus stays on the node,
  *   and they never had this problem — so this is not a "panel" disease,
  *   it is "**whatever steals focus must give it back**".
+ *
+ * ★ And the second half, which is why `panel-escape-focus.test.ts` is folded in here: a panel's Escape
+ *   handler fires only while focus is **inside** the element that carries it. So "the handler is wired" is
+ *   not enough —— the container needs `tabIndex` (or `box.focus()` silently does nothing) and the focus must
+ *   really be moved into it on open. Both halves are asserted on the shipped JSX and callbacks through the
+ *   parser; the file previously held a `PanelModel` class and a `PanelSpec[]` table written inside the test,
+ *   so no change to the plugin could turn either of them red.
  */
 export {};
 
-interface Ctx {
-  active: 'node' | 'overlay' | 'body';
-  nodeId: string | null;
-  returnTo: string | null;
-  typed: string;
-}
-
-class PanelModel {
-  public ctx: Ctx = { active: 'node', nodeId: null, returnTo: null, typed: '' };
-
-  /** The user clicks a node */
-  clickNode(id: string): void {
-    this.ctx.active = 'node';
-    this.ctx.nodeId = id;
-  }
-
-  /** Open the panel. fixed=false is the variant that does not remember a return target */
-  openPanel(stealsFocus: boolean, fixed: boolean): void {
-    if (fixed) this.ctx.returnTo = this.ctx.nodeId;
-    if (stealsFocus) this.ctx.active = 'overlay';
-  }
-
-  /** Close the panel */
-  closePanel(fixed: boolean): void {
-    if (fixed && this.ctx.returnTo) {
-      this.ctx.nodeId = this.ctx.returnTo;
-      this.ctx.returnTo = null;
-      this.ctx.active = 'node';
-      return;
-    }
-    // ★ With no "return target" we **must not** touch focus:
-    //   if focus was never stolen there is nothing to give back (the Emoji / table panels
-    //   are that case; forcing setActive='body' would actually lose the healthy focus).
-    if (this.ctx.returnTo === null && this.ctx.active === 'node') return;
-    this.ctx.active = 'body';
-  }
-
-  /** Typing: only takes effect when focus is on a node */
-  type(ch: string): boolean {
-    if (this.ctx.active !== 'node') return false;
-    this.ctx.typed += ch;
-    return true;
-  }
-}
+import fs from 'node:fs';
+import path from 'node:path';
+import { fnBody, jsxElementsWithAttr, jsxElementsWithAttrContaining } from './source-probe';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-console.log('=== Panels that do not steal focus (Emoji / table): they work anyway ===');
+const src = fs.readFileSync(path.join(__dirname, 'outline', 'Outliner.tsx'), 'utf8');
+
+console.log('=== every panel container can take focus, and handles Escape ===');
 {
-  const m = new PanelModel();
-  m.clickNode('甲');
-  m.openPanel(false, false);
-  check('focus is still on the node after opening', m.ctx.active === 'node');
-  m.closePanel(false);
-  check('focus is still on the node after closing', m.ctx.active === 'node');
-  check('typing takes effect', m.type('Z') === true && m.ctx.typed === 'Z');
+  const boxes = jsxElementsWithAttr(src, 'ref', '{panelBoxRef}');
+  check('★ the panel containers were found (precondition: 5 panels)', boxes.length === 5, `got=${boxes.length}`);
+  check('★★★ every container carries `tabIndex` —— without it `box.focus()` is a no-op and Escape never arrives',
+    boxes.every((b) => b.attrs.includes('tabIndex')),
+    boxes.filter((b) => !b.attrs.includes('tabIndex')).map((b) => `line ${b.line}`).join(', '));
+  check('★★ every container wires the panel key handler',
+    boxes.every((b) => b.attrs.includes('onKeyDown')),
+    boxes.filter((b) => !b.attrs.includes('onKeyDown')).map((b) => `line ${b.line}`).join(', '));
 }
 
-console.log('\n=== A focus-stealing panel: before the fix ===');
+console.log('\n=== Escape closes whichever panel is open ===');
 {
-  const m = new PanelModel();
-  m.clickNode('甲');
-  m.openPanel(true, false);
-  check('focus is stolen to the overlay on open', m.ctx.active === 'overlay');
-  m.closePanel(false);
-  check('★ after closing, focus lands on body (no return target)', m.ctx.active === 'body');
-  check('★ typing is lost', m.type('Z') === false && m.ctx.typed === '');
+  const keyBody = fnBody(src, 'const panelKeyDown = (e: React.KeyboardEvent)');
+  check('★ the handler exists (precondition)', keyBody.length > 0);
+  check('★★ it reacts to Escape', keyBody.includes("'Escape'"), keyBody.slice(0, 80));
+  check('★★ and closes the panel', keyBody.includes('closePanel()'), keyBody.slice(0, 160));
+
+  // The find bar is not a panel container: its input carries its own inline handler, and that arrow sits
+  // inside a large component callback —— so the check is made **on the element** (the parser reports which
+  // JSX element wires an `onKeyDown` that calls it), not by searching for an enclosing function body.
+  const findEsc = jsxElementsWithAttrContaining(src, 'onKeyDown', 'closeFind()');
+  check('★★★ the find bar closes on Escape from its own input handler',
+    findEsc.length === 1 && findEsc[0].init.includes("'Escape'"),
+    JSON.stringify(findEsc.map((f) => `line ${f.line}`)));
 }
 
-console.log('\n=== A focus-stealing panel: after the fix ===');
+console.log('\n=== opening a panel records what to focus again, and moves focus inside ===');
 {
-  const m = new PanelModel();
-  m.clickNode('甲');
-  m.openPanel(true, true);
-  check('focus is stolen to the overlay on open', m.ctx.active === 'overlay');
-  check('the return target is recorded', m.ctx.returnTo === '甲');
-  m.closePanel(true);
-  check('★ focus returns to the node after closing', m.ctx.active === 'node');
-  check('★ it returns to the original node', m.ctx.nodeId === '甲');
-  check('★ typing takes effect', m.type('Z') === true && m.ctx.typed === 'Z');
+  const openBody = fnBody(src, 'const openPanel = (name:');
+  check('★ the opener exists (precondition)', openBody.length > 0);
+  check('★★ the return target is recorded **before** the panel is shown',
+    openBody.indexOf('panelReturnFocus.current =') >= 0 &&
+      openBody.indexOf('panelReturnFocus.current =') < openBody.indexOf('setPanel('),
+    'recording it afterwards can miss the node the user was in');
+  check('★★★ opening from a toolbar button (no active node) falls back to the first visible node',
+    openBody.includes('flattenVisible'),
+    'without the fallback there is nothing to focus back and typing after closing is lost');
+  check('★★★ focus is really moved into the container —— this is what makes Escape reach the handler',
+    /box\.focus\(\)/.test(openBody), 'a rAF `box.focus()`');
+  check('★ … and only when the panel does not already have focus',
+    /contains\(document\.activeElement\)/.test(openBody),
+    'otherwise an autoFocus input inside the panel is robbed of focus');
 }
 
-console.log('\n=== Opening a panel with no node selected must not focus blindly ===');
+console.log('\n=== closing gives focus back ===');
 {
-  const m = new PanelModel();
-  m.clickNode('甲');
-  m.ctx.nodeId = null; // simulate having no active node
-  m.openPanel(true, true);
-  check('with no return target it is recorded as null', m.ctx.returnTo === null);
-  m.closePanel(true);
-  check('after closing it does not force focus (focus on body is acceptable)', m.ctx.active === 'body');
-}
+  const closeBody = fnBody(src, 'const closePanel = (');
+  check('★★ the recorded node is focused again on close', closeBody.includes('focusReq(back'), closeBody.slice(0, 120));
+  check('★★ the record is cleared before restoring, so a second close cannot restore a stale target',
+    closeBody.indexOf('panelReturnFocus.current = null') >= 0 &&
+      closeBody.indexOf('panelReturnFocus.current = null') < closeBody.indexOf('focusReq('),
+    'otherwise the panel after the next one restores a node the user has long left');
 
-console.log('\n=== Toggling a panel repeatedly must not leak state ===');
-{
-  const m = new PanelModel();
-  m.clickNode('甲');
-  m.openPanel(true, true);
-  m.closePanel(true);
-  check('after the first toggle it returns to 甲', m.ctx.nodeId === '甲');
-  m.clickNode('乙');
-  m.openPanel(true, true);
-  check('the second toggle records the new target', m.ctx.returnTo === '乙');
-  m.closePanel(true);
-  check('after the second toggle it returns to 乙', m.ctx.nodeId === '乙');
-}
-
-console.log('\n=== How pendingFocus consumption depends on its deps ===');
-{
-  // reproduces the dependency behavior of useLayoutEffect
-  const shouldRun = (
-    prev: { nodes: number; panel: string | null; findOpen: boolean },
-    next: { nodes: number; panel: string | null; findOpen: boolean },
-    deps: string[],
-  ): boolean => deps.some((d) => (prev as never)[d] !== (next as never)[d]);
-
-  const base = { nodes: 1, panel: null as string | null, findOpen: false };
-  const panelClosed = { nodes: 1, panel: null as string | null, findOpen: false };
-
-  check(
-    '★ depending only on nodes → the effect does not run when closing the panel (focus never comes back)',
-    shouldRun(base, panelClosed, ['nodes']) === false,
-  );
-  check(
-    '★ depending on nodes+panel → it does run when opening the panel',
-    shouldRun(base, { nodes: 1, panel: 'emoji', findOpen: false }, ['nodes', 'panel']) === true,
-  );
-  check(
-    '★ deps without find.open → the effect does not run when closing the find bar (focus never comes back)',
-    shouldRun({ nodes: 1, panel: null, findOpen: true }, panelClosed, ['nodes', 'panel']) === false,
-  );
-  check(
-    '★ deps with find.open → it does run when closing the find bar',
-    shouldRun({ nodes: 1, panel: null, findOpen: true }, panelClosed, [
-      'nodes',
-      'panel',
-      'findOpen',
-    ]) === true,
-  );
-  check(
-    'unrelated state changes still do not trigger it while the deps are complete',
-    shouldRun(base, panelClosed, ['nodes', 'panel', 'findOpen']) === false,
-  );
+  // The find bar is the same defect: its input has `autoFocus`, so closing it without restoring focus
+  // leaves focus on BODY and everything typed next is lost (measured ['A','B','C'] → ['A','B','C']).
+  const closeFindBody = fnBody(src, 'const closeFind = (');
+  check('★★ the find bar gives focus back too', closeFindBody.includes('focusReq(back'), closeFindBody.slice(0, 120));
+  const openFindBody = fnBody(src, 'const openFind = (');
+  check('★ and it records the target before opening', openFindBody.includes('panelReturnFocus.current ='),
+    openFindBody.slice(0, 120));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

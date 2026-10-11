@@ -876,6 +876,12 @@ export default function Mindmap({
   const cancelParagraphs = (): void => {
     setParaEditing(false);
     setParaDraft('');
+    // ★ The textarea carries `autoFocus`, so unmounting it moves focus to **BODY** —— and the panel is still
+    //   open (`paraView` is unchanged, so the effect above does not re-run). Both the panel's own keys
+    //   (Escape, Ctrl+Enter) and every canvas shortcut would then be dead until the user clicks again: the
+    //   same one-way focus migration this file's overlay handling exists to prevent. Focus goes back to the
+    //   panel container —— the element that effect focuses when the panel opens.
+    paraPanelRef.current?.focus();
   };
 
   const exportPng = (): void => {
