@@ -30,11 +30,22 @@ control that silently loses its result is worse than no control.
      have made one cannot —— the marker API answers `-1 block is not a task list item` on anything that is not
      already a task, and the attribute path refuses `data-task` outright. Clearing travels the same markdown
      write that creates a task, and the state is written only when it changes.
-3. **The mind map's to-do checkbox works**
+3. **The mind map's to-do checkbox works, and toggles instead of removing the marker**
    - It was drawn with a pointer cursor and handled its click, but `onToggleTask` was never passed to the
      component, so clicking changed nothing —— the only part of the map that looked interactive and was not.
-     It cycles none → to-do → done → none through the same path as everything else.
-4. **A closed dock can be opened**
+   - It now flips **to-do ↔ done** through the same path as everything else. It used to cycle
+     none → to-do → done → **none**, so a third click took the marker off and the node became a plain list
+     item —— which is not something a click on a checkbox can be read as. Removing the marker is still
+     available as the explicit, labelled action it already was.
+4. **A to-do change is no longer swallowed while the index catches up** (reported as "clicking it deletes
+   the to-do")
+   - Behind the symptom above sat a silent defect: whether to write is decided from a read of the current
+     state, and that read lags the kernel by 1~3 seconds, so a click following the previous one inside that
+     window read the state from **before the plugin's own last write** and the change was dropped —— no
+     call, no error, no message, and the panel showed a state the document never got. What this session
+     wrote is now remembered and consulted first, and the note retires the moment the read agrees with it,
+     so the document is the authority again as soon as the index has caught up.
+5. **A closed dock can be opened**
    - The check waited for the panel's content *before* clicking the icon that opens it, so a closed dock was
      never opened, and the write-back that followed was lost without a message.
 
@@ -95,7 +106,9 @@ document's data.
 ## Test coverage
 
 - Offline unit tests: **70 cases green** (`npm test`).
-- Playwright browser E2E: **all 103 cases green** (`npm run test:e2e`, 34.6 min on the isolated test instance).
+- Playwright browser E2E: **103 cases green** (`npm run test:e2e`, 34.6 min on the isolated test instance).
+  The release adds one further case (the to-do toggle above), which was verified on its own and shown red
+  against the defect; the full suite has not been re-run since it was added.
 - Live desktop check (`npm run verify`) and the Android device check (`npm run verify:android`) were **not** run
   for this release: the first wants a document in a workspace the plugin is running against, and the second
   needs the Android/Redroid toolchain. Neither is claimed as verified here.
