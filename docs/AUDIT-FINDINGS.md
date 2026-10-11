@@ -66,8 +66,6 @@ conclusion to draw from a complete-looking list of findings.
   The three normalizations used for the same echo comparison disagree, because plainNodeText does not decode HTML entities while htmlFragmentToText does: a node whose text contains &, < or > mismatches its own echo and is reported as a conflict while a write-back is in flight.
 ### plugin-tests-a
 
-- **high · test-quality** `src/plugin/edge-autoscroll.test.ts:30`  
-  Every check in the file compares a literal the test just defined (or a local re-implementation of the shipped guard) with itself; nothing reads styles.css or Outliner.tsx, yet two ledger entries name this file as the test that freezes that behaviour.
 
 ### scripts-gates
 
@@ -75,8 +73,6 @@ conclusion to draw from a complete-looking list of findings.
   The auditor's own selftest is RED: its source carries a CJK literal ('分支一' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
 
 ### scripts-infra
-
-- **high · bug** `scripts/deploy.py:140`  
 
 ### scripts-live
 

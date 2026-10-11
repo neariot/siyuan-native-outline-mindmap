@@ -17,6 +17,7 @@ import { toggleCollapse as toggleCollapseAt } from '../tree-ops';import {
   indentNodes as indentInTree,
   outdentNodes as outdentInTree,
 } from './indent';
+import { shouldRollBackScroll } from './auto-scroll';
 
 import { genId, now } from '../../model/ids';
 import { makeSiyuanId } from '../../core/map';
@@ -1579,7 +1580,7 @@ export default function Outliner(props: OutlinerProps) {
       //
       //   Fix: while scrolling down, if the **last node has moved entirely above the bottom of the viewport**
       //   (i.e. further scrolling only moves it further up), **roll back** the scroll to where it just touches the bottom edge.
-      if (dy > 0 && beforeLastBottom < bottomLimit) {
+      if (shouldRollBackScroll(dy, beforeLastBottom, bottomLimit)) {
         box.scrollTop = before;
       }
       // Once it cannot scroll any more (top/bottom reached) there is no need to compute the drop target
