@@ -605,6 +605,22 @@ exist, and when a cited test imports nothing and reads nothing. It is deliberate
 that a file reaches nothing, not that its assertions are weak —— so it is a floor, not a substitute for the
 list above. It stands at **0 files reaching nothing**, and the check runs strictly: a new one fails the build.
 
+## The artifact is part of what gets verified
+
+A version number is not a build. Measured: a version bump and a source fix both landed **after**
+`package.zip` had been produced, so the zip carried the new number and none of the fix —— and every
+external label agreed with every other one. Nothing in the artifact said "old build"; the only way to
+find out was to open it.
+
+So the package is compared against the build beside it: `scripts/verify-pkg.py` (the `package-fresh`
+gate, and the last step of `npm run package`) requires `package.zip`'s `index.js` and `index.css` to be
+**byte-identical** to `dist-plugin/`'s, and prints the packaged `index.js`'s hash so it can be quoted
+when the release is verified. It goes red the moment the build moves and the zip does not.
+
+★ Rebuilding the package after a source change is therefore not a step somebody has to remember:
+**forgetting is the failure the gate is for.** `npm run check` runs it in 0.06s when both exist, and
+skips it with a stated reason when there is no package to compare (nothing to release yet).
+
 ## Pitfalls we stepped on
 
 ### CDP-related

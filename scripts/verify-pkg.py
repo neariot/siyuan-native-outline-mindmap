@@ -47,6 +47,40 @@ with script_log.track("verify-pkg"):
         print(f"  {why:<16} → {f:<22} {'✅' if hit else '❌ missing'}")
         bad += not hit
 
+    # ★★★ Is the package the tree it claims to be? (added)
+    #
+    #   Measured, hit this: a version bump and a source fix landed after `package.zip` was built, so the zip
+    #   carried the new version number and none of the fix —— every external label agreed, and nothing in the
+    #   artifact said "old build". A version number is not a build, and "remember to re-run package" is a rule
+    #   with no tool behind it.
+    #
+    #   So compare the packaged entry against the **built** `dist-plugin/index.js`, byte for byte: the package
+    #   is produced by zipping that directory, so any difference means the zip predates the build it sits next
+    #   to. (`index.js` is the whole plugin; `index.css` is checked the same way because the CSS-scope gate
+    #   reads it too.)
+    print()
+    print("freshness")
+    for f in ('index.js', 'index.css'):
+        built = pathlib.Path('dist-plugin') / f
+        if not built.exists():
+            print(f"  {f:<24} ❌ dist-plugin/{f} is missing —— run `npm run build`")
+            bad += 1
+            continue
+        want = built.read_bytes()
+        try:
+            got = z.read(f)
+        except KeyError:
+            print(f"  {f:<24} ❌ not in the package")
+            bad += 1
+            continue
+        hit = got == want
+        print(f"  {f:<24} {'✅ the package is the build' if hit else '❌ package.zip is older than dist-plugin/' + f}")
+        bad += not hit
+    if bad == 0:
+        import hashlib
+        digest = hashlib.sha256(z.read('index.js')).hexdigest()[:12]
+        print(f"  index.js sha256[:12]     {digest}  (quote this when the release is verified)")
+
     print()
     print("  " + ("✅ Checks passed, ready to release" if not bad else f"❌ Found {bad} problems, do not release"))
     sys.exit(1 if bad else 0)

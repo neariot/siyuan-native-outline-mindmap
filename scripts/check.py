@@ -155,11 +155,23 @@ GATES = [
         "why": "no unscoped bare selector survived the build",
         "requires": lambda: (REPO_ROOT / "dist-plugin" / "index.css").is_file(),
     },
+    {
+        # ★ Is the release artifact the tree it claims to be? A version bump and a source fix both landed
+        #   after `package.zip` had been built, so the zip carried the new number and none of the fix, and
+        #   every external label agreed. "Remember to rebuild the package" is a rule with no tool behind it,
+        #   which is how it got forgotten; this is the tool.
+        "name": "package-fresh",
+        "command": "python3 scripts/verify-pkg.py",
+        "why": "package.zip is the build beside it, not an older one wearing the same version",
+        "requires": lambda: (REPO_ROOT / "package.zip").is_file()
+        and (REPO_ROOT / "dist-plugin" / "index.js").is_file(),
+    },
 ]
 
 SKIP_REASON = {
     "language": "scripts/audit-language.py does not exist yet",
     "css-scope": "no dist-plugin/index.css —— run `npm run build` first; the gate reads build output",
+    "package-fresh": "no package.zip / dist-plugin —— run `npm run build` then `npm run package`",
 }
 
 
