@@ -118,6 +118,37 @@ await step('openDoc: goto "/?id=<doc>" (FULL LOAD)', () => page.goto(`${BASE}/?i
 await step('openDoc: window.siyuan.layout (2nd load)', () => page.waitForFunction(
   () => !!(window.siyuan && window.siyuan.layout), undefined, { timeout: 60000 }));
 
+// --- openDoc() continues: the dock has to be open before a case can interact with the panel.
+//   ★ This phase was MISSING from the first version of this probe, and the 10.4s it hides is why the
+//     table it produced said "startup is cheap" while every case really spent 10.4s here. A probe that
+//     stops before the expensive step does not measure the expensive step.
+await step('openDoc: ensureDockOpen (the panel really open)', async () => {
+  const entry = page.locator('[data-type*="native-outline-mindmap"]').first();
+  await entry.waitFor({ state: 'visible', timeout: 60000 });
+  const isOpen = () => page.evaluate(() => {
+    const all = document.querySelectorAll('.om-mm-viewswitch');
+    const last = all[all.length - 1];
+    return last ? last.getBoundingClientRect().width > 0 : false;
+  });
+  if (await isOpen()) return;
+  // The same predicate the helper uses: click only a dock that is not already active, then wait.
+  const active = () => page.evaluate(() => {
+    const icon = document.querySelector('[data-type*="native-outline-mindmap"]');
+    const item = icon?.closest('.dock__item') ?? icon?.parentElement;
+    return !!(item && item.className.includes('dock__item--active'));
+  });
+  if (await active()) {
+    const dl = Date.now() + 10000;
+    while (Date.now() < dl) { if (await isOpen()) return; await page.waitForTimeout(50); }
+  }
+  for (let a = 1; a <= 3; a++) {
+    if (!(await active())) await entry.click({ force: true });
+    const dl = Date.now() + 10000;
+    while (Date.now() < dl) { if (await isOpen()) return; await page.waitForTimeout(50); }
+  }
+  throw new Error('the dock never opened');
+});
+
 // --- the repeat: the same page, in the same browser, a second time
 await step('REPEAT: goto "/" again (same browser)', () => page.goto(BASE,
   { waitUntil: 'domcontentloaded', timeout: 60000 }));

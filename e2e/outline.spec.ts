@@ -730,15 +730,17 @@ test.describe('multi-select and batch operations', () => {
   });
 
   test('★ clearing a to-do in the outline clears it in the document', async ({ page }) => {
-    // ★ The other direction of the same field. A node's own checkbox cycles todo → done → none, and the
-    //   last step is the one with no marker call behind it: measured, the marker API answers
-    //   `-1 block is not a task list item` on anything that is not already a task, so clearing has to go
-    //   through the markdown write that creates a task. Both states are asserted, because "the to-do never
-    //   went away" and "the to-do went away one step too early" are different defects.
+    // ★ The other direction of the same field. A node's own checkbox is **todo ↔ done** (it used to cycle
+    //   todo → done → none, which made a click on a checkbox mean "stop being a task"), and clearing the
+    //   marker is a separate, labelled action. Clearing is also the one write with no marker call behind
+    //   it: measured, the marker API answers `-1 block is not a task list item` on anything that is not
+    //   already a task, so it goes through the markdown write that creates a task.
     const api = await kernelApi(siyuanUrl(), siyuanToken());
     let docId = '';
     try {
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n');
+      // Two rows: the case needs a real multi-selection at the end, because that is the only menu that
+      // offers the explicit clear (measured: with one node the menu offers the toggle and no clear).
+      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n- 第二个\n');
       await openDoc(page, docId);
       await toOutlineView(page);
       await ensureOutlineToolbarOpen(page);
@@ -760,16 +762,41 @@ test.describe('multi-select and batch operations', () => {
       await expect.poll(line, { message: 'the document should record the completed state', timeout: 10000 })
         .toBe('- [X] 待办节点');
 
+      // ★★ The second click must take it back to **not done**, and keep it a task.
+      //
+      //   This case used to assert the opposite —— that the second click removed the task marker and the
+      //   node became a plain list item (`- 待办节点`) with no checkbox. That was the old three-state cycle
+      //   (none → todo → done → none), and it is the behaviour a checkbox cannot be read as meaning: a
+      //   click on a checkbox says "done / not done", never "stop being a task at all". The cycle is now
+      //   todo ↔ done (`toggleTaskStatus`), and clearing the marker is the explicit labelled action
+      //   (`cmdClearTodo`). The assertions below are that change's other half.
       await box.click();
-      // A plain node has no checkbox, so the box disappearing is the outline's own evidence that the node
-      // stopped being a to-do — and it is the half that can drift from the document.
-      await expect(
-        page.locator('.taskbox input[type="checkbox"]:visible'),
-        'a node that is no longer a to-do should offer no checkbox',
-      ).toHaveCount(0);
+      await expect(box, 'the to-do should still be a to-do after the second click').toBeVisible();
+      await expect(box, 'the second click should leave it not done').not.toBeChecked();
       await expect
-        .poll(line, { message: 'the document should stop being a to-do', timeout: 10000 })
-        .toBe('- 待办节点');
+        .poll(line, { message: 'the document should record it as not done, and still a task', timeout: 10000 })
+        .toBe('- [ ] 待办节点');
+
+      // ★★ A click on the checkbox can never clear the task —— only a labelled action can. That is the
+      //    whole point of the toggle rule above, and it is asserted in the direction that can fail:
+      //
+      //      the single-node menu offers `切换待办状态` (the toggle) and **no** clear;
+      //      `清待办` exists only in the batch menu, which requires a real multi-selection.
+      //
+      //    (No case covered either menu's to-do items before this one, which is how the old three-state
+      //    cycle survived in the suite's expectations long after it was gone from the product.)
+      await page.locator('.node-row').first().click({ button: 'right' });
+      await expect(
+        page.locator('.mm-ctx-item', { hasText: '切换待办状态' }),
+        'the single-node menu should offer the to-do toggle',
+      ).toBeVisible();
+      await expect(
+        page.locator('.mm-ctx-item', { hasText: '清待办' }),
+        'and no clear: clearing is a batch action, never a click on the checkbox',
+      ).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.mm-ctx-item'), 'the menu should be closed again').toHaveCount(0);
+
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();
