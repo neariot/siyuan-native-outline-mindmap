@@ -94,6 +94,15 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-audit-findings.py").is_file(),
     },
     {
+        # ★ A tool whose failure path nothing exercises reports whatever it likes. This one's first
+        #   criterion (any word of 7+ characters) called 60 entries `drifted` for a reason that meant
+        #   nothing, so the case that pins it is a gate rather than a memory.
+        "name": "audit-findings-selftest",
+        "command": "python3 scripts/check-audit-findings.py --selftest",
+        "why": "the audit-queue checker still decides prose vs identifier, and each state, as its cases pin",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-audit-findings.py").is_file(),
+    },
+    {
         "name": "language",
         "command": "python3 scripts/audit-language.py",
         "why": "the section 2 language policy, over every file type at once",

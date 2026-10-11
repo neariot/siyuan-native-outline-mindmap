@@ -47,7 +47,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from script_log import track  # noqa: E402
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rebound by --selftest
 LEDGER = os.path.join(ROOT, 'docs', 'AUDIT-FINDINGS.md')
 
 # `- **medium · bug** `src/core/map.ts:639`` then an indented description on the following line(s).
@@ -148,13 +148,80 @@ def classify(entry: dict) -> dict:
     return {**entry, 'state': 'ok', 'note': f'{len(hits)}/{len(words)} identifiers near the line'}
 
 
+def selftest() -> int:
+    """Check this checker against in-memory fixtures.
+
+    Every tool in this repository is expected to be able to fail, and a tool whose failure path nothing
+    exercises is a tool that reports whatever it likes. These cases pin the three decisions that matter,
+    using a temporary tree so nothing here depends on the real repository's contents.
+
+    Sections where this tool has already been wrong, and which are therefore pinned:
+      · a finding's prose is not an identifier —— the first version searched for `Chinese` and reported 60
+        entries drifted for a criterion that meant nothing;
+      · an entry the strict pattern cannot parse must be an error, not a silent skip —— it once reported 205
+        findings for a file holding 206.
+    """
+    import tempfile
+    failures = 0
+
+    def check(what: str, got: object, want: object) -> None:
+        nonlocal failures
+        if got != want:
+            failures += 1
+            print(f'  ✘ {what}: got {got!r}, want {want!r}')
+
+    # The prose/identifier distinction, which is the whole reason `cannot-judge` exists.
+    check('prose words are not identifiers',
+          distinguishing_words('The Chinese README still documents a build flag that no longer exists'), [])
+    check('camelCase counts', distinguishing_words('pruneDestroyedSiblings loses its mapping') != [], True)
+    check('snake_case counts', distinguishing_words('handleMentionClick is never called') != [], True)
+    check('SCREAMING_CASE counts', distinguishing_words('MOBILE_MAX_WIDTH is duplicated') != [], True)
+
+    # The classifier, against a scratch tree: a missing file, a past-EOF line, and a resolving citation.
+    with tempfile.TemporaryDirectory() as td:
+        with io.open(os.path.join(td, 'small.ts'), 'w', encoding='utf-8') as fh:
+            fh.write('const pruneDestroyedSiblings = 1;\n')
+        global ROOT
+        real_root = ROOT
+        try:
+            ROOT = td
+            check('a missing file is stale-file',
+                  classify({'file': 'nope.ts', 'line': 1, 'desc': 'x'})['state'], 'stale-file')
+            check('a line past the end is stale-line',
+                  classify({'file': 'small.ts', 'line': 99, 'desc': 'x'})['state'], 'stale-line')
+            check('a resolving citation with its identifier is ok',
+                  classify({'file': 'small.ts', 'line': 1,
+                            'desc': 'pruneDestroyedSiblings declares a sibling destroyed'})['state'], 'ok')
+            check('an entry naming no identifier cannot be judged',
+                  classify({'file': 'small.ts', 'line': 1,
+                            'desc': 'The Chinese README is stale'})['state'], 'cannot-judge')
+        finally:
+            ROOT = real_root
+
+    # The parser must not skip an entry it cannot match.
+    parsed = parse_ledger('- **low · bug** `a.ts:1`  \n  a description here\n')
+    check('a well-formed entry parses', len(parsed), 1)
+    check('the citation is split', (parsed[0]['file'], parsed[0]['line']), ('a.ts', 1) if parsed else None)
+
+    if failures:
+        print(f'check-audit-findings --selftest: {failures} case(s) failed')
+        return 1
+    print('check-audit-findings --selftest: all cases pass')
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--limit', type=int, default=0, help='show at most N entries')
     ap.add_argument('--state', choices=['stale-file', 'stale-line', 'drifted', 'cannot-judge', 'ok', 'no-line'],
                     help='only show this state')
     ap.add_argument('--json', action='store_true', help='machine-readable output')
+    ap.add_argument('--selftest', action='store_true',
+                    help='check this checker against in-memory fixtures, then exit')
     args = ap.parse_args()
+
+    if args.selftest:
+        return selftest()
 
     if not os.path.exists(LEDGER):
         print(f'check-audit-findings: {LEDGER} does not exist', file=sys.stderr)
