@@ -14,7 +14,7 @@ import Mindmap from '../mindmap/Mindmap';
 import Outliner from './outline/Outliner';
 import { setOutlineImageClient } from './outline/images';
 import type { OutlineNode } from '../model/types';
-import { nextTaskStatus } from '../model/types';
+import { toggleTaskStatus } from '../model/types';
 import { cloneNodes, touch } from '../model/tree';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
@@ -2178,7 +2178,7 @@ function OmTabApp({
         const draft = cloneNodes(nodesRef.current ?? []);
         const node = findNode(draft, id);
         if (!node) return;
-        node.taskStatus = nextTaskStatus(node.taskStatus);
+        node.taskStatus = toggleTaskStatus(node.taskStatus);
         touch(node);
         void handleOutlineChange(draft, 'struct');
       },

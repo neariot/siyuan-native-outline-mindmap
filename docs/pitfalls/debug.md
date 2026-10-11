@@ -57,6 +57,32 @@ When changing these two constants, **both places must stay in sync**:
 - `POLL_BUDGETS` in `scripts/kernel-index-lag.py` (it reports the ones that are too tight);
 - `src/siyuan/poll-budget.test.ts` checks that the two sides agree.
 
+### 6.24 The same lag inside the plugin: your own write comes back stale, and the change is dropped
+
+**Symptom**: clicking a to-do's checkbox in the mind map marked it done; the **second** click brought the
+box back to empty on screen, and the document still said `[X]`. No error, no console output, no call.
+
+**Root cause**: the write-back decides whether to write from a SQL read of the current state
+(`storedTask`, built from `blocks.markdown`). Inside §6.6's lag window that read answers with the state
+**before the plugin's own last write** —— `stored=1` while the document already said `[X]` —— so
+`wants === stored` held and the branch that would have written it was skipped. The lag is the plugin's
+own, exactly like `freshlyInserted` (§[`data.md`](data.md)), and it hits any "did this change?" test
+built on a read taken right after a write.
+
+**How it was found**: static reading got as far as "the branch looks correct" twice. What settled it was a
+temporary `console.log` **inside the branch** and a `page.on('console')` in the case: the two lines
+(`wants=2 stored=1` then `wants=1 stored=1`) named the defect in one run. Guessing between two plausible
+paths costs more than one instrumented run.
+
+**Practice**: a writer that remembers what it wrote outranks a read that may be stale ——
+`Store.writtenTask` (listItem ID → state) is consulted first and **retires the moment the read agrees
+with it**, so the document becomes the authority again as soon as the index catches up. Do not "write
+unconditionally to be safe": that path re-parses the node and its subtree in markdown on every save, and
+markdown cannot carry HTML/IAL, so a styled to-do would lose its styling on every keystroke.
+
+**And the case that catches it is the second click.** Asserting the first click passes under both rules;
+only "the marker is still there after the second click" goes red for a state that removes the marker.
+
 **Incidentally**: the return value of `insertBlock` already carries the child paragraph block ID
 (the HTML in `doOperations[0].data` has 3 `data-node-id`s, the last one being the child paragraph block),
 so there is no need to wait for the SQL index.

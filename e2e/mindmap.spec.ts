@@ -967,3 +967,47 @@ test('a long node label wraps onto more lines instead of being elided', async ({
     await api.dispose();
   }
 });
+
+test('★ clicking a to-do checkbox toggles it and never removes the marker', async ({ page }) => {
+  // Reported from the mind map: "clicking the to-do deletes it". The checkbox cycled
+  // none → todo → done → **none**, so the third click removed the task marker and the node went back to
+  // being a plain list item —— which is what a click on a checkbox cannot be read as meaning.
+  //
+  // ★ Two clicks is the whole case: the second one is the click that used to remove the marker. Asserting
+  //   "the document still holds a task marker" is what makes this red for that defect; asserting only the
+  //   first click would pass for both rules.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, notebook, '- [ ] 节点一\n');
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    const box = page.locator('.mm-checkbox').first();
+    await expect(box, 'the mind map should draw a checkbox for a to-do').toBeVisible({ timeout: 30_000 });
+
+    // `exportMdContent` answers an object; the markdown is its `content`. Falling back to the whole payload
+    // keeps a failure readable ("[object Object]" tells nobody anything).
+    const markdown = async (): Promise<string> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      const data = res.data as { content?: string } | null;
+      return data?.content ?? JSON.stringify(res.data ?? '');
+    };
+
+    await box.click();
+    await expect
+      .poll(markdown, { message: 'the first click should mark the task done', timeout: 15_000 })
+      .toMatch(/-\s*\[[xX]\]\s/);
+
+    await box.click();
+    await expect
+      .poll(markdown, { message: 'the second click should leave it not-done', timeout: 15_000 })
+      .toMatch(/-\s*\[ \]\s/);
+    expect(await markdown(), 'the task marker must still be there —— the defect removed it').toMatch(
+      /-\s*\[[ xX]\]\s/,
+    );
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});

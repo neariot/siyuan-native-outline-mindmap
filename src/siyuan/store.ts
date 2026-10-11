@@ -744,6 +744,19 @@ export class SiYuanStore {
   private lastListItems = new Map<string, string>();
 
   /**
+   * To-do states **this session wrote** that the read has not caught up with yet: "listItem ID → state".
+   *
+   * ★★★ Why a write has to remember what it wrote (measured): the SQL read behind `storedTask` lags the
+   *   kernel by 1~3 seconds, so a click that follows the previous one inside that window reads the state
+   *   from **before** it. A to-do that was just marked done still reads as not-done, `wants === stored`
+   *   holds, and the change is dropped —— no call, no message, and the panel shows a state the document
+   *   never got. Same defect class as `freshlyInserted`: the lag is ours, not the document's.
+   *   An entry retires the moment the read agrees with it, so the document becomes the authority on that
+   *   to-do again as soon as the index has caught up.
+   */
+  private writtenTask = new Map<string, number>();
+
+  /**
    * Node IDs that **currently have attached paragraph blocks in SiYuan**.
    *
    * ★★★ Why this set is required (fixes "deleting an empty attached paragraph is not synced"):
@@ -1148,7 +1161,12 @@ export class SiYuanStore {
       for (const r of rows) {
         current.set(r.id, (r.content ?? '').trim());
         aliveIds.add(r.id);
-        storedTask.set(r.id, taskStateOfKramdownLine(r.markdown ?? ''));
+        const read = taskStateOfKramdownLine(r.markdown ?? '');
+        storedTask.set(r.id, read);
+        // ★ Our note retires as soon as the read agrees with it: the index has caught up, so whatever the
+        //   document says about that to-do is the truth again (a read that disagrees is either still
+        //   lagging or somebody else's change —— either way the note must not outlive the disagreement).
+        if (this.writtenTask.get(r.id) === read) this.writtenTask.delete(r.id);
       }
     }
 
@@ -1301,7 +1319,9 @@ export class SiYuanStore {
       // ★ Written only when the document does not already hold this state. Rewriting unconditionally costs
       //   a full markdown reparse of the node and its subtree on every save, and a markdown write cannot
       //   carry HTML/IAL, so a to-do whose text is styled would lose that styling on every keystroke.
-      const stored = liId ? storedTask.get(liId) ?? 0 : 0;
+      // ★ What we wrote ourselves outranks the read: inside the lag window the read still answers with the
+      //   state before our own write, which is what made a quick second click a silent no-op.
+      const stored = liId ? this.writtenTask.get(liId) ?? storedTask.get(liId) ?? 0 : 0;
       if (liId && wants !== stored) {
         try {
           if (wants && stored) {
@@ -1320,6 +1340,11 @@ export class SiYuanStore {
             //   keeps every block id in it, and shows the text once.
             //   apart, and it writes the prefix from `taskStatus` itself.
             await this.client.updateBlock(liId, nodeSubtreeToKramdown(n));
+          }
+          this.writtenTask.set(liId, wants);
+          if (this.writtenTask.size > 200) {
+            const oldest = this.writtenTask.keys().next().value;
+            if (oldest !== undefined) this.writtenTask.delete(oldest);
           }
           updated++;
         } catch (e) {
