@@ -1118,3 +1118,102 @@ test('★ dragging a node onto another nests it — and BOTH views must agree wi
     await api.dispose();
   }
 });
+
+test('dragging a DEEP node onto a shallow one re-levels it in both views', async ({ page }) => {
+  // The case above moves a node one level, and it is the one that **goes red** when the re-read is allowed
+  // to overtake our own write-back (measured 3/3 failing before the fix, 3/3 passing after).
+  //
+  // ★★ This case does **not** guard that defect, and saying so is the point of keeping it. It was written
+  //    expecting the deeper fixture to be the stronger test; measured, it passes **with the fix removed**
+  //    as reliably as with it — so as a regression test for the re-read it has no defensive value, and
+  //    pretending otherwise would be the vacuous pass this repository keeps warning about.
+  //
+  //    What it does cover, and no other case does: a node moving **out of a three-level chain onto a
+  //    root-level sibling**, i.e. the document, the map and the outline all re-levelling together. Both
+  //    gestures issue the same kernel calls (`insertBlock` → `moveBlock` → `deleteBlock`), so the
+  //    difference that decides which one trips the defect is timing, not the shape of the tree.
+  //
+  // Measured after the fix: document `- 丁` / `  - 丙`, map 丁@208 / 丙@334, outline 丁@1170 / 丙@1197.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n- 丁\n');
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    const markdown = async (): Promise<string> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String(res.data?.content ?? '');
+    };
+    const geometry = () => page.evaluate(() =>
+      [...document.querySelectorAll('.mm-node')].map((n) => {
+        const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(n.getAttribute('transform') || '');
+        return { x: m ? parseFloat(m[1]) : NaN, text: (n.textContent || '').trim() };
+      }).filter((n) => Number.isFinite(n.x)),
+    );
+
+    const before = await geometry();
+    const texts = before.map((n) => n.text);
+    const from = texts.findIndex((t) => t.startsWith('丙'));
+    const to = texts.findIndex((t) => t.startsWith('丁'));
+    expect(from, 'the fixture must contain a 丙 node').toBeGreaterThanOrEqual(0);
+    expect(to, 'the fixture must contain a 丁 node').toBeGreaterThanOrEqual(0);
+    // Precondition: 丙 really starts deeper than 丁, otherwise the case measures nothing.
+    expect(before[from].x, '丙 must start deeper than 丁 for this case to mean anything').toBeGreaterThan(before[to].x);
+
+    const nodes = page.locator('.mm-node');
+    const srcBox = await nodes.nth(from).boundingBox();
+    const dstBox = await nodes.nth(to).boundingBox();
+    expect(srcBox && dstBox, 'both nodes must be laid out').toBeTruthy();
+    await page.mouse.move(srcBox!.x + srcBox!.width / 2, srcBox!.y + srcBox!.height / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(
+        srcBox!.x + (dstBox!.x - srcBox!.x) * (i / 10) + dstBox!.width / 2,
+        srcBox!.y + (dstBox!.y - srcBox!.y) * (i / 10) + dstBox!.height / 2,
+      );
+      await page.waitForTimeout(40);
+    }
+    await page.mouse.up();
+
+    // The document: 丙 becomes a child of 丁, i.e. the line after 丁 is indented under it.
+    // ★ The kernel pads list lines with a trailing space (`- 丁 ` — a continuation marker), so the
+    //   pattern must tolerate trailing whitespace on the parent line. Requiring `- 丁\n` outright failed
+    //   against a **correct** document, which is the "test describes a document that never existed"
+    //   mistake: the assertion was wrong, not the product.
+    await expect
+      .poll(markdown, { message: 'the drag must nest 丙 under 丁', timeout: 20_000 })
+      .toMatch(/- 丁\s*\n {2,}- 丙/);
+
+    // The map: 丙 must be exactly one level right of 丁 (not at its old three-level depth).
+    await expect
+      .poll(async () => {
+        const now = await geometry();
+        const d = now.find((n) => n.text.startsWith('丁'));
+        const c = now.find((n) => n.text.startsWith('丙'));
+        if (!d || !c) return 'missing';
+        return c.x > d.x ? 're-levelled' : `stale(x ${d.x} vs ${c.x})`;
+      }, { message: 'the map must move 丙 under 丁', timeout: 20_000 })
+      .toBe('re-levelled');
+
+    // And the outline, indentation-based, on the same tree.
+    await toOutlineView(page);
+    await expect
+      .poll(async () => {
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll('.om-outline-wrap .node-row')].map((r) => ({
+            left: Math.round(r.getBoundingClientRect().left),
+            text: (r.querySelector('.node-text')?.textContent || '').trim(),
+          })),
+        );
+        const d = rows.find((r) => r.text === '丁');
+        const c = rows.find((r) => r.text === '丙');
+        if (!d || !c) return 'missing';
+        return c.left > d.left ? 'indented' : `flat(${d.left} vs ${c.left})`;
+      }, { message: 'the outline must indent 丙 under 丁', timeout: 20_000 })
+      .toBe('indented');
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
