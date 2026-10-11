@@ -351,6 +351,18 @@ def check_workspace_terms(terms, paths, label):
     return findings, scanned, generic, listed
 
 
+def count_live_findings(counts, findings, rule):
+    """Register `--live` findings so the verdict sees them, and return how many there were.
+
+    ★ One function, because the defect this replaces was two copies of the increment. The verdict sums
+      `counts`, so a path that *listed* findings without adding them printed "OK, exit 0" underneath its
+      own listing —— the gate that exists to catch a notebook name in the repository could not go red for
+      the one class of finding only the live cross-check can produce. A selftest below exercises this.
+    """
+    counts[("<live>", rule)] = len(findings)
+    return len(findings)
+
+
 def check_notebooks(targets, paths):
     findings, scanned = [], 0
     for relpath in paths:
@@ -399,6 +411,26 @@ def selftest():
     product = check_patterns(["src/siyuan/store.ts"], "product")
     cases.append(("the same id in product code is not excused",
                   check_patterns(["src/siyuan/store.ts"], "product")[0] == []))
+    # The `--live` verdict, end to end: a notebook identity found in a file must make the run exit 1.
+    # Assembled from code points, like the id above, so this tool does not flag its own source.
+    live_name = "".join(chr(c) for c in (0x4e2d, 0x6587, 0x6d4b, 0x8bd5))
+    probe_dir = REPO_ROOT / ".tmp" / "audit-privacy-selftest"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    probe = probe_dir / "probe.md"
+    try:
+        probe.write_text("notebook: %s\n" % live_name, encoding="utf-8")
+        live_counts = {}
+        live_findings, _ = check_notebooks([("the user's instance", live_name, "")], [str(probe)])
+        count_live_findings(live_counts, live_findings, "notebook-name")
+        cases.append(("a notebook name in a file makes the --live verdict red (%d finding(s))"
+                      % len(live_findings),
+                      bool(live_findings) and sum(live_counts.values()) > 0))
+    finally:
+        probe.unlink(missing_ok=True)
+        try:
+            probe_dir.rmdir()
+        except OSError:      # something else is using the directory: leave it alone
+            pass
     failed = [(name, ok) for name, ok in cases if not ok]
     for name, ok in cases:
         print("  %s %s" % ("PASS" if ok else "FAIL", name))
@@ -439,7 +471,7 @@ def main():
             findings += live_findings
             # ★ counted, or the listing above would not affect the verdict —— the first version of the
             #   document path had exactly that defect and printed "OK, exit 0" beneath its own findings.
-            counts[("<live>", "notebook-name")] = len(live_findings)
+            count_live_findings(counts, live_findings, "notebook-name")
             print("  -- cross-checked %d notebook identity/identities of the user's instance over %d "
                   "file(s): %d finding(s) (the isolated instance's are the fixtures)"
                   % (len(user_targets), live_scanned, len(live_findings)))
@@ -460,7 +492,7 @@ def main():
             live, live_scanned, generic, listed = check_workspace_terms(
                 terms, tracked + artifacts, "the user's workspace")
             findings += live
-            counts[("<live>", "workspace-identifier")] = len(live)
+            count_live_findings(counts, live, "workspace-identifier")
             distinctive = sum(1 for t in terms if is_distinctive(t))
             print("  -- cross-checked %d identifier(s) from the user's workspace over %d file(s): "
                   "%d pinpointing, %d finding(s)"

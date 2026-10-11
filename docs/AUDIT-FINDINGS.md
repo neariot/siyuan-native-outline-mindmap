@@ -49,35 +49,21 @@ conclusion to draw from a complete-looking list of findings.
 
 - **high · privacy** `e2e/testdoc.ts:213`  
   The 'only notebooks with these names are accepted as test targets (to avoid damaging user data)' allowlist holds the literal name that BOTH configured instances report as their notebook #1 - i.e. the name of a notebook the user actually works in - so the guard that exists to protect user data instead selects the user's own notebook, and the name itself is a section-1 hard-rule leak in a tracked file.
-- **high · privacy** `scripts/audit-privacy.py:304`  
-  The verdict ignores the --live findings it just printed: `total` is summed from `counts`, which only check_patterns ever writes, so a run that lists real notebook-name hits in tracked files still ends with 'audit-privacy: OK no finding (exit 0)' - the gate that exists to catch the leak above cannot go red for it.
 
 ### e2e-specs-a
 
-- **high · test-quality** `e2e/outline.spec.ts:618`  
-  The '+summary' case clicks a button that the product renders only when a summary is possible, so in the top-level branch the locator never matches and the case can never pass — it is currently a 120 s timeout in every run.
-
 ### i18n-consistency
-
-- **high · bug** `e2e/outline.spec.ts:618`  
-  The 'real reason for a refused summary' path does not exist any more: msgSummaryTopLevel (and msgSummaryHint) have no call site in src/, the summary button is not rendered at all for a top-level selection, and the E2E case that asserts that message is red because it clicks a button the same test asserts is absent.
 
 ### mindmap
 
 - **high · bug** `src/mindmap/Mindmap.tsx:1775`  
   The attached-paragraph panel uses an inline callback ref that calls el.focus() after every render, so opening the editor steals focus from its own textarea and each keystroke re-steals it — the paragraph editor accepts one character per click.
-- **high · dead-code** `src/mindmap/Mindmap.tsx:1568`  
-  The mind map's to-do checkbox is rendered as a clickable control but onToggleTask is never passed by any caller, so clicking it is a silent no-op.
-
 ### plugin-code
 
 - **high · bug** `src/plugin/mount.ts:1173`  
   A failed write-back leaves EchoGuard's applyingCount set, after which isEcho() is true forever: reverse sync stops accepting every external edit and every later change is judged a conflict.
 - **high · bug** `src/plugin/mount.ts:55`  
   The three normalizations used for the same echo comparison disagree, because plainNodeText does not decode HTML entities while htmlFragmentToText does: a node whose text contains &, < or > mismatches its own echo and is reported as a conflict while a write-back is in flight.
-- **high · bug** `src/plugin/outline/Outliner.tsx:1413`  
-  addSummary returns silently where the release notes, the pitfall ledger, the user guide and an e2e case all state the user is told the real reason; no code path in src/ or in the built bundle can produce that message.
-
 ### plugin-tests-a
 
 - **high · test-quality** `src/plugin/edge-autoscroll.test.ts:30`  
