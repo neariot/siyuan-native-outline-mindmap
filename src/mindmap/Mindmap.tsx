@@ -201,11 +201,24 @@ export default function Mindmap({
    */
   onDropBlocks?: (blockIds: string[], targetId: string | null) => void;
   /**
-   * Drag a node onto another node → change its parent (drag to re-parent).
+   * Drag a node **onto another node** → change its parent (drag to re-parent).
    *
-   * ★ This has the **same semantics** as the outline's moveDrop (zone='child').
+   * ★★ This is a **one-zone** gesture, and that is a deliberate difference from the outline, which has
+   *   three (`above` / `child` / `below` in `outline/drop-zone.ts`) because a list has a meaningful
+   *   "between two rows". A map does not: the only thing a drop position can mean is **which node you
+   *   aimed at**, so aiming at a node reparents and aiming at blank space does nothing. An earlier version
+   *   of this comment claimed "the same semantics as the outline's moveDrop" —— it never was, and the
+   *   claim is the kind that gets "made true" later by adding zone logic nobody asked for.
+   *
+   *   ★ Releasing on blank space is a **no-op, not a promotion**: the node goes back to where the layout
+   *   puts it. Positions in this view are computed entirely by `layoutHorizontal` / `layoutOrg` and the
+   *   node model has no per-node coordinate, so "leave it where I dropped it" is a feature that would need
+   *   a position field, its serialization and its interaction with the auto-layout —— not a behaviour to
+   *   invent here. (Measured: releasing 22px outside a node's box leaves the document untouched.)
+   *
    *   Dragging in the map used to be **panning the canvas** only, and nodes could not be re-parented —
-   *   while the outline supported it, so the two views differed (measured: after dragging in the map, SiYuan showed no change at all).
+   *   while the outline supported it, so the two views differed (measured: after dragging in the map, SiYuan
+   *   showed no change at all).
    */
   onReparent?: (nodeIds: string[], targetId: string) => void;
 }) {

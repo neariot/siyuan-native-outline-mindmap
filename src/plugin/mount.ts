@@ -2238,8 +2238,11 @@ function OmTabApp({
        * ★ Clicking a block reference / mention → open the target.
        */
       // ★ Reparenting by drag in the mind map (added).
-      //   Same semantics as the outline's moveDrop(zone='child'): dropped onto a node → becomes its child.
-      //   Dragging in the mind map used to pan the canvas only, and nodes could not be reparented —— the two views were inconsistent (confirmed by measurement).
+      //   Dropped **onto a node** → becomes its child. One zone, not the outline's three: a map has no
+      //   meaningful "between two nodes", so the drop position can only mean *which node you aimed at*.
+      //   Releasing on blank space is a no-op and the node returns to its computed place —— positions come
+      //   from the layout, and the node model has no per-node coordinate to move.
+      //   Dragging here used to pan the canvas only, so nodes could not be reparented at all (measured).
       onReparent: (ids: string[], targetId: string) => {
         const base = nodesRef.current ?? [];
         // A node must not be dragged into its own descendant (that would create a cycle)

@@ -13,6 +13,41 @@ Two hard requirements run through this whole document:
 
 This plugin **writes and reads no `custom-*` attribute whatsoever** — node semantics come only from SiYuan's native structures.
 
+### 0.1 Which view owns which edit
+
+The outline and the mind map are two views of **one tree**, but they are not interchangeable editors, and
+assuming they are is how a feature gets built twice with different semantics.
+
+| Edit | Outline | Mind map |
+|---|---|---|
+| Change a node's **parent** | Drag onto a row | **Drag onto a node** (one zone: the node you aimed at) |
+| Change **sibling order** | Drag **above / below** a row (three drop zones) | **Not supported** — do it in the outline |
+| Add a node | Enter / Tab | Enter / Tab |
+| Change depth by one level | Shift+Tab / Tab | Not supported (drag onto another node instead) |
+
+★ **How well each row above is verified.** The map's single zone and its no-op on blank space are
+verified end-to-end (`e2e/mindmap.spec.ts`, the drag cases). The outline's three zones are verified at the
+**rule** level only (`src/plugin/outline/drop-zone.test.ts` pins `above` / `child` / `below` against a row's
+own rect) —— no E2E case drives a real HTML5 drag in the outline, and an attempt to drive it synthetically
+did **not** reproduce a reorder, so "the outline reorders siblings by dragging above/below" rests on the
+unit-tested rule plus the `moveDrop` branch that inserts at the target's index. Treat the outline half as
+**unverified end-to-end** rather than as established.
+
+★ **Exact order is an outline edit.** A list has a meaningful "between two rows"; a map does not. Its drop
+position can only mean *which node you aimed at*, so the map keeps **one** zone while the outline keeps
+three, and that difference is deliberate rather than a gap to be filled.
+
+★ Releasing a node on **blank space** is a **no-op**: the node returns to where the layout puts it. Positions
+in the map are computed (`layoutHorizontal` / `layoutOrg`) and the node model carries **no per-node
+coordinate**, so "leave it where I dropped it" would be a feature — a position field, its serialization,
+and its interaction with the auto-layout — not a behaviour to infer from a drag. Measured: releasing 22px
+outside a node's box leaves the document untouched.
+
+★ **No keyboard shortcuts for structure in the map.** Tab/Enter add nodes; everything about hierarchy and
+order is a **pointer gesture** (or the outline). An earlier comment on `onReparent` claimed "the same
+semantics as the outline's moveDrop" — it never was, and a claim like that is what gets "made true" later
+by adding zone logic nobody asked for.
+
 ## 1. Structural mapping
 
 | Concept | SiYuan expression | Notes |
