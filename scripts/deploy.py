@@ -6,7 +6,8 @@
 After changing code you have to verify it, which means manually `cp dist-plugin/*  <workspace>/data/plugins/<plugin-name>/`
 and then going back into SiYuan to click reload —— a long path is hard to remember, and a script with hardcoded paths is useless on another machine.
 
-    npm run deploy            # build + deploy
+    npm run deploy            # build + deploy into **both** instances (--test-only for just the
+                              #   working one; use it whenever the build is deliberately broken)
 
 ★ There is no `--reload`. SiYuan serves no route for reloading a plugin: `/api/plugins/reloadPlugin`, which
 this script used to post to, answers **404** (measured), and the failure was printed as a warning with exit
@@ -74,9 +75,9 @@ def main():
                     help="skip the build, only deploy the existing output")
     ap.add_argument("--target", action="append", default=[], metavar="DIR",
                     help="add one extra deploy target (repeatable). Regular targets come from PLUGIN_DIRS in .env.")
-    ap.add_argument("--include-reference-instance", action="store_true",
-                    help="also deploy into the workspace the user works in (off by default: that "
-                         "installation is reference-only, see AGENTS.md 5.1)")
+    ap.add_argument("--test-only", action="store_true",
+                    help="skip the instance the user works in. ★ Use this for a red proof: a deliberately "
+                         "broken build must not reach the editor they use (AGENTS.md section 7)")
     ap.add_argument("--list", action="store_true",
                     help="only print which directories this run would deploy to, doing nothing else")
     args = ap.parse_args()
@@ -106,42 +107,28 @@ def main():
             uniq.append(d)
     dsts = uniq
 
+    # ★ Both instances are deployment targets **by default**: the build under test and the one the user
+    #   works in, so the editor they use is never left running old code while the tests run against new
+    #   code. `--test-only` is the exception, and it exists for one reason —— a red proof deliberately
+    #   breaks the plugin, and that build must not reach the editor they use (AGENTS.md section 7).
     reference = os.path.normpath(cfg.plugin_dir)
-    # ★ `--include-reference-instance` means "install there for real" (AGENTS.md section 1), so it has to
-    #   **add** that instance rather than merely stop the guard below from refusing a list that already
-    #   names it. As a pure un-blocker it did nothing at all with the shipped `.env` —— whose PLUGIN_DIRS
-    #   holds the test instance only —— while reading exactly like a working install switch, and it said
-    #   nothing about having done nothing.
-    if args.include_reference_instance and reference not in dsts:
+    if args.test_only:
+        dsts = [d for d in dsts if d != reference]
+        print("  · --test-only: the instance you work in is left alone (a red proof must not reach it)")
+    elif reference not in dsts:
         dsts.append(reference)
-        print(f"  + the instance the user works in, added by --include-reference-instance:\n    {reference}")
-
-    # ★ The test instance is the only target a build may be deployed to by default; the workspace the user
-    #   works in is **reference only**. This used to be a docstring claim in another script, which passed an
-    #   unrelated variable and so deployed into the user's editor on every run. A rule that matters is a
-    #   check here, not a note there.
-    blocked = [d for d in dsts if os.path.normpath(d) == reference]
 
     if args.list:
-        print(f"  Deploy targets ({len(dsts)}, from PLUGIN_DIRS in .env):")
+        print(f"  Deploy targets ({len(dsts)}, PLUGIN_DIRS from .env plus the instance you work in):")
         for d in dsts:
-            note = ""
+            note = "   ← the instance you work in" if d == reference else ""
             if not os.path.isdir(d):
-                note = "   (does not exist yet, will be created)"
-            if os.path.normpath(d) == reference:
-                note = ("   ← the instance the user works in"
-                        + ("" if args.include_reference_instance else " (reference only)"))
+                note += "   (does not exist yet, will be created)"
             print(f"    · {d}" + note)
-        if blocked and not args.include_reference_instance:
-            print("  ⛔ a deploy would refuse this list; pass --include-reference-instance to include it")
         return 0
 
-    if blocked and not args.include_reference_instance:
-        for d in blocked:
-            print(f"  ⛔ {d}\n     is the instance the user works in —— reference only.")
-        print("  ⛔ refusing to deploy. Deploy to the test instance (PLUGIN_DIRS=<its plugin dir>), or pass")
-        print("     --include-reference-instance if you really mean to install into their workspace.")
-        return 2
+    if reference in dsts:
+        print("  ★ this build also goes to the instance you work in (--test-only to skip it)")
 
     ok = True
     for dst in dsts:

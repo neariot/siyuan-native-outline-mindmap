@@ -23,10 +23,13 @@ a file nobody reads might as well not exist.
   them —— `docs/pitfalls/privacy.md`.)
 - Where scripts live: reusable ones in `scripts/` (committed); one-offs in
   `.tmp/` (not committed). Never park something useful in `.tmp/`.
-- **The instance the user works in is reference only.** Read it to check a claim; never deploy to it,
-  test in it, or mutate a document in it. The isolated test instance is the only place a build goes, a
-  document is created, or a suite runs —— `scripts/deploy.py` refuses the other target unless
-  `--include-reference-instance` is passed, which means "install for real". Reading their workspace must
+- **Both instances get the build; only the test instance gets the tests.** `scripts/deploy.py` installs
+  into the isolated test instance **and** the workspace the user works in, by default, so the editor they
+  use is never left running old code —— deploying to the working instance alone is the exception
+  (`--test-only`), and it exists for one purpose: a red proof deliberately breaks the plugin, and that
+  build must not reach the editor they use. Everything else about their instance is untouched: read it to
+  check a claim, **never** create, mutate or delete a document in it, and never run a suite against it ——
+  the test instance is the only place a document is created or a suite runs. Reading their workspace must
   not leave anything behind either: no name, id, `hpath`, title, content or screenshot
   (`docs/pitfalls/privacy.md`).
 - **Before deleting scratch, name what is in it, and confirm each part is in the repository.** A digest
@@ -178,10 +181,11 @@ machine. Check every line against it:
    a wrong single value fails immediately, while a chain **silently switches
    targets, runs to completion, and reports success**.
 4. **Two instances, two roles.** The **working** instance is the isolated test instance: the only
-   target for builds, deploys, test mutations and E2E. The **reference** instance is the workspace the
-   user works in: read-only, for checking a claim against reality, its content never leaving their
-   machine. Never fall back from one to the other; when the working instance is unreachable, **fail and
-   say how to start it** — do not pick another target.
+   target for test mutations and E2E. The **reference** instance is the workspace the user works in: it
+   receives the build like the working one (section 1), but it is read-only in every other respect —— no
+   document is created, changed or deleted there, and its content never leaves their machine. Never fall
+   back from one to the other; when the working instance is unreachable, **fail and say how to start
+   it** — do not pick another target.
 5. **Credentials come from the environment or a config file**, never from
    source. A literal in the source is a finding whatever it equals, and a
    credential in a fallback chain is the shape that hides one (5.1 #3).
@@ -203,9 +207,9 @@ The token can also be read from `["api"]["token"]` in
 
 ```bash
 npm run build       # build
-npm run deploy      # build + deploy into **the working instance** (no hot reload: SiYuan exposes no route for it).
-                    #   Refuses a target inside the workspace the user works in; add
-                    #   --include-reference-instance to install there for real
+npm run deploy      # build + deploy into **both** instances (no hot reload: SiYuan exposes no route
+                    #   for it). --test-only skips the instance the user works in —— use it for a red
+                    #   proof, never for a normal build
 npm run typecheck   # tsc --noEmit
 npm run check       # every fast gate in one command (typecheck + unit + docs index + language +
                     #   i18n keys + privacy + css scope)
@@ -293,10 +297,10 @@ If you touched CSS, layout, or kernel interaction, also run `npm run verify`.
 - **Do not be stingy about a dependency that makes a check honest.** A dev-only
   parser or test helper costs less than a check that lies; keep `dependencies`
   minimal because those ship to users, and lean on `devDependencies` freely.
-- **A red proof that needs a deploy deploys to the working instance, never the reference one.**
-  `mutate -> deploy -> run the check` must not put a deliberately broken plugin in front of the user:
-  `scripts/deploy.py` refuses any target inside the workspace they work in, so a mutation cannot reach
-  it by accident, and `--include-reference-instance` is only for a deliberate install. `--target` only
+- **A red proof that needs a deploy must pass `--test-only`.**
+  `mutate -> deploy -> run the check` must not put a deliberately broken plugin in front of the user, and
+  both instances are deployment targets by default (section 1) —— so the guard is the flag, and a red
+  proof that forgets it installs the broken build into the editor they use. `--target` only
   *adds*; it does not narrow, so narrow with `PLUGIN_DIRS=<the test instance's plugin dir>`. A helper
   that claims to redirect the deploy must be checked against what `deploy.py` actually reads —— one
   asserted a variable the tool never read, so "isolated" deploys installed into the user's editor for
