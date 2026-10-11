@@ -547,6 +547,53 @@ console.log('\nedgePath: all three line styles produce a valid SVG path');
   }
 }
 
+
+{
+  console.log('  ★ a chain descends: every level below its parent (a flat chain is invisible to a row count)');
+  // ★★★ A node with exactly ONE child gets that child's own subtree as its band, so centring the band on
+  //   the parent put the child at the parent's `y` **exactly** —— at every level. A four-level chain came
+  //   out as four boxes all at `y = 60`: drawn as one flat left-to-right line, while the document and the
+  //   outline (indentation-based) both showed the nesting correctly.
+  //
+  //   ★ The criterion is "strictly below", not "different from": a chain laid out right-to-left, or one
+  //   where a later sibling pulled the child up, would pass an inequality-free check while still drawing
+  //   the tree flat. Every level is compared against its own parent, and the descent is required to be
+  //   monotone down the chain, because "one level happens to be lower" is not a mind map either.
+  const chain = [N('a', 'a', [N('b', 'b', [N('c', 'c', [N('d', 'd')])])])];
+  for (const mode of ['balanced', 'right', 'left', 'timeline'] as const) {
+    const lay = layoutHorizontal(chain, mode, new Set<string>());
+    const byId = new Map(lay.boxes.map((b) => [b.node.id, b]));
+    const order = ['a', 'b', 'c', 'd'];
+    const ys = order.map((id) => byId.get(id)?.y ?? NaN);
+    let ok = true;
+    for (let i = 1; i < order.length; i++) if (!(ys[i] > ys[i - 1])) ok = false;
+    check(
+      `${mode}: each level of a chain is strictly below the one above (measured y: ${ys.join(', ')})`,
+      ok,
+    );
+    // And nothing may overlap: "all at the same y" was the flat-chain symptom, and stacking is its cousin.
+    let overlaps = 0;
+    for (let i = 0; i < lay.boxes.length; i++) {
+      for (let j = i + 1; j < lay.boxes.length; j++) {
+        const a = lay.boxes[i], b = lay.boxes[j];
+        if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) overlaps++;
+      }
+    }
+    check(`${mode}: no two boxes overlap in a chain`, overlaps === 0);
+  }
+
+  // The other half: siblings must still spread **around** the parent, not be pushed below it.
+  const tree = [N('p', 'p', [N('c1', 'c1'), N('c2', 'c2'), N('c3', 'c3')])];
+  const lay = layoutHorizontal(tree, 'right', new Set<string>());
+  const byId = new Map(lay.boxes.map((b) => [b.node.id, b]));
+  const p = byId.get('p')!, kids = ['c1', 'c2', 'c3'].map((id) => byId.get(id)!);
+  check(
+    'a parent with three children still keeps the tree shape (some children above, some below the parent)',
+    kids[0].y < p.y && kids[2].y > p.y,
+  );
+  check('the middle child is the one centred on the parent', Math.abs(kids[1].y - p.y) === 0);
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (failures.length) {
   console.log('\nfailures:');

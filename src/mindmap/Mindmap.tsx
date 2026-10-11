@@ -3,7 +3,7 @@ import type { OutlineNode } from '../model/types';
 import { findNode, htmlToText } from '../model/tree';
 import { htmlToRuns, type RichRun } from '../core/richtext';
 import { RichText } from './RichText';
-import { LINE_HEIGHT, wrapForWidth } from '../core/layout';
+import { LINE_HEIGHT, MOBILE_MAX_WIDTH, wrapForWidth } from '../core/layout';
 import { centerBaselineDy } from './text-baseline';
 import { tooltip } from '../plugin/tooltip';
 import { RichContent } from '../plugin/outline/RichContent';
@@ -1114,12 +1114,40 @@ export default function Mindmap({
         /* storage unavailable: treat it as "nothing remembered" */
       }
       if (saved !== null) return; // the user has chosen; leave it alone
-      const w = wrapRef.current?.clientWidth ?? 0;
-      if (w <= 0) return; // not mounted yet / not measurable; keep the default
-      setBarOpen(w > 560);
-      // Runs once only: this is a "first-visit default", not "live tracking of the dock width"
-      // (live tracking would override the user's manual open/close; see the lesson of the empty effect deleted in the previous version).
-    }, []);
+      // ★ A phone collapses whatever the dock measures —— the reason is the mobile bottom keyboard bar,
+      //   and the dock width cannot see it (measured: a 390px viewport still has a ~420px dock). Checked
+      //   before the width, and kept identical to the outline's rule: the two views must agree.
+      if (typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAX_WIDTH) {
+        setBarOpen(false);
+        return;
+      }
+
+      // ★★★ "Measure it once, in a layout effect" is not the same as "it is measurable by then", and the
+      //   difference is visible: on the **first** open the root measures its final width and then briefly
+      //   **0** while the panel is still settling (measured samples right after mount: 420, 0, 0, 0, ...).
+      //   The old code returned on `w <= 0` —— and because the effect ran **once**, that return was final:
+      //   the effect never ran again, the initial `true` default stood, and the toolbar stayed expanded in a
+      //   420px dock where the rule says collapse. A reload looked correct only because the second mount
+      //   measured a stable width, which is exactly the kind of "it works on the second try" that hides a
+      //   first-run defect.
+      //
+      //   So an unmeasurable moment is now **retried** on the next frame instead of ending the effect. The
+      //   user's own choice still wins: anything in storage stops this before it starts.
+      let raf = 0;
+      const apply = (): void => {
+        const w = wrapRef.current?.clientWidth ?? 0;
+        if (w <= 0) {
+          // Not measurable *yet* —— try again next frame rather than giving up for good.
+          raf = requestAnimationFrame(apply);
+          return;
+        }
+        setBarOpen(w > 560);
+      };
+      apply();
+      // Decides the "first-visit default" only; never tracks the dock width afterwards (that would
+      // override the user's manual open/close).
+      return () => { if (raf) cancelAnimationFrame(raf); };
+        }, []);
   // ★★★ An effect that "did nothing" was deleted.
   //
   //   It used to look like this:

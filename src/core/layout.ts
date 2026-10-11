@@ -6,6 +6,19 @@ import { findNode, htmlToText } from '../model/tree';
 import { htmlToRuns, mergeRuns, wrapRuns, type RichRun, type WrappedLine } from './richtext';
 import { TASK_DONE, TASK_TODO } from '../model/types';
 
+/**
+ * The **phone** breakpoint: at or below this viewport width the layout is the mobile one.
+ *
+ * ★ One named constant, because the same 768 was a bare literal in six places in the outline, in
+ *   `src/styles.css`'s media queries, and in a test that re-declared it (`keyboard-offset.test.ts`) ——
+ *   a rule expressed four times is four rules that can drift apart, and the CSS one cannot be imported.
+ *
+ *   It decides things the **dock width cannot**: on a phone the dock still measures about 420px wide, so
+ *   a width-only rule answers "wide screen" and leaves an expanded toolbar covering the mobile keyboard
+ *   bar (measured: a 390px viewport, dock 420px, toolbar expanded).
+ */
+export const MOBILE_MAX_WIDTH = 768;
+
 export type MmStructure = 'balanced' | 'right' | 'left' | 'org' | 'timeline';
 export type MmLineStyle = 'curve' | 'rounded' | 'straight';
 
@@ -455,6 +468,29 @@ export function layoutHorizontal(
     return n.children.reduce((a, c) => a + subtreeH(c), 0);
   };
 
+  /**
+   * The centre-y of a child that owns a band `bandH` starting at `startY`, given its `parentCy`.
+   *
+   * ★★★ Centring the band is right for a **tree** and silently wrong for a **chain**: when a node has
+   *   exactly one child the band is that child's own subtree height, so `startY + bandH / 2` equals
+   *   `parentCy` **exactly** —— at every level. Measured, a four-level chain (`a > b > c > d`) produced
+   *   four boxes all at `y = 60`: drawn as one flat left-to-right line, while the document and the outline
+   *   (indentation-based) both showed the nesting correctly.
+   *
+   *   So the only child is pushed below its parent when centring would not do it. Two or more children
+   *   need no forcing —— centring already separates them from each other.
+   *
+   *   ★ The rule lives here, in one function, because the same arithmetic appeared in three places (the
+   *   recursive layout and both sides of the single-root branch); fixing one and missing the others is
+   *   how a chain stayed flat after the first fix.
+   */
+  const childCyOf = (parentCy: number, parentH: number, startY: number, bandH: number, siblingCount: number): number => {
+    const centred = startY + bandH / 2;
+    if (siblingCount !== 1) return centred;
+    const minBelow = parentCy + parentH / 2 + Math.max(V_GAP, Math.round(parentH * 0.6));
+    return centred < minBelow ? minBelow : centred;
+  };
+
   const layoutSubtree = (
     n: OutlineNode,
     parentX: number,
@@ -499,7 +535,7 @@ export function layoutHorizontal(
     let startY = cy - totalCh / 2;
     for (const c of n.children) {
       const ch = subtreeH(c);
-      const childCy = startY + ch / 2;
+      const childCy = childCyOf(cy, m.h, startY, ch, n.children.length);
       layoutSubtree(c, x, w, cy, childCy, side, depth + 1, branchIdx);
       startY += ch;
     }
@@ -559,7 +595,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = startY + ch / 2;
+          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length);
           layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
           startY += ch;
         });
@@ -604,7 +640,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = startY + ch / 2;
+          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length);
           layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, branchIdx);
           startY += ch;
         });
@@ -674,7 +710,7 @@ export function layoutHorizontal(
           let startY = rootCy - rightKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           rightKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = startY + ch / 2;
+            const childCy = childCyOf(rootCy, rm.h, startY, ch, rightKids.length);
             layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
             startY += ch;
           });
@@ -684,7 +720,7 @@ export function layoutHorizontal(
           let startY = rootCy - leftKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           leftKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = startY + ch / 2;
+            const childCy = childCyOf(rootCy, rm.h, startY, ch, leftKids.length);
             layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, rightKids.length + idx);
             startY += ch;
           });

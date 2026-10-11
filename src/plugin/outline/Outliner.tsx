@@ -19,6 +19,7 @@ import { toggleCollapse as toggleCollapseAt } from '../tree-ops';import {
   outdentNodes as outdentInTree,
 } from './indent';
 import { shouldRollBackScroll } from './auto-scroll';
+import { MOBILE_MAX_WIDTH } from '../../core/layout';
 
 import { genId, now } from '../../model/ids';
 import { makeSiyuanId } from '../../core/map';
@@ -80,7 +81,7 @@ function getCaretOffset(el: HTMLElement): number {
 }
 
 function ensureVisible(container: HTMLElement, el: HTMLElement, extraMargin: number = 24): void {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAX_WIDTH;
   const bar = isMobile ? (document.querySelector('.mobile-keyboard-bar') as HTMLElement | null) : null;
   const barTop = bar && bar.getBoundingClientRect().height > 0 ? bar.getBoundingClientRect().top : Number.POSITIVE_INFINITY;
 
@@ -562,9 +563,12 @@ export default function Outliner(props: OutlinerProps) {
   //   while the bottom bar is already sufficient ⇒ collapsed by default on narrow screens, yielding room to content.
   //   Desktop keeps the usual habit (expanded by default).
   //
-  //   ★ Mirrors `barOpen` in `Mindmap.tsx` one for one:
-  //     same localStorage key, same first-visit criterion, same toggle semantics.
-  //     Change one and check the other —— inconsistent behaviour between the two is harder to track down than having only one.
+  //   ★ Mirrors `barOpen` in `Mindmap.tsx` in **criterion and semantics** — the dock-width threshold, the
+  //     phone rule and the toggle all have to agree, so change one and check the other: inconsistent
+  //     behaviour between the two views is harder to track down than having only one.
+  //     The **storage keys are deliberately separate** (`om-outline-bar-open` here, `om-mm-bar-open` there):
+  //     each view remembers its own state. An earlier version of this comment claimed they shared one key,
+  //     which was false and would have turned "make them match" into a silent behaviour change.
   const [barOpen, setBarOpen] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('om-outline-bar-open');
@@ -577,9 +581,15 @@ export default function Outliner(props: OutlinerProps) {
     return true;
   });
 
-  // ★★★ The first-visit default follows the **container width**, not the window width (same reason as the mindmap).
-  //   The toolbar lives in the **SiYuan right dock**, and the dock width is unrelated to the window width;
-  //   using `window.innerWidth` as a stand-in misjudges "large window + narrow dock" as a wide screen.
+  // ★★★ The first-visit default asks **two** questions, and the second one was missing.
+  //
+  //   1. **Is this a phone?** Then collapsed, whatever the dock measures. The reason is the mobile bottom
+  //      keyboard bar, not the dock: an expanded toolbar sits above/over it and eats most of the screen.
+  //      ★ The dock width cannot answer this. Measured, a 390px viewport still has a **420px** dock, so a
+  //      width-only rule answered "wide" on a phone and left the toolbar covering the keyboard bar.
+  //   2. Otherwise the **container width** (the SiYuan right dock), not the window width: the dock's width
+  //      is unrelated to the window's, and using `window.innerWidth` there misjudges "large window + narrow
+  //      dock" as a wide screen.
   React.useLayoutEffect(() => {
     let saved: string | null = null;
     try {
@@ -588,11 +598,38 @@ export default function Outliner(props: OutlinerProps) {
       /* storage unavailable: treat as "no memory" */
     }
     if (saved !== null) return; // the user has chosen, leave it alone
-    const w = rootRef.current?.clientWidth ?? 0;
-    if (w <= 0) return; // not mounted / not measurable yet, keep the default
-    setBarOpen(w > 560);
-    // Run once only: this is the "first-visit default", not "live tracking of the dock width"
-    // (live tracking would override the user's manual open/close).
+    // A phone collapses even when the dock measures wide, so this is checked before the width.
+    if (typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAX_WIDTH) {
+      setBarOpen(false);
+      return;
+    }
+
+  // ★★★ "Measure it once, in a layout effect" is not the same as "it is measurable by then", and the
+  //   difference is visible: on the **first** open the root measures its final width and then briefly
+  //   **0** while the panel is still settling (measured samples right after mount: 420, 0, 0, 0, ...).
+  //   The old code returned on `w <= 0` —— and because the effect ran **once**, that return was final:
+  //   the effect never ran again, the initial `true` default stood, and the toolbar stayed expanded in a
+  //   420px dock where the rule says collapse. A reload looked correct only because the second mount
+  //   measured a stable width, which is exactly the kind of "it works on the second try" that hides a
+  //   first-run defect.
+  //
+  //   So an unmeasurable moment is now **retried** on the next frame instead of ending the effect. The
+  //   user's own choice still wins: anything in storage stops this before it starts.
+    let raf = 0;
+    const apply = (): void => {
+      const w = rootRef.current?.clientWidth ?? 0;
+      if (w <= 0) {
+        // Not measurable *yet* —— try again next frame rather than giving up for good.
+        raf = requestAnimationFrame(apply);
+        return;
+      }
+      setBarOpen(w > 560);
+    };
+    apply();
+    // This decides the "first-visit default" only; it never tracks the dock width afterwards, because
+    // live tracking would override the user's manual open/close. The retry stops on the first real
+    // measurement, and the cleanup cancels a pending one.
+    return () => { if (raf) cancelAnimationFrame(raf); };
   }, []);
 
   const toggleBar = useCallback((): void => {
