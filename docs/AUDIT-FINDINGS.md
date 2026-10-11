@@ -80,8 +80,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-live
 
-- **high · bug** `scripts/test-instance.py:426`  
-  deploy_plugin() claims to redirect the deploy at the test instance 'via SIYUAN_WORKSPACE', but deploy.py takes its targets only from PLUGIN_DIRS - so every `test-instance.py start` also overwrites the plugin copy in the user's live workspace.
 - **high · test-quality** `scripts/verify-live.py:104`  
   The 'content width follows the panel' check can never fail for the regression it was written for: it only asserts that the JSON contains the word "host", never comparing the content width with the host width.
 

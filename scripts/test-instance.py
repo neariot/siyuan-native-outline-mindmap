@@ -420,22 +420,30 @@ def deploy_plugin():
     The instance is an empty workspace; without the plugin installed, E2E cannot even see `.om-dock`.
     Reuses `scripts/deploy.py`, which handles copying and verifying 'build artifacts → plugin directory'.
 
-    ★ `deploy.py` takes its targets from `PLUGIN_DIRS`, and on a development machine that list is the
-    plugin directories to sync —— the workspace the user works in among them. An earlier version of this
-    function set `SIYUAN_WORKSPACE` and its docstring asserted that this pointed the deploy at the test
-    instance; `deploy.py` never reads that variable, so it wrote to every target and the user's editor
-    received the same build. The target is narrowed with `PLUGIN_DIRS` (deploy.py's documented override)
-    and the outcome is **checked**: deploy.py prints how many targets it wrote to and which, and anything
-    other than exactly this instance's plugin directory is an error rather than a warning.
+    ★ Narrowing is `--test-only` and nothing else, and that is measured rather than assumed.
+      `deploy.py` always adds the instance the user works in unless that flag is given; setting
+      `PLUGIN_DIRS` in the environment -- what this function used to do, and what its docstring then
+      asserted worked -- is **never read**, so `test-instance.py start` installed into the user's
+      workspace as well. The target list is read **before** anything is installed: this function used
+      to check the `deployed ... -> <dir>` lines afterwards, which notices that both targets were
+      written only after the write has already happened.
     """
     deploy = os.path.join(ROOT, "scripts", "deploy.py")
     if not os.path.exists(deploy):
         die("scripts/deploy.py not found")
 
     plugin_dir = os.path.join(WORKSPACE_DIR, "data", "plugins", PLUGIN_NAME)
-    env = dict(os.environ, PLUGIN_DIRS=plugin_dir)
-    r = subprocess.run([sys.executable, deploy, "--no-build"],
-                       cwd=ROOT, env=env, capture_output=True, text=True)
+
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    from deploy import list_deploy_targets  # noqa: PLC0415  (scripts/ is not on the path by default)
+
+    listed = list_deploy_targets(True)
+    if listed != [os.path.normpath(plugin_dir)]:
+        die("--test-only must narrow the deploy to exactly [%s]; deploy.py reports %d target(s): %s"
+            % (plugin_dir, len(listed), listed))
+
+    r = subprocess.run([sys.executable, deploy, "--no-build", "--test-only"],
+                       cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
         die("failed to deploy the plugin:\n%s%s" % (r.stdout, r.stderr))
 

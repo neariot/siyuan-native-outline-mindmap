@@ -101,26 +101,16 @@ class RedProof:
     # ---------- deploy ----------
 
     def deploy_targets(self):
-        """Every directory a deploy would install into, as `deploy.py --list` reports it.
+        """Every directory a deploy would install into, as `deploy.py --list --test-only` reports it.
 
-        ★ The flag is passed through, and it changes the answer: `--list` on its own still reports the
-          instance the user works in, so asking without `--test-only` compares two targets against one
-          and fails while the narrowing in fact works.
+        ★ One copy of the rule, in the script that owns the target logic. It lived here first and was
+          duplicated into `test-instance.py`, which is how the second copy came to believe it had
+          narrowed a deploy by setting `PLUGIN_DIRS` —— a variable `deploy.py` never reads.
         """
-        done = subprocess.run(["python3", "scripts/deploy.py", "--list", "--test-only"], cwd=REPO_ROOT,
-                              capture_output=True, text=True)
-        output = (done.stdout or "") + (done.stderr or "")
-        targets = []
-        for line in output.splitlines():
-            line = line.strip()
-            if line.startswith("\u00b7"):
-                # "\u00b7 <path>", optionally followed by an annotation. Only an absolute path is a
-                # target: --list also prints a note line beginning the same way, and reading that as a
-                # directory makes this guard report a target that is not one.
-                path = line[1:].split("\u2190")[0].strip()
-                if path.startswith("/"):
-                    targets.append(path)
-        return targets
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        from deploy import list_deploy_targets  # noqa: PLC0415  (imported here so a dry run needs no config)
+
+        return list_deploy_targets(True)
 
     def deploy(self, when):
         """Build and sync the plugin into the isolated test instance **only**.

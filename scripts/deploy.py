@@ -69,6 +69,37 @@ def api(path, payload):
         return None, str(e)
 
 
+def list_deploy_targets(test_only: bool) -> list:
+    """Every directory a deploy would install into, as this script's own `--list` reports it.
+
+    ★ A subprocess on purpose. The answer has to be the one the command line gives —— `--test-only`
+      included -- rather than a second implementation of the target rule, because a second copy of that
+      rule is exactly what drifted: `--target` only **adds** a target and `PLUGIN_DIRS` is never read,
+      so a helper that believed it had narrowed the deploy by setting that variable narrowed nothing,
+      and the instance the user works in was written anyway.
+
+    ★ The flag is passed through, and it changes the answer: `--list` on its own still reports the
+      instance the user works in, so asking without `--test-only` compares two targets against one
+      and fails while the narrowing in fact works.
+    """
+    cmd = [sys.executable, os.path.abspath(__file__), "--list"]
+    if test_only:
+        cmd.append("--test-only")
+    done = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    output = (done.stdout or "") + (done.stderr or "")
+    targets = []
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("\u00b7"):
+            # "\u00b7 <path>", optionally followed by an annotation. Only an absolute path is a target:
+            # --list also prints a note line beginning the same way, and reading that as a directory
+            # makes a guard report a target that is not one.
+            path = line[1:].split("\u2190")[0].strip()
+            if path.startswith("/"):
+                targets.append(path)
+    return targets
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-build", action="store_true",
