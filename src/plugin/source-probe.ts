@@ -306,24 +306,73 @@ export function enclosingBody(src: string, anchor: string): string {
 /**
  * Remove line and block comments, leaving string literals alone.
  *
- * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads
- *   `/` inside a string, a template or a regular expression as a comment opener in the cases where it
- *   cannot tell them apart, and deleting real code from the probed text turns a check silently green.
+ * ★ Built on the **parser's** view of trivia, not on a scanner run of our own. The scanner version looked
+ *   right and was silently wrong on a `.tsx` source: lexed with the `Standard` variant, JSX text desynchronises
+ *   the scanner at the first apostrophe or backtick inside a JSX text node, and from there on a comment is
+ *   swallowed into whatever token happens to span it —— measured on `outline/Outliner.tsx`, a comment at
+ *   offset 95952 came back as part of a 277-character `FirstTemplateToken`, so it survived "comment
+ *   stripping" and every assertion built on it was reading prose.
+ *
+ *   That direction is the dangerous one: text that only exists in a comment makes a check **pass**, while the
+ *   output still claims the assertion was made about code. (The same trap had already turned three red proofs
+ *   green in this repository —— see AGENTS.md section 7.)
+ *
+ *   So the comments are the ones the parser attached: the trivia between a node's children, before a closing
+ *   brace, and at the head and tail of the file. This is variant-independent, because the parse already used
+ *   the right script kind.
  */
 export function stripComments(src: string): string {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, src);
+  const sf = parse(src);
+  const text = sf.getFullText(sf);
+  const cuts: Array<[number, number]> = [];
+
+  /**
+   * The comments in the trivia that starts at `from`.
+   *
+   * ★ The compiler's own scan stops at the next **token**, so the trivia from a token's end to the next token
+   *   is exactly the gap —— there is no upper bound to pass, and passing one (`child.getFullStart()`, which
+   *   *equals* the previous token's end) made the whole function a no-op that still looked reasonable.
+   */
+  const gap = (from: number): void => {
+    if (from < 0) return;
+    // ★ Both kinds, because the compiler splits them by **position**: a comment on a line of its own is a
+    //   *leading* comment of the next token, and one on the same line as code is a *trailing* comment of the
+    //   previous token. Asking for only the leading ones silently keeps `const a = 1; /* why */ const b = 2;`
+    //   and `const a = 1; // why` —— measured, and the same "silently keeps prose" direction as above.
+    for (const r of ts.getLeadingCommentRanges(text, from) ?? []) cuts.push([r.pos, r.end]);
+    for (const r of ts.getTrailingCommentRanges(text, from) ?? []) cuts.push([r.pos, r.end]);
+  };
+
+  const visit = (node: ts.Node): void => {
+    let lastEnd = -1;
+    ts.forEachChild(node, (child) => {
+      // ★ `getFullStart()` is the start of the child's **trivia**, which is what the compiler's scan needs:
+      //   `getStart()` is the child's first token, and a scan that starts at a token returns nothing at all.
+      //   (That is also why the first child of a block was the one case left unstripped —— `getFullStart()`
+      //   equals the previous token's end for every later child, so five of six cases looked fine.)
+      gap(child.getFullStart());
+      visit(child);
+      lastEnd = child.getEnd();
+    });
+    // Trivia inside this node after its last child: a comment before the closing brace has no node after it.
+    if (lastEnd >= 0) gap(lastEnd);
+  };
+
+  gap(0);
+  visit(sf);
+  gap(sf.getEnd());
+  if (!cuts.length) return src;
+
+  cuts.sort((a, b) => a[0] - b[0]);
   let out = '';
-  let token = scanner.scan();
-  while (token !== ts.SyntaxKind.EndOfFileToken) {
-    if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) {
-      out += src.slice(scanner.getTokenStart(), scanner.getTokenEnd());
-    } else {
-      // A comment becomes a newline, so line structure survives.
-      out += '\n';
-    }
-    token = scanner.scan();
+  let pos = 0;
+  for (const [start, end] of cuts) {
+    if (start < pos) continue; // overlapping ranges
+    // A comment becomes a newline, so line structure survives.
+    out += `${text.slice(pos, start)}\n`;
+    pos = end;
   }
-  return out;
+  return out + text.slice(pos);
 }
 
 /**

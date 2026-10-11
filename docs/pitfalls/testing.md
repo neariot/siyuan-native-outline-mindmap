@@ -823,3 +823,29 @@ must be sanity-checked once (print its length) before a check is built on it.
 `jsxElementsWithAttr`, `jsxElementsWithAttrContaining`).
 
 ---
+
+### A text assertion is only as honest as its comment stripping
+
+**Symptom**: a check that reads source text passes because the string it looks for is in a **comment**, while
+the output claims the assertion was made about code. This is the silent-green direction: an assertion that
+finds prose where it wanted code cannot fail.
+
+**Cause**: `stripComments` was built on a TypeScript **scanner** run by this repository, with the scanner's
+`Standard` variant. On any file containing JSX, JSX text desynchronises the scanner (an apostrophe or a
+backtick inside a text node is enough), and from that point on a comment is swallowed into whatever token
+spans it. Measured on `outline/Outliner.tsx`: an 11,058-character handler body came back with **41** comment
+markers still in it, and a comment at offset 95,952 was inside a 277-character `FirstTemplateToken`. The
+`JSX` variant did not fix it either —— the desynchronisation is not only about JSX text.
+
+**Practice**: strip the comments the **parser** attached, not the ones a scanner of our own finds. The
+compiler already knows where they are, and it is variant-independent: the trivia between a node's children,
+before a closing brace, and at the head and tail of the file. Two details cost a round each ——
+`getLeadingCommentRanges` returns own-line comments only (a comment on the same line as code is a *trailing*
+comment, so both must be collected), and it must be asked from a position **inside trivia**
+(`child.getFullStart()`, never `child.getStart()`, which is a token and returns nothing at all).
+
+**Tests**: `src/plugin/source-probe.test.ts` (the shapes: own-line, same-line, first line of a block, before a
+closing brace, a string holding slashes, JSX text), and `npm run check` as the blast radius —— after the fix
+no existing check went red, which is the evidence that none of them had been matching prose.
+
+---
