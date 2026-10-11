@@ -107,6 +107,13 @@ GATES = [
         "why": "every `t('<key>')` exists in both catalogues, and no entry is dead text",
     },
     {
+        "name": "dead-props",
+        # A component that invokes a callback prop no call site supplies is an affordance that looks wired
+        # and is not (measured: the mind map's to-do checkbox). Optional, so nothing complains.
+        "command": "npx tsx scripts/check-dead-props.ts",
+        "why": "every optional callback prop a component invokes is supplied by a call site",
+    },
+    {
         "name": "privacy",
         "command": "python3 scripts/audit-privacy.py",
         "why": "no id-shaped literal and no credential literal in the source",

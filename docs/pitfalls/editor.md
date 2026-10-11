@@ -179,7 +179,10 @@ the others were not lifted, so they are lost.
 | Zoom | **deliberately not stored** | auto-fitting to the current panel on open is more useful (see `userAdjustedView`) |
 
 ★ Also found along the way: 4 props such as `initialStructure` are **declared but `mount.ts` passes none of them**,
-and `onSettingsChange` is a **dead callback** too (it has no caller at all).
+so whatever `localStorage` holds wins over them and only an empty store falls back to the prop.
+The same pass found a callback that **nothing ever supplied**, `onSettingsChange` —— the component called it four
+times, so it read as "the caller is told when a setting changes" while no caller could ever hear it.
+It is gone rather than left to imply a persistence path that the `localStorage` effect above already owns.
 A prop that is "declared but never passed" raises no error; it just shows up as "I changed it and nothing happened" --
 when you add a field, grep for whether it is passed while you are there.
 

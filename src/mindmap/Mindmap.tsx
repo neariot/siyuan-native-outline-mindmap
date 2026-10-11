@@ -35,7 +35,6 @@ export type {
   MmStructure,
   MmLineStyle,
   MmTopicShape,
-  MindmapSettings,
   BranchPalette,
   MmTheme,
   Box,
@@ -58,7 +57,6 @@ import type {
   MmStructure,
   MmLineStyle,
   MmTopicShape,
-  MindmapSettings,
   Layout,
   Box,
   Edge,
@@ -116,7 +114,6 @@ export default function Mindmap({
   initialThemeIdx = 0,
   initialLineStyle = 'curve',
   initialShape = 'roundedRect',
-  onSettingsChange,
   onEditNode,
   onEditParagraphs,
   editable = true,
@@ -143,7 +140,6 @@ export default function Mindmap({
   initialThemeIdx?: number;
   initialLineStyle?: MmLineStyle;
   initialShape?: MmTopicShape;
-  onSettingsChange?: (settings: MindmapSettings) => void;
   /**
    * Callback for a finished node-text edit (the plugin uses it to write back to SiYuan).
    * Plain text is passed in (HTML markup already stripped); the caller decides how to persist it.
@@ -664,23 +660,19 @@ export default function Mindmap({
 
   const handleStructureChange = (s: MmStructure) => {
     setStructure(s);
-    onSettingsChange?.({ structure: s, themeIdx, lineStyle, shape });
   };
 
   const handleThemeChange = (idx: number) => {
     setThemeIdx(idx);
-    onSettingsChange?.({ structure, themeIdx: idx, lineStyle, shape });
   };
 
   const handleLineStyleChange = (ls: MmLineStyle) => {
     setLineStyle(ls);
-    onSettingsChange?.({ structure, themeIdx, lineStyle: ls, shape });
   };
 
   const handleShapeChange = (sh: MmTopicShape) => {
     const v = normalizeShape(sh);
     setShape(v);
-    onSettingsChange?.({ structure, themeIdx, lineStyle, shape: v });
   };
 
   const toggleCollapse = (nodeId: string, e: React.MouseEvent) => {

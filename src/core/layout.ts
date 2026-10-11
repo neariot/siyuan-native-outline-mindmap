@@ -906,10 +906,3 @@ export function exportFreemind(
   return `<map version="1.0.1"><node TEXT="${esc(title || defTitle)}">${rootNote}${walk(nodes)}</node></map>`;
 }
 
-export interface MindmapSettings {
-  structure: MmStructure;
-  themeIdx: number;
-  lineStyle: MmLineStyle;
-  shape: MmTopicShape;
-}
-

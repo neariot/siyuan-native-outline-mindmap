@@ -365,8 +365,6 @@ conclusion to draw from a complete-looking list of findings.
   The Chinese doc sends the reader to a settings section that is not called that in SiYuan's Chinese UI; the English sibling names it correctly.
 - **low · docs** `docs/SHORTCUTS.md:57`  
   The documented undo-merge window is 1.5s; the implementation merges within 1.2s.
-- **low · docs** `docs/pitfalls/editor.md:182`  
-  6.9d's parenthetical about `onSettingsChange` no longer matches the code: it is dead because nothing supplies it, not because nothing calls it.
 - **low · docs** `docs/pitfalls/style.md:63`  
   A count inside the document is wrong: it says 7 class names and lists 8.
 - **low · docs** `docs/pitfalls/testing.md:591`  
