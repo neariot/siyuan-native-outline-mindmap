@@ -64,7 +64,10 @@ async function step(label, fn) {
 // --- what the spec pays before the browser is even opened: createTempDoc + waitUntilIndexed
 const docId = await step('create the test document (kernel call)', async () => {
   const r = await api.post('/api/filetree/createDocWithMd',
-    { data: { notebook: NB, path: `/E2E-coldstart-${Date.now()}`, markdown: '- 分支一\n' } });
+    // ASCII on purpose: this probe measures timing, not text handling, and a CJK fixture here would be a
+    // *second* copy of the one the specs own -- in a Python file it reads as a literal in shipped code,
+    // which section 2 forbids (the language gate caught exactly that).
+    { data: { notebook: NB, path: `/E2E-coldstart-${Date.now()}`, markdown: '- probe node\n' } });
   return (await r.json()).data;
 });
 await step('wait for the SQL index (waitUntilIndexed)', async () => {

@@ -176,6 +176,14 @@ already warm, and what remains is either the kernel's index or a deliberately cl
 kept because the next person will ask the same question, and re-measuring it by hand is how the 11-second
 number survived.
 
+★ **And `openSiYuan`'s four readiness waits are not four waits.** Timed one after another they *sum* to
+2.2s, which reads like a chain worth collapsing into a `Promise.all`. Measured from one origin, they
+resolve together —— `siyuan.layout` at 1.81s, `#toolbar` at 1.84s, `.layout__center` and the plugin dock
+at 2.26s —— so the wall-clock cost is 2.26s and the sum was an artifact of measuring them serially. Each
+wait is also a genuine precondition (the DOM-exists-but-still-a-splash case is why the screenshot gate is
+there at all), so concurrent waiting would save **nothing** and make a failure harder to attribute. A
+"2.2s" that is really "2.26s total" is exactly the kind of number that invites a pointless refactor.
+
 ### After creating a document, wait for the index
 
 After creating a document, `ensureTestDoc` / `createTempDoc` poll the `blocks` table
