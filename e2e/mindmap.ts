@@ -69,11 +69,13 @@ export async function ensureDockOpen(page: Page): Promise<void> {
       .then((w) => w > 0)
       .catch(() => false);
 
+  // ★ Before the early return below, not after: `openDoc` may find the panel already open, and a toast
+  //   left by an earlier case would then sit there for the whole test and swallow whatever it clicks.
+  //   Clearing it here means every case that opens a document starts from a clean screen.
+  await dismissSnackbars(page);
+
   // Do not click if it is really open —— clicking **toggles** it and closes what is open.
   if (await isOpen()) return;
-
-  // A toast over the dock swallows the clicks below (see `dismissSnackbars`).
-  await dismissSnackbars(page);
 
   // ★★ The precondition, and the reason it is not the same question as "is it open".
   //
@@ -87,14 +89,17 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   //   stuck. The two export cases that run first in their file failed that way while the rest passed.
   //   Waiting here separates "still loading" (wait, up to the same 60s `openDoc` allows for visibility)
   //   from "loaded but would not open" (the error below).
+  // ★ Either shape counts, for the reason `openDoc` documents below: an **empty document** shows
+  //   `.om-mm-empty__title` and may render no view switch at all. Waiting for the switch alone made this
+  //   helper time out on exactly that document —— the one case that must stay openable.
   await page
-    .locator('.om-mm-viewswitch')
-    .last()
+    .locator('.om-mm-viewswitch, .om-mm-empty__title')
+    .first()
     .waitFor({ state: 'attached', timeout: 60_000 })
     .catch(() => {
       throw new Error(
-        'the plugin panel never mounted (.om-mm-viewswitch absent after 60s) —— the plugin did not load; ' +
-          'check the browser console for an onload error',
+        'the plugin panel never mounted (neither .om-mm-viewswitch nor .om-mm-empty__title appeared in ' +
+          '60s) —— the plugin did not load; check the browser console for an onload error',
       );
     });
 
@@ -226,6 +231,24 @@ export async function dismissSnackbars(page: Page): Promise<void> {
       .click({ timeout: 2_000 })
       .catch(() => closes.first().evaluate((el: HTMLElement) => el.click()).catch(() => undefined));
   }
+}
+
+/**
+ * ★★ Expand the **outline** panel's format toolbar.
+ *
+ * The same trap as `.mm-bar` (`ensureBarOpen`): in the E2E's narrow dock the toolbar starts collapsed
+ * (`.om-toolbar--collapsed`), so its controls are `attached` but unclickable —— a click on `☑` (select all)
+ * or on any format button waits for visibility until the test times out, and that failure reads as a
+ * missing feature. The panel exposes the state itself on `.om-toolbar-toggle` (`aria-expanded`), which is
+ * what this reads, rather than inferring it from a bounding box.
+ */
+export async function ensureOutlineToolbarOpen(page: Page): Promise<void> {
+  await dismissSnackbars(page);
+  const toggle = page.locator('.om-toolbar-toggle');
+  if (!(await toggle.isVisible().catch(() => false))) return; // wide dock: no toggle, already expanded
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') return;
+  await toggle.click();
+  await expect(page.locator('.om-toolbar')).not.toHaveClass(/om-toolbar--collapsed/, { timeout: 5_000 });
 }
 
 export async function ensureBarOpen(page: Page): Promise<void> {

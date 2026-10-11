@@ -26,6 +26,16 @@ passed.
 
 Deletion goes through `/api/filetree/removeDocByID` (the older `removeDoc` panics the kernel).
 
+## Deleting a document is not enough: the UI remembers it
+
+SiYuan keeps its open and recently-closed tabs in `<workspace>/data/storage/local.json`, and that file
+survives the document. A stale entry is not inert: on the next page load the kernel is asked for the
+block, answers `未找到 ID 为 … 的内容块`, and the workspace opens the **empty splash instead of a document**
+—— so the next E2E case fails somewhere else entirely (measured: a case that counts rows failed with
+"0 < 0", and the screenshot showed the splash plus the toast). This script therefore prunes the dangling
+references too, which needs the kernel stopped: it holds that file in memory and would write its own copy
+back over the edit.
+
 ## Exit code
 
 0 when the listing (or the deletion) succeeded; 1 when the target could not be reached or the target
@@ -35,7 +45,9 @@ looks like the user's own instance.
 import argparse
 import json
 import os
+import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -60,6 +72,62 @@ def kernel(base, token, path, payload):
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
+
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _live_document_ids(base: str, token: str) -> set:
+    """Every document id the kernel still knows, so a reference can be judged against reality."""
+    rows = kernel(base, token, "/api/query/sql",
+                  {"stmt": "SELECT id FROM blocks WHERE type = 'd' LIMIT 5000"}).get("data") or []
+    return {row["id"] for row in rows}
+
+
+def _instance(action: str) -> None:
+    """Stop or start the isolated instance through the script that owns it."""
+    subprocess.run([sys.executable, os.path.join(HERE, "test-instance.py"), action],
+                   check=True, capture_output=True)
+
+
+def prune_ui_state(base: str, token: str) -> int:
+    """Drop tab and position references to documents that no longer exist.
+
+    The kernel is stopped for the edit: `local.json` is written from memory on shutdown, so editing it
+    while the instance runs only means the next stop overwrites the edit.
+    """
+    live = _live_document_ids(base, token)
+    path = os.path.join(cfg.test_instance_dir, "workspace", "data", "storage", "local.json")
+    if not os.path.exists(path):
+        print("  no local.json, nothing to prune")
+        return 0
+    _instance("stop")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            state = json.load(handle)
+        backup = os.path.join(cfg.test_instance_dir, "workspace", "temp",
+                              "local.json.%d.bak" % int(time.time()))
+        with open(backup, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, ensure_ascii=False)
+        removed = 0
+        tabs = [t for t in state.get("local-closed-tabs", [])
+                if not isinstance(t, dict)
+                or ((t.get("children") or {}).get("blockId") in live)
+                or "blockId" not in (t.get("children") or {})]
+        removed += len(state.get("local-closed-tabs", [])) - len(tabs)
+        state["local-closed-tabs"] = tabs
+        docinfo = {k: v for k, v in state.get("local-docinfo", {}).items() if k in live}
+        removed += len(state.get("local-docinfo", {})) - len(docinfo)
+        state["local-docinfo"] = docinfo
+        positions = {k: v for k, v in state.get("local-fileposition", {}).items() if k in live}
+        removed += len(state.get("local-fileposition", {})) - len(positions)
+        state["local-fileposition"] = positions
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, ensure_ascii=False)
+        print(f"  pruned {removed} dangling reference(s) from local.json (backup: {backup})")
+    finally:
+        _instance("start")
+    return 0
 
 
 def main() -> int:
@@ -132,6 +200,9 @@ def main() -> int:
     print(f"\ndeleted {removed}/{len(victims)}")
     for problem in failed:
         print(f"  failed: {problem}")
+
+    # ★ The documents are gone; the UI state that points at them has to go too (see the docstring).
+    prune_ui_state(base, token)
     return 1 if failed else 0
 
 

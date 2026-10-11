@@ -943,7 +943,9 @@ test('a long node label wraps onto more lines instead of being elided', async ({
   const nb = await resolveTestNotebook(api);
   // A short literal repeated: the auditor caps fixture tokens at 12 characters, and the point here is
   // a label long enough to wrap, not the wording.
-  const long = '长节点标题'.repeat(2);
+  // ★ Four repeats, not two: the point of this case is a label that **wraps**, so its length is part of
+  //   the fixture, not decoration. Two repeats (12 characters) fitted on one line and made the case red.
+  const long = '长节点标题'.repeat(4);
   const id = await createTempDoc(api, nb, `- ${long}\n  - 短标题\n`);
   try {
     await openDoc(page, id);

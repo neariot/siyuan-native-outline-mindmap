@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { openDoc, toMindmapView, toOutlineView, mindmapState } from './mindmap';
+import { openDoc, toMindmapView, toOutlineView, mindmapState, ensureOutlineToolbarOpen } from './mindmap';
 import { outlineState, firstParentBullet, selectedTexts } from './outline';
 import { siyuanUrl, siyuanToken } from './env';
 import {
@@ -298,7 +298,11 @@ test('★ Empty document: a clickable placeholder row; the panel follows once a 
     // ① An empty document should show a **clickable placeholder row** (this is by design, do not "fix" it as a bug)
     const placeholder = page.locator('.node-row-empty').last();
     await expect(placeholder).toBeVisible({ timeout: 15_000 });
-    await expect(placeholder).toContainText(/菜单项一或按 Enter/);
+    // ★ A stable fragment, not the whole sentence. The wording of the placeholder is a catalogue value
+    //   (`lblEmptyClickToStart`) and belongs to the i18n gate; a spec that pins the sentence goes stale
+    //   the moment the wording is improved, and it did (it expected the previous wording and could not
+    //   have passed since). What this case is about is that the row is **there and clickable**.
+    await expect(placeholder).toContainText(/按 Enter 开始输入/);
     // And the notice page should **not** be there any more (removed by the new design)
     expect(
       await page.locator('.om-mm-empty__title').count(),
@@ -646,6 +650,9 @@ test.describe('multi-select and batch operations', () => {
 
   test('"Select all nodes" selects all rows', async ({ page }) => {
     const total = await page.locator('.node-row').count();
+    // ★ The control is in the format toolbar, which starts collapsed in a narrow dock (see
+    //   `ensureOutlineToolbarOpen`). Getting it into a clickable state is the test's job, not the product's.
+    await ensureOutlineToolbarOpen(page);
     await page.locator('button[title*="全选"]').first().click();
     await page.waitForTimeout(400);
 

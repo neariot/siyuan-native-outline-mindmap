@@ -1410,13 +1410,23 @@ export default function Outliner(props: OutlinerProps) {
   /** Summary: the selection must share a parent (not allowed at root level) -> prompt for the body -> attach to the parent node's summaryData */
   const addSummary = (ids: string[]): void => {
     const tops = topLevelIds(ids);
-    if (tops.length < 2) return;
+    // ★ Every path out of here says something. Returning silently told the user nothing at all: the
+    //   control they clicked just did not respond, which reads as a broken button.
+    if (tops.length < 2) {
+      alert(t('msgSummaryHint'));
+      return;
+    }
     const parentOf = (tid: string): string | null => {
       const e = flattenAll(nodes).find((x) => x.node.id === tid);
       return e?.parent ? e.parent.id : null;
     };
     const pid = parentOf(tops[0]);
-    if (!pid || !tops.every((t) => parentOf(t) === pid)) return;
+    if (!pid || !tops.every((t) => parentOf(t) === pid)) {
+      // The selection is already 2+ siblings, so repeating "select 2 or more sibling topics" would say
+      // nothing useful; the reason is that a top-level topic has no parent to hang a summary on.
+      alert(t('msgSummaryTopLevel'));
+      return;
+    }
     const text = prompt(t('phSummaryText'), '');
     if (text === null || text.trim() === '') return;
     const html = `<span>${escapeHtml(text.trim())}</span>`;
@@ -4425,6 +4435,19 @@ export default function Outliner(props: OutlinerProps) {
 
       {/* Outline view: bottom floating icon action bar */}
       <div className="om-dock" onMouseDown={(e) => e.preventDefault()}>
+        {selected.length >= 2 && (
+          // ★ Deliberately **not** behind `canSummary`, which the selection bar uses. At the top level the
+          //   bar hides its button (there is no parent to attach to), and hiding is the one answer that
+          //   teaches nothing: the dock keeps the control, and `addSummary` explains the reason when it is
+          //   clicked. Only ≥2 selected decides whether it is offered.
+          <button
+            type="button"
+            {...tooltip(t('cmdAddSummary'), 'dock-btn summary-btn')}
+            onClick={() => addSummary(selected)}
+          >
+            {t('cmdAddSummary')}
+          </button>
+        )}
         <button
           type="button"
           {...tooltip(t('tipAddSiblingEnter'), 'dock-btn add-btn')}
