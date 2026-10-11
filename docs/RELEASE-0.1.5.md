@@ -109,6 +109,8 @@ document's data.
 - Playwright browser E2E: **103 cases green** (`npm run test:e2e`, 34.6 min on the isolated test instance).
   The release adds one further case (the to-do toggle above), which was verified on its own and shown red
   against the defect; the full suite has not been re-run since it was added.
+- The packaged build was checked against what the cases ran: `package.zip`'s `index.js` hashes to
+  `9fec48a03ed8`, the same bytes that were exercised, and it carries the to-do fix.
 - Live desktop check (`npm run verify`) and the Android device check (`npm run verify:android`) were **not** run
   for this release: the first wants a document in a workspace the plugin is running against, and the second
   needs the Android/Redroid toolchain. Neither is claimed as verified here.
