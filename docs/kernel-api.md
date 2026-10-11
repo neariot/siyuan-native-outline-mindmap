@@ -208,3 +208,36 @@ one keyed off `data-theme`, is dead).
 
 ---
 
+## 7.14 `openTab` needs the real application instance, and `action` is not what breaks it
+
+Opening a document or a block from a plugin goes through the official
+`openTab` from the `siyuan` module (`window.siyuan.ws.app.openTabById` does
+not exist, and neither does `window.siyuan.model` / `layout.openTab`). The
+`doc` branch takes `{app, doc:{id, zoomIn, action}, keepAlive}`.
+
+A 2×2 controlled experiment decided which argument matters:
+
+| `app` | `action` | page errors | result |
+|---|---|---|---|
+| real app | not passed | 0 | renders fine |
+| real app | passed | 0 | renders fine |
+| plugin instance | not passed | 1 | blank page |
+| plugin instance | passed | 1 | blank page |
+
+⇒ **`app` is the only independent variable.** The kernel's `class Ks`
+constructor does `s.plugins.forEach(...)` with `s === app`, and a plugin
+instance has no `plugins` field, so the call throws inside the kernel and the
+tab is left blank. The error appears in the background console only —— the
+user sees a click that did nothing.
+
+⇒ The claim "`action` must be passed or the kernel crashes", which had been
+inferred from reading the kernel bundle, does not match measurement. `action`
+is still worth passing (`['cb-get-focus', 'cb-get-scroll']`, the combination
+SiYuan itself uses) because it decides focus/scroll after opening.
+
+★ **There is no sensible fallback for `app`.** Substituting the plugin
+instance when `window.siyuan.ws.app` is unavailable produces exactly the
+blank-page row above, so the precondition is checked and the user is told
+(`errClientNotReady`) instead (`src/plugin/mount.ts`).
+
+---

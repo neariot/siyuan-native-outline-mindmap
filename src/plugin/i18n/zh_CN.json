@@ -31,6 +31,7 @@
   "cmdSave": "保存",
   "cmdSaveAsNewDoc": "另存为新文档",
   "errAddNodeNotWritten": "新增节点未能写入思源",
+  "errClientNotReady": "思源客户端尚未就绪，无法打开该引用",
   "errCreateSubDocFailed": "子文档创建失败",
   "errDeleteNotWritten": "删除未能写入思源",
   "errDroppedBlocksNoText": "拖入的块没有可读文本",

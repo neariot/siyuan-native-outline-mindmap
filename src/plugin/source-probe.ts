@@ -113,6 +113,42 @@ export function callSites(src: string, pattern: RegExp): string[] {
 }
 
 /**
+ * The value written for one property of an object-literal argument, for every call whose callee matches.
+ *
+ * The invariant this exists for: "this call must pass **this** value for that property" —— usually
+ * because the alternative is known to fail (measured), so substituting it is a defect rather than a courtesy.
+ *
+ * ★ Read through the parser, not with a regex over the call's text: that text contains the whole object
+ *   literal, so a regex finds the first `app:` it can see and may report a nested or commented one. It is
+ *   also why the value comes back as *one property's initialiser* rather than as the call's text ——
+ *   `app: appRef ?? plugin` and `app: appRef` must not read the same.
+ */
+export function callArgProps(
+  src: string,
+  pattern: RegExp,
+  prop: string,
+): Array<{ value: string; line: number }> {
+  const sf = parse(src);
+  const found: Array<{ value: string; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && pattern.test(node.expression.getText(sf))) {
+      for (const arg of node.arguments) {
+        if (!ts.isObjectLiteralExpression(arg)) continue;
+        for (const p of arg.properties) {
+          if (!ts.isPropertyAssignment(p)) continue;
+          if (p.name.getText(sf).replace(/['"]/g, '') !== prop) continue;
+          const { line } = sf.getLineAndCharacterOfPosition(p.initializer.getStart(sf));
+          found.push({ value: p.initializer.getText(sf), line: line + 1 });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+/**
  * Remove line and block comments, leaving string literals alone.
  *
  * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads

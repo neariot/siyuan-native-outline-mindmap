@@ -31,6 +31,7 @@
   "cmdSave": "Save",
   "cmdSaveAsNewDoc": "Save as new document",
   "errAddNodeNotWritten": "The new node could not be written to SiYuan",
+  "errClientNotReady": "The SiYuan client is not ready yet; that reference cannot be opened",
   "errCreateSubDocFailed": "Failed to create sub-document",
   "errDeleteNotWritten": "The deletion could not be written to SiYuan",
   "errDroppedBlocksNoText": "The dropped blocks contain no readable text",
