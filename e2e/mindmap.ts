@@ -77,34 +77,25 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   // Do not click if it is really open —— clicking **toggles** it and closes what is open.
   if (await isOpen()) return;
 
-  // ★★ The precondition, and the reason it is not the same question as "is it open".
+  // ★★ Order matters, and the old order was wrong. `.om-dock` / `.om-mm-viewswitch` /
+  //   `.om-mm-empty__title` are the *panel's* content, so they exist only while the panel is **open** ——
+  //   and SiYuan persists whether it is open in `local-plugin-docks.show` (measured: `false`), which the
+  //   panel's own layout carries across restarts. Waiting for that content *before* clicking the icon
+  //   therefore made the helper unable to open a closed dock at all: it timed out after 60s on a plugin
+  //   that had loaded, registered its icon and was working, and the message blamed `onload`.
   //
-  //   `.om-mm-viewswitch` exists only once the plugin has registered its panel, so **attached** means
-  //   "the plugin loaded". A closed panel is *legitimately* `display:none` with width 0, which is why
-  //   visibility (`isVisible`, the first bounding box) cannot be used here —— it would report a
-  //   correctly-closed panel as a failure.
-  //
-  //   Measured: the cold start after a fresh page load takes longer than the click loop's own 3 × 3s
-  //   budget, so the loop could expire while the plugin was still mounting and report the panel as
-  //   stuck. The two export cases that run first in their file failed that way while the rest passed.
-  //   Waiting here separates "still loading" (wait, up to the same 60s `openDoc` allows for visibility)
-  //   from "loaded but would not open" (the error below).
-  // ★ Either shape counts, for the reason `openDoc` documents below: an **empty document** shows
-  //   `.om-mm-empty__title` and may render no view switch at all. Waiting for the switch alone made this
-  //   helper time out on exactly that document —— the one case that must stay openable.
-  await page
-    .locator('.om-mm-viewswitch, .om-mm-empty__title')
-    .first()
-    .waitFor({ state: 'attached', timeout: 60_000 })
+  //   So: find the icon (which is in the DOM either way), click until the panel really renders, and only
+  //   then talk about mounting. `isVisible` still must not be used as the open/closed test —— a closed
+  //   panel is legitimately `display:none` with width 0.
+  const entry = page.locator('[data-type*="native-outline-mindmap"]').first();
+  await entry
+    .waitFor({ state: 'visible', timeout: 60_000 })
     .catch(() => {
       throw new Error(
-        'the plugin panel never mounted (neither .om-mm-viewswitch nor .om-mm-empty__title appeared in ' +
-          '60s) —— the plugin did not load; check the browser console for an onload error',
+        'the plugin never registered its dock icon ([data-type*="native-outline-mindmap"] did not appear ' +
+          'in 60s) —— the plugin did not load; check the browser console for an onload error',
       );
     });
-
-  const entry = page.locator('[data-type*="native-outline-mindmap"]').first();
-  await entry.waitFor({ state: 'visible', timeout: 30_000 });
 
   // Keep clicking until it is really open.
   //
@@ -116,7 +107,7 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   //   and a plain click's actionability check is blocked by the tooltip or lands off target.
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await entry.click({ force: true });
-    const deadline = Date.now() + 3_000;
+    const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       if (await isOpen()) return;
       await page.waitForTimeout(50);

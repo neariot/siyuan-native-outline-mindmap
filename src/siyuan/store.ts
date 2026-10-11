@@ -1178,18 +1178,33 @@ export class SiYuanStore {
         skipped++;
       }
 
-      // ★★★ task list item checked-state sync (native API: /api/block/updateTaskListItemMarker)
+      // ★★★ task list item marker sync (native API: /api/block/updateTaskListItemMarker)
+      //
+      // ★ Two defects met here and together lost every **newly created** to-do: `itemTaskStatus` holds only
+      //   the items that already carried a marker, so for a node whose to-do is being *introduced* the
+      //   lookup is `undefined` —— and requiring `oldStatus !== undefined` skipped precisely the case that
+      //   had to write the marker. A plain block update does not move a task marker, so the kernel never
+      //   learned about the task: the outline showed a checkbox and the document showed a plain list item.
+      //   The failure was then swallowed, so nothing said so.
+      //   A missing entry means "no marker yet" —— a state to write, not a reason to skip.
+      //   Removing a to-do (taskStatus 0) is left to the block update, which drops the task subtype.
       let liId = this.lastListItems.get(n.id);
-      if (liId && n.taskStatus !== undefined && typeof this.client.updateTaskListItemMarker === 'function') {
+      if (!liId && (n.taskStatus === 1 || n.taskStatus === 2)) {
+        // ★ A task state with no list-item mapping is not a quiet no-op: the plugin is showing a to-do that
+        //   it has no way to write, which is exactly how a created to-do went missing from the document.
+        console.warn('[om] no listItem mapping for a task node, cannot set its marker:', n.id);
+      }
+      if (liId && (n.taskStatus === 1 || n.taskStatus === 2)) {
         const oldStatus = this.lastDomTree?.itemTaskStatus?.get(liId);
-        if (oldStatus !== undefined && oldStatus !== n.taskStatus) {
+        if (oldStatus !== n.taskStatus) {
           const marker = n.taskStatus === 2 ? 'X' : ' ';
           try {
             await this.client.updateTaskListItemMarker(liId, marker);
             this.lastDomTree?.itemTaskStatus?.set(liId, n.taskStatus);
             updated++;
-          } catch {
-            /* ignore a single task-marker failure */
+          } catch (e) {
+            // Loud rather than swallowed: this is the only call that makes a to-do a to-do in the document.
+            console.warn('[om] could not set the task marker for', liId, e);
           }
         }
       }

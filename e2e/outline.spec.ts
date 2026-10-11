@@ -566,6 +566,60 @@ test.describe('multi-select and batch operations', () => {
     ).toHaveCount(1);
   });
 
+  test('★ creating a to-do in the outline reaches the document', async ({ page }) => {
+    // Creating one is a different write from toggling one: the list item carries no task marker yet, so the
+    // plugin has to *introduce* the state (subtype `u` -> `t`, plus the marker) rather than change one that
+    // is already there. A plain block update does not move a task marker, so this path needs its own case.
+    const api = await kernelApi(siyuanUrl(), siyuanToken());
+    let docId = '';
+    try {
+      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 分支一\n');
+      await openDoc(page, docId);
+      await toOutlineView(page);
+      // A narrow dock starts with the format bar collapsed, so the to-do button is in the DOM but hidden.
+      await ensureOutlineToolbarOpen(page);
+      await page.locator('.node-row').first().click();
+
+      // ★ `:visible` matters twice over: a narrow dock collapses the format bar, and when documents are
+      //   switched SiYuan does not destroy the previous panel's DOM, so a bare `.first()` can resolve to a
+      //   hidden leftover from another document. And if the control really is missing, the message has to
+      //   say what *is* there —— otherwise the only way to find out is another run.
+      // Selected by `title`, not by class: plugin classes are rewritten by the build-time CSS scope, so the
+      // class in the source is not the class in the DOM (the select-all case selects by title for the same
+      // reason). `:visible` is still needed, and the failure has to say what it saw.
+      // The format bar's to-do button carries its shortcut in the title (`待办 (Ctrl+Shift+L)`), so match the
+      // label only; `:visible` is what keeps a collapsed bar or a stale panel out of the way.
+      const btn = page.locator('button[title*="待办"]:visible').first();
+      if ((await btn.count()) === 0) {
+        const shown = await page
+          .locator('button[title]:visible')
+          .evaluateAll((els) => els.map((e) => e.getAttribute('title') || '?'));
+        throw new Error(
+          'the outline offers no visible to-do control. Visible button titles: ' + JSON.stringify(shown),
+        );
+      }
+      await expect(btn, 'the outline should offer the to-do control').toBeVisible();
+      await btn.click();
+
+      // ★ Split the failure in half, because the two halves have different owners: first the plugin's own
+      //   view (did the action reach its own state?), then the document (did the state reach SiYuan?).
+      await expect(
+        page.locator('.taskbox input[type="checkbox"]:visible').first(),
+        'the outline should show the to-do it was just asked to create',
+      ).toBeVisible();
+
+      await expect
+        .poll(async () => {
+          const res = await api.call('/api/export/exportMdContent', { id: docId });
+          return JSON.stringify(res.data ?? '');
+        }, { message: 'the document should hold a task marker', timeout: 10000 })
+        .toMatch(/\[[ xX]\]\s/);
+    } finally {
+      if (docId) await removeDoc(api, docId);
+      await api.dispose();
+    }
+  });
+
   test('★ a completed task survives reopening the document', async ({ page }) => {
     // `taskStatus` is stored as SiYuan's native task marker, and *done* is the state at risk: creating a
     // task makes a todo, so only the flip to done has to travel through the dedicated kernel call
