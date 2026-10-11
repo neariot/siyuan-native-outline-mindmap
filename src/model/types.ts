@@ -93,6 +93,12 @@ export const TASK_NONE = 0;
 export const TASK_TODO = 1;
 export const TASK_DONE = 2;
 
+/** ★ What a node's own to-do checkbox does next: none → todo → done → none.
+ *  Shared because two views draw that checkbox and the cycle is one behaviour: an outline copy and a
+ *  mind map copy can only stay the same cycle while there is one of them. */
+export const nextTaskStatus = (status: number | undefined): number =>
+  status === TASK_TODO ? TASK_DONE : status === TASK_DONE ? TASK_NONE : TASK_TODO;
+
 // Aligned with X's official limits (evidence from the bundle: titleMaxLength=100, nodeWordLimit=2000):
 // Title at most 100 characters; each topic's body / description note at most 2000 characters (truncated automatically when over).
 export const TITLE_MAX = 100;

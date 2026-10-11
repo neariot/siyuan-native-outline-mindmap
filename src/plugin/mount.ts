@@ -13,6 +13,8 @@ import Mindmap from '../mindmap/Mindmap';
 import Outliner from './outline/Outliner';
 import { setOutlineImageClient } from './outline/images';
 import type { OutlineNode } from '../model/types';
+import { nextTaskStatus } from '../model/types';
+import { cloneNodes, touch } from '../model/tree';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
@@ -2116,6 +2118,18 @@ function OmTabApp({
         },
       selectedId,
       onSelectNode: setSelectedId,
+      // ★ The mind map draws a to-do's checkbox with a pointer cursor and handles its click, but **nothing
+      //   ever passed `onToggleTask`**, so clicking it did nothing at all (measured: the box stays unfilled
+      //   and no check mark appears, whatever the state). Same cycle as the outline's own checkbox, and the
+      //   same path as every other structural change, so it becomes an undo step and is written at once.
+      onToggleTask: (id: string) => {
+        const draft = cloneNodes(nodesRef.current ?? []);
+        const node = findNode(draft, id);
+        if (!node) return;
+        node.taskStatus = nextTaskStatus(node.taskStatus);
+        touch(node);
+        void handleOutlineChange(draft, 'struct');
+      },
       onDeleteNode: (id: string) => {
         void handleDeleteNode(id);
       },

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DocMeta, OutlineNode } from '../../model/types';
-import { TASK_DONE, TASK_NONE, TASK_TODO, NODE_WORD_LIMIT, TITLE_MAX } from '../../model/types';
+import { TASK_DONE, TASK_NONE, TASK_TODO, NODE_WORD_LIMIT, TITLE_MAX, nextTaskStatus } from '../../model/types';
 import {
   cloneNodes,
   findNode,
@@ -1268,7 +1268,7 @@ export default function Outliner(props: OutlinerProps) {
     mutate((draft) => {
       const n = findNode(draft, id);
       if (!n) return;
-      n.taskStatus = n.taskStatus === TASK_TODO ? TASK_DONE : n.taskStatus === TASK_DONE ? TASK_NONE : TASK_TODO;
+      n.taskStatus = nextTaskStatus(n.taskStatus);
       touch(n);
     });
   };

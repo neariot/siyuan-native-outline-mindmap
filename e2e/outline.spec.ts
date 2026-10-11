@@ -761,9 +761,30 @@ test.describe('multi-select and batch operations', () => {
 
       // The mind map draws task state separately (`isDone` / `isTodo`), and no case covered it: an outline
       // that is right does not make the map right, they are two renderers over the same field.
+      // ★ The map draws it as SVG (`mm-checkbox`), not as the outline's `.taskbox input` -- asking for the
+      //   outline's markup here asserts an element the map never renders, so it cannot pass whatever the
+      //   state is. What distinguishes the two states is drawn shape: an unchecked to-do is an outline
+      //   (`fill="none"`), a completed one is filled and carries a check mark.
       await toMindmapView(page);
-      await expect(page.locator('.mm-node .taskbox input[type="checkbox"]').first(),
-        'the mind map should show the task state it was given').toBeVisible();
+      const mmRect = page.locator('.mm-node .mm-checkbox rect').first();
+      await expect(mmRect, 'the mind map should draw the to-do it was given').toHaveCount(1);
+      expect(await mmRect.getAttribute('fill'), 'an unchecked to-do is drawn unfilled').toBe('none');
+      await expect(page.locator('.mm-node .mm-checkbox path'), 'an unchecked to-do carries no check mark')
+        .toHaveCount(0);
+
+      await page.locator('.mm-node .mm-checkbox').first().click();
+      await expect
+        .poll(async () => page.locator('.mm-node .mm-checkbox path').count(),
+          { message: 'toggling in the mind map should draw the completed task', timeout: 10000 })
+        .toBe(1);
+      // Drawing it is half the claim: the map could redraw its own state and never write it. The kernel is
+      // the other half, and it is the half only a write can satisfy.
+      await expect
+        .poll(async () => {
+          const res = await api.call('/api/export/exportMdContent', { id: docId });
+          return String(res.data?.content ?? '');
+        }, { message: 'a to-do completed in the mind map should reach the document', timeout: 10000 })
+        .toMatch(/\[[xX]\]/);
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();
