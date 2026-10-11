@@ -346,6 +346,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 | `python3 scripts/check.py` | every fast gate in one command, with a time budget |
 | `python3 scripts/run-e2e.py <substring>` | one suite instead of all of them; durations reported per case |
 | `python3 scripts/script_log.py --report` | how long every script actually takes —— the evidence behind "fast enough for the foreground" |
+| `python3 scripts/check-unsaved-fields.py` | a node model field no reader restores —— the defect behind summary, link lines, the mask and the due date; fold state is printed, not failed |
 
 **Where knowledge lives.** Anything another developer or agent needs —— a measured fact, a pitfall, a
 convention, a command —— belongs **in this repository** (`AGENTS.md`, `docs/`, code comments, tests).

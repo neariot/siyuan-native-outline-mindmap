@@ -54,6 +54,15 @@ GATES = [
         "why": "offline unit tests, no SiYuan needed",
     },
     {
+        # ★ The defect that cost three features and a fourth field: a model field with a control, a renderer
+        #   and no read path, so the value was gone on reload and nothing could say so. See the module
+        #   docstring for why fold state is reported but not failed.
+        "name": "unsaved-fields",
+        "command": "python3 scripts/check-unsaved-fields.py",
+        "why": "every node model field is either restored by a reader or named by the runtime",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-unsaved-fields.py").is_file(),
+    },
+    {
         "name": "docs-index",
         "command": "python3 scripts/check-docs-index.py",
         "why": "every entry docs/PITFALLS.md advertises really exists",

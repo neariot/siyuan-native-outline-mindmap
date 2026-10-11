@@ -41,12 +41,24 @@ export interface OutlineNode {
   taskStatus?: number; // 0/undefined = none, 1 = todo, 2 = done
   // Heading level. SiYuan natively supports levels 1~6, so it is no longer capped at 3.
   heading?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
-  finish?: boolean; // wire passthrough (a field of real X nodes, no local semantics yet; kept on import, written back as-is on export)
+  /** Fold state of this node: **view state, deliberately not saved.**
+   *
+   * Nothing persists or restores it, and that is intended —— folding is a way of looking at a document,
+   * not something the document says, so it starts unfolded when the document is reopened. It is named by
+   * the runtime (`model/tree.ts` skips the children of a folded node, the outline toggles it), which is
+   * why `scripts/check-unsaved-fields.py` reports it as in-session rather than as a defect.
+   */
+  collapsed?: boolean;
+  // ★ Five fields were declared here and named by no module at all —— not a reader, not a writer, not the
+  //   wire layer: `finish` on the node, and `mindmapStructure` / `mindmapThemeIdx` / `mindmapLineStyle` /
+  //   `mindmapShape` on the document. Each looked like a feature's storage and was in fact vestigial (the
+  //   mind map keeps its structure, theme and folded branches in `localStorage`, `om-mm-prefs` /
+  //   `om-mm-collapsed:<doc>`), and `finish`'s comment described a passthrough the code never performed.
+  //   They were removed rather than left as declarations nothing can honour.
   // Summary (`summaryData`) and link lines (`linkLines`) used to live here. SiYuan has no native carrier for
   // either, so they were never persisted: they were session-local view state that vanished on reload, while
   // the UI went on offering them. They are removed rather than left looking supported (section 8).
   numbered?: boolean;
-  collapsed?: boolean; // view state only, stripped on export
   children: OutlineNode[];
 }
 
@@ -61,10 +73,6 @@ export interface DocMeta {
   encrypted?: boolean;
   version?: number;
   deletedAt?: number;
-  mindmapStructure?: string;
-  mindmapThemeIdx?: number;
-  mindmapLineStyle?: string;
-  mindmapShape?: string; // local semantics (MmTopicShape), no wire mapping, never written on export
   /** Attached paragraphs of the title node (the document root) (the paragraphs that precede all nodes in the document) */
   paragraphs?: string[];
   // ★ : There used to be a `mindmapWire?: OmWireConfig` (the mindmap config preserved
