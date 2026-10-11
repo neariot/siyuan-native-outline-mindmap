@@ -203,3 +203,30 @@ that names a **different** cause and the second one hands you nothing but a stac
 the guard and rejects a document-ID anchor cleanly (`code:-1` + that message), while `insertBlock`
 **does not** —— the check exists next door and was not copied, which is itself the hint about where the
 fault sits.
+
+### 6.21 Probing the running instance: `Tab(url)` opens a NEW tab, so you measure a blank page
+
+**Symptom**: a read-only probe asking whether the running SiYuan exposes `window.siyuan.ws.app` answered
+`typeof window.siyuan === "undefined"`, and every candidate path came back missing. The conclusion "this
+kernel version does not expose the application instance" was one step from being written down as a fact,
+and it would have been wrong: the real page reports `window.siyuan.ws.app` as an object whose `plugins` is
+an array.
+
+**Cause**: `scripts/cdp.py`'s `Tab(url)` **opens a new tab and navigates it to `url`** —— it does not attach
+to an existing page. Passing the CDP endpoint (`cfg.cdp_http`) therefore measured a fresh tab showing the
+DevTools endpoint, where `window.siyuan` is undefined because SiYuan is not loaded there at all. The tab
+list gives it away: the probe's own tab is titled `127.0.0.1:9333`, next to the real one
+(`… stage/build/desktop/?id=…`).
+
+**Practice**: to read the **running** page, connect to the existing target's `webSocketDebuggerUrl` from
+`/json/list` and send `Runtime.evaluate` —— read-only, and nothing is left behind (`Tab`'s tab must be
+closed by hand anyway; two probes left two tabs titled after the endpoint). Pick the target by its URL
+(`/stage/build/`), never "the first tab", and never trust a negative global read without checking **which
+page** it came from. The same trap applies to any "does the plugin expose X" question: an empty page
+answers no to everything.
+
+**Why it matters**: this is the false-signal family (see `TESTING.md`: false signals are more dangerous than
+false failures). A blank page does not fail —— it answers every question about the product with a clean,
+confident "no".
+
+---
