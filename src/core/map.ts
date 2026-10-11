@@ -18,6 +18,7 @@
 //   <span data-noderef>    → ((id 'text')) ⚠️ requires a block ID
 //   <img data-img>         → ![alt](assets/...) ⚠️ requires asset management
 
+import { flatNodes } from '../model/tree';
 import type { OutlineNode } from '../model/types';
 
 /** SiYuan block ID format: 14-digit timestamp + '-' + 7 lowercase alphanumerics */
@@ -1055,15 +1056,6 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   lastTitleParagraphs = titleParagraphs;
   (roots as any).titleParagraphs = titleParagraphs;
   return roots;
-}
-
-/** Flatten the node tree depth-first (internal helper) */
-function flatNodes(nodes: OutlineNode[], out: OutlineNode[] = []): OutlineNode[] {
-  for (const n of nodes) {
-    out.push(n);
-    if (n.children?.length) flatNodes(n.children, out);
-  }
-  return out;
 }
 
 /**

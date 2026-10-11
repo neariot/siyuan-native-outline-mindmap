@@ -14,6 +14,7 @@
 //   - deletion goes through removeDocByID, i.e. into the SiYuan trash
 //   - writes always use `dataType=dom` (see core/blockdom.ts) to avoid markdown's blank-line semantics
 
+import { collectIds, flatNodes } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
 import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, taskStateOfKramdownLine } from '../core/map';
@@ -1133,14 +1134,7 @@ export class SiYuanStore {
     nodes: OutlineNode[],
   ): Promise<{ updated: number; skipped: number; structural: boolean }> {
     const blockMap = await this.loadBlockMap(docId);
-    const flat: OutlineNode[] = [];
-    const walk = (ns: OutlineNode[]) => {
-      for (const n of ns) {
-        flat.push(n);
-        if (n.children?.length) walk(n.children);
-      }
-    };
-    walk(nodes);
+    const flat: OutlineNode[] = flatNodes(nodes);
 
     // first read the current text of each block, for comparison
     const current = new Map<string, string>();
@@ -1667,14 +1661,7 @@ export class SiYuanStore {
     //     So re-read once first: if the second read's coverage is clearly better, it was lag and execution continues;
     //     only two incomplete reads decide that the mapping really is incomplete and abort.
     {
-      const flat: OutlineNode[] = [];
-      const collectAll = (list: OutlineNode[]): void => {
-        for (const n of list) {
-          flat.push(n);
-          if (n.children?.length) collectAll(n.children);
-        }
-      };
-      collectAll(nodes);
+      const flat: OutlineNode[] = flatNodes(nodes);
       // only validate when "the tree is clearly larger than SiYuan's default cap of 64",
       // otherwise small documents (which are all new nodes anyway) would be wrongly blocked.
       const looksBroken = (m: Map<string, string>): boolean =>
@@ -2768,14 +2755,7 @@ export class SiYuanStore {
     docId: string,
     nodes: OutlineNode[],
   ): Promise<{ removed: number }> {
-    const alive = new Set<string>();
-    const collect = (list: OutlineNode[]): void => {
-      for (const n of list) {
-        alive.add(n.id);
-        if (n.children?.length) collect(n.children);
-      }
-    };
-    collect(nodes);
+    const alive = collectIds(nodes);
 
     // ★★★ Record the tree this decision used —— before deleting, the **current** tree must confirm it once more
     //   (a fix; the root cause of nodes lost when Enter is pressed repeatedly).

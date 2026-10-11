@@ -15,7 +15,7 @@ import Outliner from './outline/Outliner';
 import { setOutlineImageClient } from './outline/images';
 import type { OutlineNode } from '../model/types';
 import { toggleTaskStatus } from '../model/types';
-import { cloneNodes, containsNode, touch } from '../model/tree';
+import { cloneNodes, collectIds, containsNode, flatNodes, touch } from '../model/tree';
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
@@ -722,14 +722,7 @@ function OmTabApp({
       //   ★ It reads `nodesRef.current` —— the latest tree **at the moment of the call**,
       //     not a cache, not reused for reads or writes, just one final confirmation before deletion.
       storeRef.current.liveTreeProbe = (): Set<string> => {
-        const ids = new Set<string>();
-        const walk = (list: OutlineNode[] | null | undefined): void => {
-          for (const n of list ?? []) {
-            ids.add(n.id);
-            if (n.children?.length) walk(n.children);
-          }
-        };
-        walk(nodesRef.current);
+        const ids = collectIds(nodesRef.current);
         return ids;
       };
     // ★ Hand the same client to the outline editor's image adapter layer.
@@ -756,14 +749,7 @@ function OmTabApp({
     }
     // Key point: register the baseline "every node matches SiYuan right now".
     // Without this step the first external change would be misjudged as a conflict and refused.
-    const flat: OutlineNode[] = [];
-    const collect = (list: OutlineNode[]): void => {
-      for (const n of list) {
-        flat.push(n);
-        if (n.children?.length) collect(n.children);
-      }
-    };
-    collect(finalTree);
+    const flat: OutlineNode[] = flatNodes(finalTree);
     conflictRef.current.noteAllSynced(flat);
     // ★ Switching documents or reloading must set the structure baseline back to null:
     //   otherwise the new document's first write-back compares against **the previous document's** structure fingerprint,
@@ -1239,14 +1225,8 @@ function OmTabApp({
           const a = JSON.stringify(lastCommittedRef.current ?? []);
           const b = JSON.stringify(next);
           // Find the first differing node ID and use it as the merge key
-          const flat = (t: OutlineNode[]): OutlineNode[] => {
-            const out: OutlineNode[] = [];
-            const w = (l: OutlineNode[]) => { for (const n of l) { out.push(n); if (n.children?.length) w(n.children); } };
-            w(t);
-            return out;
-          };
-          const fa = flat(lastCommittedRef.current ?? []);
-          const fb = flat(next);
+          const fa = flatNodes(lastCommittedRef.current ?? []);
+          const fb = flatNodes(next);
           for (let i = 0; i < Math.max(fa.length, fb.length); i++) {
             if (JSON.stringify(fa[i]) !== JSON.stringify(fb[i])) return fb[i]?.id ?? fa[i]?.id ?? '?';
           }

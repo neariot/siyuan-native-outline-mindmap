@@ -22,6 +22,47 @@ export interface FlatEntry {
   depth: number;
 }
 
+/**
+ * Depth-first flat list of **every** node, ignoring fold state.
+ *
+ * ★★ Five separate copies of this walk existed —— `mount.ts` had two (one as a local `flat`/`w` pair inside
+ *    the undo-merge key, one collecting for a baseline), `store.ts` had two (`walk`, `collectAll`), and
+ *    `core/map.ts` had this one as a private helper. Measured against a chain, a wide tree, an empty list, a
+ *    node with no `children` key and a five-deep chain, all five produced identical output, so consolidating
+ *    them needed no judgement about semantics —— which is exactly the kind of duplication worth removing,
+ *    because the next caller to copy one of them has a 1-in-5 chance of picking a shape that differs subtly.
+ *
+ *    It takes an optional `out` so an existing accumulator can be extended, which is what two of the five
+ *    call sites did; new callers should omit it.
+ */
+export function flatNodes(nodes: OutlineNode[], out: OutlineNode[] = []): OutlineNode[] {
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children?.length) flatNodes(n.children, out);
+  }
+  return out;
+}
+
+/**
+ * The id of every node in the tree, depth-first.
+ *
+ * Two call sites collected this by hand (`mount.ts` for the "what still exists" probe before a deletion,
+ * `store.ts` for the "what is alive" set a prune reads). They agreed, but the first had to guard
+ * `list ?? []` because it is called with a possibly-unset ref while the second could assume an array ——
+ * the sort of difference that invites a third copy with a third set of assumptions.
+ */
+export function collectIds(nodes: OutlineNode[] | null | undefined): Set<string> {
+  const ids = new Set<string>();
+  const walk = (list: OutlineNode[] | null | undefined): void => {
+    for (const n of list ?? []) {
+      ids.add(n.id);
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return ids;
+}
+
 /** Depth-first flat list of *visible* nodes (collapsed subtrees hidden). */
 export function flattenVisible(nodes: OutlineNode[]): FlatEntry[] {
   const out: FlatEntry[] = [];

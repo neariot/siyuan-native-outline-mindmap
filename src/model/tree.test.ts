@@ -11,7 +11,7 @@
 //   harmless: a third caller copying either one would enforce the safety rule in one view and not the
 //   other. One function, one answer, and this file pins the answer.
 
-import { flattenAll, flattenVisible, findNode, findPath, removeNode, containsNode, anyContains } from './tree';
+import { flattenAll, flattenVisible, findNode, findPath, removeNode, containsNode, anyContains, flatNodes, collectIds } from './tree';
 import type { OutlineNode } from './types';
 
 let pass = 0;
@@ -108,6 +108,49 @@ const tree = (): OutlineNode[] => [mk('a', [mk('b', [leaf('c')]), leaf('d')])];
   check('a drop of b onto c is refused (descendant)', containsNode(sub, 'c') === true);
   check('a drop of b onto b is refused (itself)', containsNode(sub, 'b') === true);
   check('a drop of b onto d is allowed (a sibling)', containsNode(sub, 'd') === false);
+}
+
+// ---- collectIds: "which node ids are in this tree" -----------------------------------------------
+//
+// `mount.ts` collected these for the "what still exists" probe before a deletion, `store.ts` for the set a
+// prune reads. Both hand-rolled; the first needed a `?? []` guard because it is called with a possibly-unset
+// ref, so the two carried different assumptions about their input.
+{
+  check('collectIds: every id, depth-first',
+    [...collectIds(tree())].join(',') === 'a,b,c,d');
+  check('collectIds: undefined is an empty set, not a crash', collectIds(undefined).size === 0);
+  check('collectIds: null is an empty set, not a crash', collectIds(null).size === 0);
+  check('collectIds: an empty list is an empty set', collectIds([]).size === 0);
+  check('collectIds: a node with no children array still contributes its id',
+    collectIds([{ id: 'solo', modified: 0, text: 'solo' } as OutlineNode]).has('solo'));
+  check('collectIds: a duplicate id collapses (it is a Set)',
+    collectIds([mk('x'), mk('x')]).size === 1);
+}
+
+// ---- flatNodes: the one flatten five call sites used to hand-roll -------------------------------
+//
+// `mount.ts` (twice), `store.ts` (twice) and `core/map.ts` each had their own copy of this walk. They were
+// measured equivalent —— chain, wide tree, empty list, a node with no `children` key, five-deep —— so this
+// pins that equivalence rather than the shape of any one copy.
+{
+  check('flatNodes: depth-first, parents before children',
+    flatNodes(tree()).map((n) => n.id).join(',') === 'a,b,c,d');
+  check('flatNodes: a wide tree keeps sibling order',
+    flatNodes([mk('x'), mk('y'), mk('z')]).map((n) => n.id).join(',') === 'x,y,z');
+  check('flatNodes: an empty list is empty',
+    flatNodes([]).length === 0);
+  check('flatNodes: a node with no children array is still listed',
+    flatNodes([{ id: 'solo', modified: 0, text: 'solo' } as OutlineNode]).map((n) => n.id).join(',') === 'solo');
+  check('flatNodes: a five-deep chain is fully walked',
+    flatNodes([mk('1', [mk('2', [mk('3', [mk('4', [mk('5')])])])])]).map((n) => n.id).join(',') === '1,2,3,4,5');
+  check('flatNodes: ignores fold state (that is flattenVisible\'s job)',
+    (() => { const t = tree(); t[0].children[0].collapsed = true; return flatNodes(t).length === 4; })());
+  // The optional accumulator is what two call sites relied on.
+  {
+    const acc: OutlineNode[] = [];
+    const got = flatNodes(tree(), acc);
+    check('flatNodes: extends a supplied accumulator', acc.length === 4 && got === acc);
+  }
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

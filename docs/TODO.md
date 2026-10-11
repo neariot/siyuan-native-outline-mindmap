@@ -50,6 +50,26 @@ release while every gate stays green.
   (the 25% / 75% boundaries are unit-tested, and all three zones are now covered end-to-end —— what is
   missing is a case for the *boundary* values themselves).
 
+## Modularity
+
+The three big files are the obstacle: `Outliner.tsx` 4,686 lines, `store.ts` 2,982, `mount.ts` 2,352. The
+work is not "split them up" but "stop the same idea being written twice", so each pass removes a
+duplication rather than moving lines.
+
+- **Done: the depth-first flatten.** Five copies existed —— two in `mount.ts`, two in `store.ts`, one
+  private to `core/map.ts`. Measured equivalent on a chain, a wide tree, an empty list, a node with no
+  `children` key and a five-deep chain, so consolidation needed no judgement. Now one `flatNodes` in
+  `model/tree.ts`, with the equivalence pinned by unit cases.
+- **Next candidates**, by how much a divergence would hurt rather than by size:
+  - **Safety rules**, because two copies of one of these already disagreed once (the cycle guard, merged
+    earlier). Look for: the deletion guards in `store.ts` (which nodes may be removed), and the
+    write-back ordering rules in `mount.ts`.
+  - **The id-`Set` collector** —— two copies (`mount.ts` baseline ids, `store.ts` alive ids). Small, but
+    the same shape; fold it in the next time either file is touched.
+  - **The state-carrying walks** (`store.ts:2027` carries `parentId`, `Outliner.tsx:1758` carries `depth`,
+    `core/layout.ts:954` builds a string). These are *not* the same function, so they stay until a third
+    caller wants the same extra state —— then the shared version takes the state as a callback.
+
 ## Refuted / already resolved
 
 The audit's own contract is "an entry leaves it by being fixed, **or by being refuted in writing**". The
