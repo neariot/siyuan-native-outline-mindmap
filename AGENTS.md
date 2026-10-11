@@ -146,13 +146,19 @@ Without the user's explicit consent, do not:
 
 A local `git commit` during development is fine.
 
-**The source is not published.** The text of the distribution repository's README is kept at
-`docs/DISTRIBUTION-README.md`, so it is versioned rather than parked in scratch. The plugin is
-distributed as a packaged build attached to a Release
-(see the hard rule in section 1: nothing about a notebook the user works in may be published, and the
-safest way to keep that true is to publish the *build*, not the source). A distribution repository
-therefore holds a README and the packaged asset and nothing else, and the development checkout keeps
-**no remote** —— a `git push` from here would republish everything.
+**The source is published.** `main` is pushed to `neariot/siyuan-native-outline-mindmap`, and the
+plugin is also distributed as a packaged build attached to a Release —— the bazaar reads the latest
+Release, so a version is not released until its `package.zip` is attached.
+
+★ **Publishing the source raises the bar on section 1 rather than lowering it.** Everything in the
+repository is public and permanent: a comment, a fixture, a log or a commit message is as published as
+the code around it, and rewriting history afterwards does not unpublish what somebody already fetched.
+The static privacy rules cannot tell an invented id from one copied out of a workspace, so before a
+release that makes new material public, run `python3 scripts/audit-privacy.py --live` —— it asks the
+running instance whether the ids in the tree still resolve, which is the one check no pattern can do.
+
+`docs/DISTRIBUTION-README.md` is kept because the distribution listing's text is versioned there rather
+than parked in scratch.
 
 ## 5. Environment and configuration
 
