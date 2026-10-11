@@ -981,3 +981,73 @@ test.describe('multi-select and batch operations', () => {
     }
   });
 });
+
+test('★ Backspace at the start of a to-do turns it into a plain node', async ({ page }) => {
+  // Reported: "at the very start, Backspace" does not turn a to-do back into an ordinary node.
+  //
+  // Measured before the fix, with the caret at the front of a to-do's text:
+  //   · the FIRST node: **nothing happened at all** —— no branch of the Backspace handler matched
+  //     (the node is not empty, and there is no previous node to merge into), so the key was swallowed;
+  //   · any other node: it merged into the previous one, so the marker went —— but so did the node.
+  // Neither is "stop being a to-do", and there was no keyboard way to do it at all.
+  //
+  // ★ Both positions are asserted, because they failed for **different reasons** and a case that only
+  //   checked one would have left the other broken (that is exactly how the silent no-op survived).
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    // ★ BOTH nodes must carry a marker: the case asserts the second one is left alone, and a second node
+    //   that was never a to-do cannot show that (measured: the first version of this fixture wrote
+    //   `- 待办B`, so the expected "- [ ] 待办B" was describing a state the document never had).
+    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办A\n- [ ] 待办B\n');
+    await openDoc(page, docId);
+    await toOutlineView(page);
+
+    const lines = async (): Promise<string[]> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String(res.data?.content ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.includes('待办'));
+    };
+
+    // ---- the FIRST node
+    const first = page.locator('.om-outline-wrap .node-row').first().locator('.node-text').first();
+    await first.click();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Backspace');
+    await expect
+      .poll(lines, { message: 'the first to-do should lose its marker and keep its text', timeout: 10_000 })
+      .toEqual(['- 待办A', '- [ ] 待办B']);
+
+    // The node itself must still be there: dropping the marker is not deleting the node.
+    expect(
+      await page.locator('.om-outline-wrap .node-row').count(),
+      'the node must survive losing its marker',
+    ).toBe(2);
+    expect(
+      await page.locator('.taskbox input[type="checkbox"]:visible').count(),
+      'only the first node stopped being a to-do',
+    ).toBe(1);
+
+    // ---- a node that is NOT first (the merge branch used to swallow this one)
+    const second = page.locator('.om-outline-wrap .node-row').nth(1).locator('.node-text').first();
+    await second.click();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Backspace');
+    await expect
+      .poll(lines, { message: 'the second to-do should also lose its marker, not merge away', timeout: 10_000 })
+      .toEqual(['- 待办A', '- 待办B']);
+    expect(
+      await page.locator('.om-outline-wrap .node-row').count(),
+      'the second node must survive too —— merging into the previous node would have destroyed it',
+    ).toBe(2);
+    expect(
+      await page.locator('.taskbox input[type="checkbox"]:visible').count(),
+      'no to-do left in the document',
+    ).toBe(0);
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});

@@ -82,6 +82,17 @@ export function TaskBox({
         type="checkbox"
         checked={checked}
         onChange={onCycle}
+        // ★★★ The checkbox must not take focus (measured: Delete did nothing on a to-do node).
+        //
+        //   A checkbox is focusable, so clicking it moves `document.activeElement` onto the `<input>`.
+        //   The node's own key handler is attached to the `.node-text` div **beside** this control, not to
+        //   an ancestor, so every key pressed after that click went to the checkbox instead: Delete removed
+        //   nothing, and the node could not be deleted without clicking back into its text first.
+        //
+        //   `preventDefault()` on `mousedown` is what keeps the focus where it was while leaving the click
+        //   itself alone —— the box still toggles (measured: focus stays on `.node-text`, the state changes,
+        //   and Delete then removes the node as it does for any other node).
+        onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
         title={
           status === TASK_TODO

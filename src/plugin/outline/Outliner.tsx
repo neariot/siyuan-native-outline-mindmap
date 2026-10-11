@@ -2291,6 +2291,23 @@ export default function Outliner(props: OutlinerProps) {
         const vis = flattenVisible(displayedNodes);
         const i = vis.findIndex((x) => x.node.id === id);
         const cur = nodeById.get(id);
+
+        // ★★★ A to-do at the start of its own text drops the **marker** and keeps the node.
+        //
+        //   This is the only keyboard way to turn a to-do back into an ordinary node, and there was none:
+        //   measured, with the caret at the front of a to-do's text, Backspace did **nothing at all** when
+        //   the node was the first one (no branch matched: not empty, and there is no previous node to
+        //   merge into), and merged the node *into the previous one* when it was not (the marker went, but
+        //   so did the node and its identity). Neither is "stop being a to-do".
+        //
+        //   It is checked **before** the merge branch on purpose: two different intentions are expressed by
+        //   the same key here, and "the node is a task" is the narrower one. The merge branch keeps its
+        //   meaning for every other node, and `Delete` is left alone (it still joins the next node).
+        if (cur && cur.taskStatus) {
+          e.preventDefault();
+          setTaskMany([id], TASK_NONE);
+          return;
+        }
         if (cur && htmlToText(cur.text).trim() === '' && cur.children.length === 0) {
           e.preventDefault();
           if (i > 0) {

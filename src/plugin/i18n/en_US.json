@@ -166,7 +166,7 @@
   "skGroupSelect": "Selection",
   "skGroupView": "View and panels",
   "skMergeNext": "At line end/start: merge into next topic",
-  "skMergePrev": "At line start: merge into previous topic",
+  "skMergePrev": "At line start: a to-do becomes a plain node, otherwise merge into the previous topic",
   "skMoveByDrag": "Drag the bullet to move the topic",
   "skMoveUpDown": "Move topic up / down",
   "skNewSibling": "New sibling topic",

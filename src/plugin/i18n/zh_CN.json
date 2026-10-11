@@ -166,7 +166,7 @@
   "skGroupSelect": "选择",
   "skGroupView": "视图与面板",
   "skMergeNext": "行尾/行首：并入下一个主题",
-  "skMergePrev": "行首：并入上一个主题",
+  "skMergePrev": "行首：待办则转为普通节点，否则并入上一个主题",
   "skMoveByDrag": "拖拽圆点移动主题",
   "skMoveUpDown": "上移 / 下移主题",
   "skNewSibling": "新建同级主题",

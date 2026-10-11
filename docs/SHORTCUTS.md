@@ -6,7 +6,7 @@
 |---|---|
 | `Enter` | Split the current node at the caret; when the node is empty, create a new empty sibling **at the same level** (press again and again to keep creating them). **This holds at every level**, it never promotes or demotes — use `Shift+Tab` to outdent |
 | `Tab` / `Shift+Tab` | Indent / outdent (supports multi-select) |
-| `Backspace` (at line start) | Merge into the previous node; an empty node is deleted outright |
+| `Backspace` (at line start) | **A to-do becomes a plain node** (the marker is dropped, the node stays); otherwise merge into the previous node; an empty node is deleted outright |
 | `Delete` (at line end) | Merge into the next node |
 | `Alt+↑` / `Alt+↓` | Move the node up / down |
 | `Ctrl+D` | Duplicate topic |
