@@ -910,3 +910,24 @@ written into `docs/MAPPING.md`, and about to be reported as a bug. The gesture w
 ★ The same shape as the mind map's descent bug and the dock helper: the criterion was wrong, the product was
 fine. When a measurement says "broken", suspect the measurement first — this repository has now paid for that
 lesson five times.
+
+## A drag case that drags the wrong row tests nothing about the rule
+
+**Symptom**: a new case for "moving a row carries its subtree" passed **with the subtree-dropping mutation in
+place**. It looked like coverage and had no defensive value.
+
+**Cause**: the case built a multi-selection (a parent 甲 and its child 乙) and then dragged a **third** row,
+丁. A drag replaces the selection with the row under the cursor, so `moveDrop` received `tops=[丁]` — a
+single childless row. The subtree was never touched, so nothing about subtrees could fail.
+
+The instrumented handler said so on the first run: `OLMOVEDROP zone=above tops=[丁] moving=[[丁, 0]]`, where
+the `0` is the child count of the row actually being moved.
+
+**Practice**:
+- **Log what the handler receives** when a red proof will not go red. `tops` / `moving` names the row and its
+  child count, which turns "the test is useless" from a guess into a reading. This is the `--show-targets`
+  lesson again: ask the thing that decides.
+- A drag case must drag **the row the rule is about**. Say which row the case picks and why, in a comment, so
+  the next person does not "simplify" it back to a row that proves nothing.
+- **A case that cannot go red is not coverage.** Both this file and `docs/TESTING.md` already say it; the
+  only way it gets caught is by running the mutation, every time, before keeping the case.

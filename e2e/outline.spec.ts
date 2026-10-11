@@ -1099,3 +1099,48 @@ test('★ dragging a row above, onto, and below another gives three different re
     await api.dispose();
   }
 });
+
+test('★ moving a parent takes its whole subtree', async ({ page }) => {
+  // `removeNode` splices the node out of the draft **with its `children` intact**, and `moveDrop` re-inserts
+  // that same object —— so a moved row carries its descendants. Nothing asserted it, so a reimplementation
+  // that rebuilt the node on the way through (dropping the descendants) would silently flatten documents.
+  //
+  // ★★★ The case must drag the **parent**, and the first version did not. It built a multi-selection of
+  //     甲+乙 and then dragged **丁**, so the selection was replaced by 丁 and `moveDrop` moved a single
+  //     childless row —— the subtree was never touched. It passed with the subtree-dropping mutation in
+  //     place, which is the vacuous pass this repository keeps warning about. The instrumented
+  //     `moveDrop` said so plainly: `tops=[丁] moving=[[丁, 0]]`.
+  //
+  // Measured with the parent dragged: `甲(乙(丙)) / 丁` → `丁 / 甲 / 乙 / 丙`, subtree and order intact.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n- 丁\n');
+    await openDoc(page, docId);
+    await toOutlineView(page);
+
+    const markdown = async (): Promise<string> => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String(res.data?.content ?? '');
+    };
+    const rows = page.locator('.om-outline-wrap .node-row');
+    expect(await rows.count(), 'the fixture should show four rows').toBe(4);
+
+    // Drag 甲 —— the row that OWNS 乙 and 丙 —— below 丁.
+    await dragRowOnto(page, 0, 3, 0.92);
+
+    // 丁 first, then 甲 with 乙 and 丙 still nested beneath it, one occurrence each.
+    await expect
+      .poll(markdown, { message: 'the moved parent must keep its subtree', timeout: 15_000 })
+      .toMatch(/- 丁\s*\n\s*- 甲\s*\n {2,}- 乙\s*\n {4,}- 丙/);
+
+    const doc = await markdown();
+    for (const label of ['甲', '乙', '丙', '丁']) {
+      const count = (doc.match(new RegExp(`- ${label}`, 'g')) ?? []).length;
+      expect(count, `"${label}" must appear exactly once after the move (got ${count})`).toBe(1);
+    }
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
