@@ -279,3 +279,33 @@ does nothing at all. A reference click there is a silent no-op; there is no
 error to catch (see §7.14 for the desktop branch).
 
 ---
+
+## 7.16 An insert anchor: the same call, three outcomes, all `code: 0`
+
+`insertBlock`'s result depends on the **structure the anchor sits in**, and every
+form reports success:
+
+| anchor | outcome |
+|---|---|
+| `previousID` = the parent's paragraph, no child list yet | lands at the **top level**, silently |
+| `previousID` = the parent's paragraph, a child list exists | enters the child list, but **overwrites** the existing item |
+| `previousID` = the parent **listItem** | no data loss, but the block lands in the wrong place |
+
+⇒ **No anchor form gives "correct position" *and* "no data loss" at once.** The
+plugin's strategy follows from the table: take the form that cannot lose data,
+then let `moveNodes` correct the position afterwards.
+
+An anchor that cannot be resolved behaves the same way as a valid one —— it
+returns `code: 0` and the block lands at the **top level**, so "the call
+succeeded" says nothing about where the block is.
+
+**The return type is not fixed either**: creating a list returns `l`, appending
+to an existing list returns `i`. `parentID` accepts a listItem, a document and a
+heading, but **not a List** (`code: -1`).
+
+**Methodology**: when every plugin-side probe is green (anchor, tree, block IDs,
+text) and the document still changed, and `syncDeletions` never fired, the
+plugin is not the suspect —— the kernel is. Reading the plugin's own code
+further cannot find it.
+
+---

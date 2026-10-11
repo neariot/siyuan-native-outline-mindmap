@@ -3,142 +3,78 @@
  *
  * Corresponds to .logs/API-GOTCHAS.md §102 / §103 / §104.
  *
- * ★ Core point: `code:0` only means "the transaction was accepted", **not that the result matches expectations**.
- *   And some damage is **not on the plugin side at all** —— every stage of the plugin is correct,
- *   yet the kernel still changes other places while it processes the transaction.
+ * ★ Core point: `code:0` only means "the transaction was accepted", **not that the result matches expectations** ——
+ *   the same insert lands at the top level, inside the child list, or overwrites an existing item depending
+ *   on the structure its anchor sits in, and all three return `code: 0`. The measurements are in
+ *   `docs/kernel-api.md` §7.16 (with the table of the three anchor forms).
+ *
+ * ★ What this file asserts is the plugin's **discipline** in the face of that, because the measurements
+ *   themselves were previously modelled here with local functions returning hand-written literals ——
+ *   `anchorUnresolved.landedAt === 'top'` for an object constructed with `landedAt: 'top'` —— so no change
+ *   to the plugin could turn them red. The rules it holds now:
+ *
+ *   · an insert takes the anchor form that cannot lose data (the parent's **paragraph**), and
+ *   · the position is never assumed: the real structure is read back from the kernel's in-memory AST, the
+ *     target container is resolved per parent, and a node whose real parent cannot be resolved is
+ *     **skipped** instead of moved somewhere arbitrary.
  */
 export {};
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { callSites, fnBody } from './source-probe';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
+};
+
+// ★ `fnBody` strips comments by default: these assertions must be satisfied by **code**, since the names
+//   also appear in the paragraphs that explain the rule.
+const storeSrc = fs.readFileSync(path.join(__dirname, '..', 'siyuan', 'store.ts'), 'utf8');
+
+console.log('=== the insert anchor is the form that cannot lose data ===');
+{
+  const body = fnBody(storeSrc, 'private async ensureChildList(');
+  check('★ the child list is created for a list item (precondition: the method was found)', body.length > 0);
+  check('★★ the anchor is the parent\'s **paragraph** block, taken from the live AST or the mapping',
+    body.includes('itemToParagraph') && body.includes('lastBlockMap'),
+    'an anchor that is the List itself is the measured overwrite/top-level form');
+  check('★ the anchor is handed to the kernel as previousID',
+    /previousID/.test(body) || /insertBlock/.test(body), body.slice(0, 120));
 }
 
-console.log('=== §102 the semantics of previousID change with the structure the anchor sits in ===');
+console.log('\n=== the position is never assumed: it is read back and corrected ===');
 {
-  /** The behaviour of the same call when the child list is absent / present */
-  type Behaviour = 'nested-ok' | 'flat-silent' | 'overwrite';
-  const withParentParagraph = (childListExists: boolean): Behaviour =>
-    childListExists ? 'overwrite' : 'flat-silent';
-
-  check('child list absent → silently lands at the top level (not nested)', withParentParagraph(false) === 'flat-silent');
-  check('★★ child list present → it enters the child list but **overwrites** the existing item', withParentParagraph(true) === 'overwrite');
-  check('★ the two cases behave differently ⇒ the semantics are not a stable "insert after"', withParentParagraph(false) !== withParentParagraph(true));
-
-  // Switch to another anchor type
-  const withParentListItem = (): Behaviour => 'flat-silent';
-  check('★ with the parent listItem as anchor → no data loss, but it lands in the wrong place', withParentListItem() === 'flat-silent');
-
-  const all: Behaviour[] = [withParentParagraph(false), withParentParagraph(true), withParentListItem()];
-  check(
-    '★★★ **No anchor form** can guarantee "correct position" + "no data loss" at the same time',
-    !all.includes('nested-ok'),
-  );
+  const body = fnBody(storeSrc, 'private async moveNodes(');
+  check('★ the method exists (precondition)', body.length > 0);
+  check('★★ the real structure comes from the kernel AST (`actualParentOf`), not from the call\'s return value',
+    body.includes('actualParentOf'), 'the return type of insertBlock is not fixed (§7.16)');
+  check('★★★ a node whose real parent cannot be resolved is **skipped**, never moved blind',
+    body.includes('if (!actualParentBlock) continue;'),
+    'the guard is what stops "moved: 0" from meaning "somebody looked at it"');
+  check('★★ the target container is resolved per parent, not derived from the node id',
+    body.includes('resolveWantList(') && body.includes('wantListId'),
+    'the container the node should be under is looked up for its parent');
 }
 
-console.log('\n=== §103 anchor resolution fails → silently lands at the top level ===');
+console.log('\n=== the resolution helper really exists and is called ===');
 {
-  interface InsResult {
-    code: number;
-    /** The type of the returned block ID. ★ Not fixed! */
-    returnedType: 'l' | 'i' | '';
-    /** Where it actually landed */
-    landedAt: 'top' | 'child' | 'nowhere';
-  }
-  const anchorUnresolved: InsResult = { code: 0, returnedType: '', landedAt: 'top' };
-  const anchorOk: InsResult = { code: 0, returnedType: 'i', landedAt: 'child' };
-
-  check('★★ "invalid anchor" and "valid anchor" return **exactly the same** code', anchorUnresolved.code === anchorOk.code);
-  check(
-    '★★ yet they land in different places ⇒ looking at the code alone cannot detect the failure',
-    anchorUnresolved.landedAt !== anchorOk.landedAt,
-  );
-  check(
-    '★ the only reliable predicate is reading the structure back afterwards (getBlockKramdown)',
-    anchorUnresolved.landedAt === 'top' && anchorOk.landedAt === 'child',
-  );
-}
-
-console.log('\n=== §104 the return type of insertBlock is not fixed ===');
-{
-  /**
-   * Creating a **new** list returns a List `l`;
-   * appending to an **existing** list returns a listItem `i`.
-   * Treating it as a listItem every time → namespace mismatch (same family as §92).
-   */
-  const createdNewList = (): 'l' | 'i' => 'l';
-  const appendedToExisting = (): 'l' | 'i' => 'i';
-
-  check('★ creating a list → returns **List** `l`', createdNewList() === 'l');
-  check('★ appending to an existing list → returns **listItem** `i`', appendedToExisting() === 'i');
-  check(
-    '★★ the return type is not fixed ⇒ callers cannot treat it as a listItem every time',
-    createdNewList() !== appendedToExisting(),
-  );
-
-  // parentID does not accept a List
-  const acceptedParentKinds = new Set(['listItem', 'doc', 'heading']);
-  check('★ parentID accepts listItem / document / heading', acceptedParentKinds.has('listItem') && acceptedParentKinds.has('doc'));
-  check('★★ parentID does **not** accept a List (measured code:-1)', !acceptedParentKinds.has('list'));
-}
-
-console.log('\n=== Methodology: every probe is green but the store changed → suspect the kernel, do not keep digging through your own code ===');
-{
-  interface ProbeReport {
-    anchor: boolean;
-    tree: boolean;
-    blockIds: boolean;
-    text: boolean;
-    deletions: boolean;
-  }
-  /** Measured probe results for the #53 scenario */
-  const allGreen: ProbeReport = { anchor: true, tree: true, blockIds: true, text: true, deletions: false };
-  const pluginIsInnocent = Object.entries(allGreen)
-    .filter(([k]) => k !== 'deletions')
-    .every(([, v]) => v);
-
-  check('★ all four probes are green: anchor / tree / block IDs / text', pluginIsInnocent);
-  check('★ syncDeletions **never fired once** (rules out a plugin deletion)', allGreen.deletions === false);
-  check(
-    '★★ yet the 子T block **completely vanished** from the store ⇒ the culprit is inside the kernel',
-    pluginIsInnocent && allGreen.deletions === false,
-  );
-}
-
-console.log('\n=== The trade-off: the insert only has to avoid data loss, the position is left to moveNodes ===');
-{
-  /**
-   * Since no anchor satisfies both conditions at once,
-   * the strategy should be: pick the one that **does not lose data** (even if the position is wrong),
-   * then let moveNodes correct the position.
-   */
-  interface Strategy {
-    name: string;
-    losesData: boolean;
-    positionRight: boolean;
-  }
-  const strategies: Strategy[] = [
-    { name: 'parentID=List', losesData: false, positionRight: true }, // but code:-1, unusable
-    { name: 'previousID=父段落块', losesData: true, positionRight: true },
-    { name: 'previousID=父listItem', losesData: false, positionRight: false },
-    { name: 'previousID=兄弟段落块', losesData: true, positionRight: true },
-  ];
-  const usable = strategies.filter((s) => s.name !== 'parentID=List');
-
-  const noLoss = usable.filter((s) => !s.losesData);
-  check('★ among the usable forms, **only one** avoids data loss', noLoss.length === 1);
-  check('★ it = previousID=父listItem', noLoss[0].name === 'previousID=父listItem');
-  check(
-    '★★ but its position is wrong ⇒ it **must** fall back on moveNodes',
-    noLoss[0].positionRight === false,
-  );
+  // Precondition of the check above: a call to a helper that does not exist would be a compile error, but a
+  // helper that is never called would leave the container resolution in the caller's hands —— so both ends
+  // are asserted, found through the parser because the name also appears in prose.
+  const defs = callSites(storeSrc, /^resolveWantList$/);
+  check('★★ resolveWantList() is called from the move pass (and only there)', defs.length === 1, defs.join(', '));
+  check('★ it reads the top list from the AST rather than assuming the first list in the document',
+    fnBody(storeSrc, 'const resolveWantList = async (').includes('topListId'),
+    'topListId');
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

@@ -149,7 +149,9 @@ After the fix: `['甲','  同E','  子T','乙','丙']` —— both children pres
 
 ★ **Lesson**: "SiYuan and the UI disagree" points in **two opposite directions**. A **missing** node (this entry: the insert destroyed an existing sibling) and a **duplicated** node (1.9: the mapping key drifted) have different root causes and different fixes —— read the direction off the symptom before touching anything.
 
-**Test**: `src/plugin/kernel-side-effects.test.ts`, `src/plugin/stale-mapping.test.ts`
+**Tests**: `src/plugin/stale-mapping.test.ts` (the liveness rule itself: `deadMappingSuspects()` and
+`suspectedStructuralChange()` from `src/siyuan/store.ts`, both directions red-proved) and
+`src/plugin/kernel-side-effects.test.ts` (the anchor discipline that keeps a wrong position recoverable).
 
 ---
 
@@ -201,7 +203,9 @@ So the strategy has to be: take the loss-free form, then let `moveNodes` correct
 
 **Practice**: treat "the order was not corrected" as a state of its own —— `moved: 0` means "nobody looked at this node", not "it is already in place". Keep every node's mapping on a real listItem (that is what 1.7's anchor rule buys), and when the real type of a mapped block is unknown, resolve it before deciding to skip.
 
-**Test**: `src/plugin/kernel-side-effects.test.ts`, `src/plugin/stale-mapping.test.ts`
+**Tests**: `src/plugin/stale-mapping.test.ts` (the liveness rule itself: `deadMappingSuspects()` and
+`suspectedStructuralChange()` from `src/siyuan/store.ts`, both directions red-proved) and
+`src/plugin/kernel-side-effects.test.ts` (the anchor discipline that keeps a wrong position recoverable).
 
 ---
 
