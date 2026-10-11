@@ -1,0 +1,17 @@
+# npm scripts that no document names, with the reason each is deliberately undocumented.
+#
+# Everything else in package.json must appear in a document a reader acts on, so a command cannot go
+# stale unnoticed. Each entry here is a decision, not an oversight —— add a line only when the script is
+# genuinely not something a document should tell someone to run.
+#
+# Read by scripts/check-documented-commands.py.
+
+# Invoked by `npm run check` (the fast gate runner), never by hand. Documenting them would advertise a
+# second way to run one gate, and `check` is the documented one.
+dead-props
+verify-css
+verify-pkg
+
+# A development aid that captures the current keymap for comparison. It is not part of any workflow a
+# document describes, and its output is only meaningful next to the keymap it is diffed against.
+snapshot-keymap

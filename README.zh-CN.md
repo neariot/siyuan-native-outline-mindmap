@@ -70,15 +70,12 @@
 ## 构建
 
 ```bash
-npm install
-TARGET=plugin npm run build   # 产物 → dist-plugin/
+npm ci
+npm run build      # 产物 → dist-plugin/
 ```
 
-开发预览（独立的 Web 调试外壳，非插件运行环境）：
-
-```bash
-npm run dev                   # :8901
-```
+构建产物就是一个思源插件（CommonJS，`siyuan` 作为 external，不产出 HTML）。
+**没有 target 开关** —— 构建就是构建插件本身。
 
 技术栈：React 18 + Rsbuild + TypeScript + KaTeX。
 

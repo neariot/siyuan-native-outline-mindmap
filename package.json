@@ -4,9 +4,7 @@
   "private": true,
   "description": "A SiYuan plugin that edits native SiYuan blocks through outline / mindmap views: single source of data, no private copy, no custom attributes",
   "scripts": {
-    "dev": "rsbuild dev",
     "build": "rsbuild build && python3 scripts/verify-css-scope.py",
-    "preview": "rsbuild preview",
     "test": "python3 scripts/run-tests.py",
     "typecheck": "tsc --noEmit",
     "verify": "python3 scripts/verify-live.py",

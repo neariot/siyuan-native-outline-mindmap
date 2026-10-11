@@ -76,6 +76,16 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-vacuous-tests.py").is_file(),
     },
     {
+        # ★ A command in prose is never executed by anything, so nothing noticed that the Chinese README
+        #   told users to run a flag the build does not have, or that two scripts served workflows that no
+        #   longer exist. This checks the part a script can decide: that every command a document names
+        #   resolves, and that every script is either documented or an explicit allowlist decision.
+        "name": "documented-commands",
+        "command": "python3 scripts/check-documented-commands.py",
+        "why": "every `npm run X` a document names exists, and every script is documented or allowlisted",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-documented-commands.py").is_file(),
+    },
+    {
         "name": "docs-index",
         "command": "python3 scripts/check-docs-index.py",
         "why": "every entry docs/PITFALLS.md advertises really exists",
