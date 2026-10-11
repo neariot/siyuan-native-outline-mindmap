@@ -15,107 +15,78 @@
  *   after typing:  push=1, skip=1     ← called, but skipped
  *   Ctrl+Z:  undo=1, depth=0    ← the stack is empty
  *   after the second edit: push=2, skip=1, depth=1  ← normal only from the second one on
+ *
+ * ★ This file used to carry an `UndoStack` class —— a model of the behaviour described above, written inside
+ *   the test —— and asserted on it, so neither half of the real defect could turn it red. Both halves are now
+ *   read from `src/plugin/mount.ts`:
+ *
+ *   1. a null argument must not mean "silently push nothing": `pushUndo` falls back to the previous tree;
+ *   2. the snapshot must be initialised **when the document is loaded**, or the first edit has nothing to
+ *      push. Everything else is asserted too —— the callers' convention, and the push itself.
  */
 export {};
 
-interface Node {
-  id: string;
-  text: string;
-}
-
-/** Reproduces pushUndo's "no snapshot → silently skip" behavior */
-class UndoStack {
-  private stack: Node[][] = [];
-  private prevTree: Node[] | null = null;
-  public skips = 0;
-  public pushes = 0;
-
-  /** Simulates loading a document: ★ when fixed=true, prevTree is initialized too */
-  load(tree: Node[], fixed: boolean): void {
-    this.stack = [];
-    this.prevTree = fixed ? tree : null;
-  }
-
-  /** One edit: push the "state before the change" first, then advance prevTree */
-  edit(next: Node[]): void {
-    // callers always pass prevTree (same as the real code)
-    const before = this.prevTree;
-    const src = before ?? this.prevTree;
-    if (!src) {
-      this.skips++;
-      // ★ the real code does `return` here — it skips the push,
-      //   but the **caller still advances prevTree afterwards** (in mount.ts
-      //   `prevTreeRef.current = nodesRef.current` runs unconditionally after pushUndo).
-      //   So the second edit has something to push — that is exactly why "only the first edit cannot be undone".
-      this.prevTree = next;
-      return;
-    }
-    this.pushes++;
-    this.stack.push(src);
-    this.prevTree = next;
-  }
-
-  depth(): number {
-    return this.stack.length;
-  }
-}
+import fs from 'node:fs';
+import path from 'node:path';
+import { assignmentsTo, callArgs, enclosingBody, fnBody } from './source-probe';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
+const check = (name: string, cond: boolean, detail = ''): void => {
   if (cond) {
     pass++;
     console.log(`  ✅ ${name}`);
   } else {
     fail++;
-    console.log(`  ❌ ${name}`);
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
 };
 
-const A: Node[] = [{ id: 'a', text: '甲' }];
-const B: Node[] = [{ id: 'a', text: '甲Q' }];
-const C: Node[] = [{ id: 'a', text: '甲Q2' }];
+const src = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
 
-console.log('=== Before the fix: prevTree is not initialized after loading ===');
+console.log('=== a null argument must not be a silent no-push ===');
 {
-  const s = new UndoStack();
-  s.load(A, false);
-  s.edit(B);
-  check('★ the first edit is silently skipped', s.skips === 1 && s.pushes === 0);
-  check('★ the undo stack is still empty → Ctrl+Z does nothing', s.depth() === 0);
-  s.edit(C);
-  check('only the second edit pushes successfully', s.depth() === 1);
+  const body = fnBody(src, 'const pushUndo = React.useCallback(');
+  check('★ pushUndo exists (precondition)', body.length > 0);
+  check('★★★ it falls back to the previous tree when the caller passes null',
+    body.includes('?? prevTreeRef.current'), body.slice(0, 140));
+  check('★★ the guard comes **after** the fallback (so "nothing to push" is decided on the fallback\'s result)',
+    body.indexOf('?? prevTreeRef.current') < body.indexOf('if (!src) return'), body.slice(0, 140));
+  check('★★ it really pushes a snapshot onto the stack', /\.push\(snapshot\(src\)\)/.test(body), body.slice(0, 140));
+  check('★ the stack is bounded', body.includes('UNDO_LIMIT'), body.slice(0, 200));
 }
 
-console.log('\n=== After the fix: prevTree is initialized on load too ===');
+console.log('\n=== the snapshot exists as soon as a document is loaded ===');
 {
-  const s = new UndoStack();
-  s.load(A, true);
-  s.edit(B);
-  check('★ the first edit pushes normally', s.pushes === 1 && s.skips === 0);
-  check('★ undo depth = 1 → Ctrl+Z works', s.depth() === 1);
-  s.edit(C);
-  check('the second edit pushes too', s.depth() === 2);
+  // ★ This is the defect: `prevTreeRef` was left null at load time. The baseline assignment is the one whose
+  //   value is the freshly loaded tree; every other assignment advances it after an edit.
+  // ★ The baseline and the stack reset belong to the **same** body: the load path initialises the snapshot
+  //   exactly where it clears the undo stack, which is what made "the first edit cannot be undone" go away.
+  const loadBody = enclosingBody(src, 'prevTreeRef.current = tree;');
+  check('★★ the snapshot is initialised in the load path, together with the undo stack',
+    loadBody.includes('prevTreeRef.current = tree') && loadBody.includes('undoStackRef.current = []'),
+    `len=${loadBody.length}`);
+
+  const assigns = assignmentsTo(src, 'prevTreeRef.current');
+  const fromLoad = assigns.filter((a) => a.value === 'tree');
+  check('★★★ loading a document initialises the snapshot (`prevTreeRef.current = tree`)',
+    fromLoad.length === 1, JSON.stringify(assigns.map((a) => a.value)));
+  check('★★ the baseline is never reset to null —— that is the state the defect was in',
+    !assigns.some((a) => a.value === 'null'), JSON.stringify(assigns.map((a) => `${a.value}@${a.line}`)));
+  check('★ every other assignment advances it to the current tree',
+    assigns.filter((a) => a.value !== 'tree').every((a) => a.value === 'nodesRef.current'),
+    JSON.stringify(assigns.map((a) => `${a.value}@${a.line}`)));
 }
 
-console.log('\n=== Stack contents correctness ===');
+console.log('\n=== the callers keep the convention ===');
 {
-  const s = new UndoStack();
-  s.load(A, true);
-  s.edit(B);
-  s.edit(C);
-  check('it pushes the state from *before* the change, not the state after', s.depth() === 2);
-}
-
-console.log('\n=== Switching documents must clear it ===');
-{
-  const s = new UndoStack();
-  s.load(A, true);
-  s.edit(B);
-  s.load(C, true);
-  check('the undo stack is cleared after switching documents', s.depth() === 0);
-  s.edit(A);
-  check('after switching documents the first edit is already undoable', s.depth() === 1);
+  // Every caller passes the previous tree explicitly. If one passed a value that can be undefined, the
+  // fallback above would still save it —— which is the point of asserting both halves.
+  const calls = callArgs(src, /^pushUndo$/);
+  check('★ the write paths call pushUndo (precondition)', calls.length >= 5, `got=${calls.length}`);
+  check('★★ every call passes the previous tree, not a local that may be stale',
+    calls.every((c) => c.args.length === 1 && c.args[0] === 'prevTreeRef.current'),
+    calls.filter((c) => c.args[0] !== 'prevTreeRef.current').map((c) => `line ${c.line}: ${c.args.join(',')}`).join(' | '));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

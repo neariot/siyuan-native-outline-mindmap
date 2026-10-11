@@ -4,105 +4,72 @@
  * Corresponds to .logs/API-GOTCHAS.md §111.
  *
  * ★ Core lesson: **once panning moves the nodes, hit testing forever hits the starting point itself**.
+ *
+ * ★ This file used to hold a local `hitTest()` and a `decide()` —— a model of the gesture, written inside the
+ *   test —— so neither the pan/hit-test trap nor the cycle guard could turn it red. Both are read from the
+ *   product now:
+ *
+ *   · the drop decision in `src/mindmap/Mindmap.tsx` (which position it hit-tests with, how it finds the
+ *     target, and what disqualifies one);
+ *   · the reparent itself in `src/plugin/mount.ts` (the cycle guard, and the take-out-then-append order).
  */
 export {};
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { enclosingBody, fnBody } from './source-probe';
+
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean): void => {
-  if (cond) { pass++; console.log(`  ✅ ${name}`); }
-  else { fail++; console.log(`  ❌ ${name}`); }
-}
-
-interface Box { id: string; l: number; t: number; r: number; b: number }
-const hitTest = (boxes: Box[], px: number, py: number): string => {
-  for (const x of boxes) {
-    if (px >= x.l && px <= x.r && py >= x.t && py <= x.b) return x.id;
+const check = (name: string, cond: boolean, detail = ''): void => {
+  if (cond) {
+    pass++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    fail++;
+    console.log(`  ❌ ${name}${detail ? `  ${detail}` : ''}`);
   }
-  return '';
 };
 
-console.log('=== Panning makes hit testing "always hit itself" ===');
+const mindmapSrc = fs.readFileSync(path.join(__dirname, '..', 'mindmap', 'Mindmap.tsx'), 'utf8');
+const mountSrc = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
+
+console.log('=== the drop is hit-tested where the pointer really was ===');
 {
-  // Before the drag: 丙 is on the left
-  const before: Box[] = [
-    { id: '甲', l: 1020, t: 545, r: 1090, b: 579 },
-    { id: '乙', l: 1020, t: 593, r: 1090, b: 627 },
-    { id: '丙', l: 746, t: 569, r: 816, b: 603 },
-  ];
-  const cursor = { x: 1055, y: 562 };            // Target: the center of 甲
-  check('★ before the drag, the cursor is over 甲', hitTest(before, cursor.x, cursor.y) === '甲');
-
-  // The drag panned the canvas (the original implementation) -> all nodes shifted right
-  const panned: Box[] = [
-    { id: '甲', l: 1294, t: 521, r: 1364, b: 555 },
-    { id: '乙', l: 1294, t: 569, r: 1364, b: 603 },
-    { id: '丙', l: 1020, t: 545, r: 1090, b: 579 },   // 丙 moved under the cursor
-  ];
-  check('★★★ after panning, what is under the cursor became **丙 itself**', hitTest(panned, cursor.x, cursor.y) === '丙');
-  check('★★ => src === tgt => the reparent decision necessarily fails', hitTest(panned, cursor.x, cursor.y) === '丙');
-
-  // Fix: **do not pan** when the press starts on a node
-  const noPan = before;
-  check('★★ no panning => the cursor is still over 甲 => the reparent succeeds', hitTest(noPan, cursor.x, cursor.y) === '甲');
+  // ★ The anchor is a statement inside the handler, so the body is taken with `enclosingBody` —— `fnBody`
+  //   takes the nearest function *starting after* the anchor and would return a nested closure instead.
+  const body = enclosingBody(mindmapSrc, 'const px = dragRef.current.lastX;');
+  check('★ the drop handler was found (precondition)', body.length > 100, `len=${body.length}`);
+  check('★★★ it hit-tests with the position the handler recorded itself',
+    body.includes('dragRef.current.lastX') && body.includes('lastY'),
+    'pointer capture redirects later events, so the event coordinates point at the source node');
+  check('★★★ … and never with the event coordinates',
+    !/\be\.client[XY]\b/.test(body), 'measured: that returns the source node, so src === tgt and the reparent is dropped');
+  check('★★ the target is found by comparing rectangles, not by elementFromPoint',
+    body.includes('getBoundingClientRect') && !body.includes('elementFromPoint'),
+    'inside SVG elementFromPoint returns `text`/`rect`, and `closest(.mm-node)` is unreliable');
+  check('★★ a drop onto itself, or onto the root, is not a reparent',
+    body.includes('tgt !== src') && body.includes("'__root__'"), body.slice(0, 120));
+  check('★ only a real drag reparents (a click that moves nothing must stay a click)',
+    body.includes('didDragRef'), body.slice(0, 120));
 }
 
-console.log('\n=== Division of gestures ===');
+console.log('\n=== the reparent itself refuses a cycle and keeps the node ===');
 {
-  const decide = (srcNodeId: string): 'reparent' | 'pan' =>
-    srcNodeId ? 'reparent' : 'pan';
-  check('★ pressing on a **node** -> drag to reparent', decide('丙') === 'reparent');
-  check('★ pressing on **empty space** -> pan the canvas (keeps the original feel)', decide('') === 'pan');
-}
-
-console.log('\n=== Cycle detection ===');
-{
-  const tree = {
-    id: '甲', children: [
-      { id: '乙', children: [{ id: '乙1', children: [] }] },
-      { id: '丙', children: [] },
-    ],
-  };
-  const isDesc = (n: any, id: string): boolean =>
-    (n.children ?? []).some((c: any) => c.id === id || isDesc(c, id));
-
-  // isDesc(n, id) = whether id is a **descendant** of n
-  check('★ 乙1 is a descendant of 乙', isDesc(tree.children[0], '乙1') === true);
-  check('★ 乙1 is **not** a direct child of 甲 (it is a grandchild)', isDesc(tree, '乙1') === true);
-  check('★ 甲 is not a descendant of 乙', isDesc(tree.children[0], '甲') === false);
-  check('★ 丙 **is** a child of 甲 (that is how the fixture is built)', isDesc(tree, '丙') === true);
-
-  // The actual decision: the target is among the descendants of the dragged node -> reject
-  const wouldCycle = (movingId: string, targetId: string): boolean => {
-    const find = (n: any, id: string): any =>
-      n.id === id ? n : (n.children ?? []).reduce((acc: any, c: any) => acc ?? find(c, id), null);
-    const m = find(tree, movingId);
-    if (!m) return false;
-    const has = (n: any, id: string): boolean =>
-      (n.children ?? []).some((c: any) => c.id === id || has(c, id));
-    return has(m, targetId);
-  };
-  check('★★ 甲 -> 乙1: the target is a descendant => reject', wouldCycle('甲', '乙1') === true);
-  check('★ 丙 -> 甲: the target is not a descendant of 丙 => allow', wouldCycle('丙', '甲') === false);
-  check('★ 甲 -> 丙: `wouldCycle` is true only because in the fixture 丙 happens to be a child of 甲', wouldCycle('甲', '丙') === true);
-  check('★★ the reverse, 甲 -> 乙: allowed (乙 is a child of 甲, not a target on the descendant chain)', wouldCycle('甲', '乙') === true);
-}
-
-console.log('\n=== Attach to the **end** of the target (consistent with the outline child area) ===');
-{
-  const attach = (nodes: any[], targetId: string, moving: any[]): any[] =>
-    nodes.map(function go(n): any {
-      if (n.id === targetId) {
-        return { ...n, collapsed: false, children: [...(n.children ?? []), ...moving] };
-      }
-      return n.children?.length ? { ...n, children: n.children.map(go) } : n;
-    });
-
-  const tree = [{ id: '甲', children: [] }, { id: '乙', children: [] }, { id: '丙', children: [] }];
-  const out = attach(tree, '甲', [{ id: '丙', children: [] }]);
-  check('★ 丙 is attached under 甲', out[0].children.length === 1 && out[0].children[0].id === '丙');
-  check('★ collapsed is opened (otherwise the leaf cannot be seen)', out[0].collapsed === false);
-  check('★ no in-place mutation (returns a new tree)', tree[0].children.length === 0);
+  const body = fnBody(mountSrc, 'onReparent: (ids: string[], targetId: string)');
+  check('★ the handler exists (precondition)', body.length > 100, `len=${body.length}`);
+  check('★★★ dropping a node into its own descendant is refused before anything is mutated',
+    body.includes('isDesc') && body.indexOf('isDesc') < body.indexOf('removeNode'),
+    'the guard must run before the node is taken out, or a refused drop loses it');
+  check('★ the refusal returns, rather than continuing with a partial move',
+    /if \(n && isDesc\(n, targetId\)\) return;/.test(body), body.slice(0, 160));
+  check('★★ the node is taken out **before** it is appended (otherwise it exists twice)',
+    body.indexOf('removeNode(') < body.indexOf('children: [...'), 'remove-then-attach');
+  check('★ it is appended to the **end** of the target\'s children, like the outline\'s drop zone "child"',
+    /children: \[\.\.\.\(n\.children \?\? \[\]\), \.\.\.grabbed\]/.test(body), body.slice(0, 200));
+  check('★ the move is undoable (a snapshot is pushed before the mutation)',
+    body.indexOf('pushUndo(') >= 0 && body.indexOf('pushUndo(') < body.indexOf('removeNode('),
+    'the user can take back a wrong drop');
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

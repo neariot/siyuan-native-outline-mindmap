@@ -223,6 +223,87 @@ export function jsxElementsWithAttrContaining(
 }
 
 /**
+ * Every assignment whose left-hand side is written `lhs`, with the right-hand side's text.
+ *
+ * For "this state really is initialised **from** that value" —— which a call-site search cannot answer, and
+ * which a body search answers badly when the body has more than one function in it (a React effect with a
+ * cleanup closure is the case that produced a 28-character body for the anchor that was asked about).
+ */
+export function assignmentsTo(src: string, lhs: string): Array<{ value: string; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ value: string; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      if (node.left.getText(sf) === lhs) {
+        const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        out.push({ value: node.right.getText(sf), line: line + 1 });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/** The arguments of every call whose callee matches `pattern`, as written. */
+export function callArgs(src: string, pattern: RegExp): Array<{ args: string[]; line: number }> {
+  const sf = parse(src);
+  const out: Array<{ args: string[]; line: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && pattern.test(node.expression.getText(sf))) {
+      const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      out.push({ args: node.arguments.map((a) => a.getText(sf)), line: line + 1 });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * The body of the **innermost function that contains** `anchor` —— for anchors that are statements inside a
+ * body rather than a declaration header.
+ *
+ * ★ Why this exists next to `fnBody`: `fnBody` takes the nearest function *starting at or after* the anchor,
+ *   which is right when the anchor **is** the declaration (`fnBody(src, 'const pushUndo = React.useCallback(')`)
+ *   and silently wrong when the anchor is a statement inside a body —— it then returns the next nested
+ *   function, which may be a React effect's cleanup closure: asking about a line in a `useEffect` body
+ *   returned the 28-character body `{ alive = false; }`, and a check written on it would have asserted
+ *   against the wrong code while looking perfectly reasonable.
+ *
+ * Rule of thumb: anchor on the header and use `fnBody`; anchor anywhere inside the body and use this. The two
+ * are deliberately separate —— making `fnBody` "find the enclosing function" would break every existing call
+ * site, because a header anchor is also contained in the surrounding component.
+ */
+export function enclosingBody(src: string, anchor: string): string {
+  const at = src.indexOf(anchor);
+  if (at < 0) return '';
+  const sf = parse(src);
+  let best: { start: number; text: string } | null = null;
+  const visit = (node: ts.Node): void => {
+    const body = (node as { body?: ts.Node }).body;
+    const isFunctionLike =
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isArrowFunction(node) ||
+      ts.isConstructorDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node);
+    if (isFunctionLike && body && ts.isBlock(body)) {
+      const start = node.getStart(sf);
+      if (start <= at && at <= node.getEnd()) {
+        // innermost: the function that starts last also ends first, so the largest start wins
+        if (best === null || start > best.start) best = { start, text: sf.text.slice(body.getStart(sf), body.getEnd()) };
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return best === null ? '' : stripComments((best as { text: string }).text);
+}
+
+/**
  * Remove line and block comments, leaving string literals alone.
  *
  * ★ Built on the compiler's scanner rather than on hand-tracked quotes: the hand-tracked version reads

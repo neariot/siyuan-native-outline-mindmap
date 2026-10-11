@@ -421,7 +421,12 @@ Dropping onto a node makes the node its child, **consistent with the outline's d
 (the same `onReparent` path as the outline's `moveDrop(zone='child')`). Cycle detection is part of the same
 rule: a node dragged into its own descendant is refused, or the tree becomes a cycle.
 
-**Tests**: `src/plugin/mindmap-reparent.test.ts`
+**Tests**: `src/plugin/mindmap-reparent.test.ts` reads both halves of this entry —— the drop decision in
+`src/mindmap/Mindmap.tsx` (hit-tested with the position the handler recorded itself, never with the event
+coordinates; rectangles compared by hand, never `elementFromPoint`; a drop onto itself or onto the root is not
+a reparent; only a real drag counts) and the reparent in `src/plugin/mount.ts` (the cycle guard runs before
+anything is mutated, the node is taken out before it is appended, and the move pushes an undo snapshot). The
+file previously held a local `hitTest()` and `decide()` written inside the test.
 
 ---
 

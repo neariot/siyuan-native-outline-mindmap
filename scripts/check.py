@@ -67,11 +67,12 @@ GATES = [
         #   pointed at a deleted file), and a test that imports nothing cannot go red. The first fails, the
         #   second prints -- see the module docstring for why it is a lower bound.
         "name": "vacuous-tests",
-        # --hollow-advisory is explicit and says what it defers: citations that name a test which reaches
-        # nothing are queued work (docs/AUDIT-FINDINGS.md, `test-suite`), and the tool still fails on
-        # them by default. Everything else this gate checks still fails.
-        "command": "python3 scripts/check-vacuous-tests.py --hollow-advisory",
-        "why": "every test a doc cites exists, and the tests that cannot go red are named",
+        # ★ Strict, with no advisory flag: the sixteen citations that named a hollow test are all fixed, so
+        #   a new one fails the build immediately rather than being queued. (While they were being worked
+        #   through, `--hollow-advisory` printed them loudly instead: a gate that cannot fail is a gate that
+        #   is not there.)
+        "command": "python3 scripts/check-vacuous-tests.py",
+        "why": "every cited test exists, and every cited test can reach the product",
         "requires": lambda: (REPO_ROOT / "scripts" / "check-vacuous-tests.py").is_file(),
     },
     {

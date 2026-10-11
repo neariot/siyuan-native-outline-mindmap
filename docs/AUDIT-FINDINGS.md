@@ -47,36 +47,17 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **high · test-quality** `scripts/check-vacuous-tests.py` (in progress: 16 → 11 citations)  
-  Files are cited by `docs/**` as the test that freezes a behaviour while reaching
-  nothing at all: no import, no file read, no child process. Every assertion in them compares a literal
-  the file itself wrote with another literal the file itself wrote, so no change to the product can turn
-  any of them red. The tool could already list the files, but it exited 0 while doing so, so a document
-  could name one as its evidence and nothing objected; it now pairs the two and fails on it (the gate
-  reports the rest through `--hollow-advisory`).
-
-  **Fixed so far** (each: read the product, then red-prove it): `map-coverage-guard.test.ts` now calls
-  `mappingLooksIncomplete()`, exported from `src/siyuan/store.ts` next to the code that uses it;
-  `node-id-block-id.test.ts` and the new `src/siyuan/blockmap-anchor.test.ts` drive
-  `treeToBlockDom` → `parseDomToTree` and assert on the store's own tables; `ref-nav.test.ts` reads
-  `kramdownToHtml`/`htmlToKramdown` and the `openTab` call's arguments. `kernel-bugs.test.ts` was
-  **deleted** —— its cases asserted on stub functions written inside it, and its measured kernel facts
-  moved to `docs/kernel-api.md` §7.14 (the `openTab` 2×2) and §7.15 (operations that fail while reporting
-  success). That move is the pattern for the rest: a file that models the kernel must become either a
-  product-side check or a documented measurement, never a stub compared with itself.
-
-  Left:
-  · `src/plugin/blockmap-namespace.test.ts`
-  · `src/plugin/kernel-side-effects.test.ts`
-  · `src/plugin/mindmap-focus.test.ts`
-  · `src/plugin/mindmap-reparent.test.ts`
-  · `src/plugin/panel-escape-focus.test.ts`
-  · `src/plugin/panel-focus.test.ts`
-  · `src/plugin/single-child-list.test.ts`
-  · `src/plugin/stale-mapping.test.ts`
-  · `src/plugin/undo-first-edit.test.ts`
-
-### e2e-helpers
+- **medium · test-quality** the four test files nothing cites that still reach nothing  
+  `scripts/check-vacuous-tests.py` now passes in full: every test a doc cites exists **and** can reach the
+  product (the sixteen citations that named a hollow file were converted —— see the git history for the
+  per-file reasoning, and the pattern: a file that models the kernel becomes either a product-side check or a
+  documented measurement, never a stub compared with itself). The tool still prints the files that import
+  nothing and read nothing, as a lower bound, and four remain. They are not cited by any document, so nothing
+  ever claimed they were evidence —— but they cannot fail either:
+  · `src/plugin/undo-merge-kind.test.ts`
+  · `src/plugin/write-depth-nesting.test.ts`
+  · `src/plugin/write-epoch-delete.test.ts`
+  · `src/plugin/zoom-title-sync.test.ts`
 
 - **high · privacy** `e2e/testdoc.ts:213`  
   The 'only notebooks with these names are accepted as test targets (to avoid damaging user data)' allowlist holds the literal name that BOTH configured instances report as their notebook #1 - i.e. the name of a notebook the user actually works in - so the guard that exists to protect user data instead selects the user's own notebook, and the name itself is a section-1 hard-rule leak in a tracked file.
