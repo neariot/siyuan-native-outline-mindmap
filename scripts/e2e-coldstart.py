@@ -231,8 +231,13 @@ def main() -> int:
 
     per_case = [r for r in runs[0] if not r["label"].startswith("REPEAT")]
     print()
-    print(f"  a case pays {sum(r['seconds'] for r in per_case):.1f}s before its first assertion "
-          f"(the suite's median case is 16.5s)")
+    # ★ The comparison is measured now, not quoted: the median case was 16.5s while the dock helper cost
+    #   10.4s per case, and a hard-coded "the median case is 16.5s" outlived the fix and made the startup
+    #   share look twice as large as it is. `run-e2e.py` writes the real durations into `.logs/e2e-*.log`.
+    startup = sum(r['seconds'] for r in per_case)
+    print(f"  a case pays {startup:.1f}s before its first assertion")
+    print(f"  ★ the per-case floor of a case that only opens the panel is about this number "
+          f"({startup:.1f}s); the rest of any case is the test's own work")
     print("  ★ A phase that is unavoidable is not the same as a phase that is free: only what this table")
     print("    shows as per-case and large is worth working on.")
     print()
