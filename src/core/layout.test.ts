@@ -422,6 +422,22 @@ console.log('\ncalcSplitIndex: the split point for left/right branching');
 }
 
 // ──────────────────────────────────────────────────────────────────
+console.log('\n★ a formula keeps its own run (it is drawn whole, so it must not be merged away)');
+
+{
+  // ★ This is the product path for the merge criterion: `runsOf` calls `mergeRuns`, and `mergeRuns` used to
+  //   test the `formula` flag on the first run only. A formula whose styles matched the plain run before it
+  //   was then merged in and lost the flag, after which `units()` split the `$…$` at word boundaries —— so a
+  //   formula wider than the line was cut in half, which `units` documents as never happening.
+  const runs = runsOf(N('x', '文本<span data-formula="x^2">$x^2$</span>'));
+  check('★ a formula stays its own run through runsOf', runs.length === 2,
+    `len=${runs.length} ${JSON.stringify(runs)}`);
+  check('★ … and it still carries the formula flag',
+    runs.filter((r) => r.formula === true).length === 1, JSON.stringify(runs));
+  check('★ … and the plain run before it is untouched',
+    runs[0]?.formula === undefined && runs[0]?.text === '文本', JSON.stringify(runs[0]));
+}
+
 console.log('\ntext measurement and runsOf');
 
 {

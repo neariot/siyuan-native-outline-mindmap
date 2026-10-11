@@ -88,8 +88,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-gates
 
-- **high · test-quality** `scripts/audit-language.py:1061`  
-  The auditor's own selftest is RED: its source carries a CJK literal ('分支一' inside the excuse_rule docstring), which case 34 detects, and no gate, npm script, CI step or test ever runs --selftest, so the build stays green while the tool reports itself broken.
 
 ### scripts-infra
 
@@ -124,8 +122,6 @@ conclusion to draw from a complete-looking list of findings.
   `hasRichStyle` is exported, documented as the switch that decides which kernel write-back path store.ts takes, and is called by nothing but its own unit test — store.ts routes every write through the DOM path.
 - **medium · dead-code** `src/core/map.ts:835`  
   The "dropped paragraphs" counter is initialised and stored but never incremented, so `takeDroppedParagraphs()` always returns 0 — the user-facing warning the doc comment promises has no data source, and the only consumers are tests asserting `=== 0`.
-- **medium · bug** `src/core/richtext.ts:236`  
-  sameStyle tests only the FIRST run's formula flag, so mergeRuns merges a formula run into a preceding same-style text run, drops `formula: true`, and the `$…$` is then wrapped as ordinary text — a formula wider than the line is split mid-formula, which the module documents as never happening.
 
 ### docs-core
 

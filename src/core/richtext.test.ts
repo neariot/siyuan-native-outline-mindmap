@@ -7,7 +7,7 @@
 // The fix is to parse the HTML into styled runs, one `<tspan>` per run.
 // These tests keep the parser covering every output shape of the SiYuan kernel and of the browser's execCommand.
 
-import { htmlToRuns, runsToText } from './richtext';
+import { htmlToRuns, mergeRuns, runsToText } from './richtext';
 
 let pass = 0;
 let fail = 0;
@@ -153,6 +153,26 @@ check('SiYuan data-type=mark', sig('<span data-type="mark">高</span>').includes
   const runs = htmlToRuns('普通<sup>2</sup>');
   check('superscript is not merged with the preceding run', runs.length === 2, `len=${runs.length}`);
   check('preceding run has no sup', !runs[0].sup, JSON.stringify(runs[0]));
+}
+
+// ★ regression: the formula flag was tested on the **first** run only (`!a.formula`), so a formula whose
+//   styles otherwise matched merged into the plain run before it and lost the flag. `$…$` was then wrapped
+//   as ordinary text, and `units()` splits such a run at word boundaries, so a formula wider than the line
+//   was cut mid-formula —— which `units` documents as never happening ("half a formula is meaningless").
+//
+//   ⚠️ The case must be written against `mergeRuns`, not against `htmlToRuns`: the formula branch pushes its
+//   run **directly** (it does not go through the merge in `pushText`), so a `htmlToRuns` assertion passes
+//   with the defect present —— measured. The merge path is `runsOf` in `core/layout.ts`; the case that
+//   exercises it is in `layout.test.ts`.
+{
+  const merged = mergeRuns([{ text: '文本' }, { text: '$x^2$', formula: true }]);
+  check('★ mergeRuns does not merge a formula into the plain run before it',
+    merged.length === 2, `len=${merged.length} ${JSON.stringify(merged)}`);
+  check('★ … and the formula keeps its flag', merged[1]?.formula === true, JSON.stringify(merged[1]));
+
+  // The opposite order is the one `!a.formula` did catch; pinned so a future edit cannot lose it.
+  const other = mergeRuns([{ text: '$x^2$', formula: true }, { text: '文本' }]);
+  check('a plain run is not merged into the formula run before it', other.length === 2, JSON.stringify(other));
 }
 
 // ---- real-world case: the complete paragraph shape SiYuan exports ----

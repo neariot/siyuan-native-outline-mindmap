@@ -777,3 +777,26 @@ criterion cannot quietly go back to being satisfied by the shape of the answer.
 **Tests**: `scripts/verify-live.py --selftest` (8 cases; making the criterion always-true turns it red).
 
 ---
+
+### A regression test aimed at the wrong entry point stays green
+
+**Symptom**: `sameStyle` in `src/core/richtext.ts` tested the `formula` flag on the first run only
+(`!a.formula`), so `mergeRuns([{text:'文本'}, {text:'$x^2$', formula:true}])` merged the formula into the
+plain run and left the flag behind. A regression test was written for it —— asserting through `htmlToRuns`
+that `文本<span data-formula="x^2">$x^2$</span>` yields two runs and keeps the flag —— and it passed **both
+with and without the fix**. The red proof said so; without one, the case would have shipped as coverage.
+
+**Cause**: `htmlToRuns` pushes a formula run **directly** (`runs.push({…, formula: true})`); it never goes
+through the merge inside `pushText`. So the function under test was not on the path the assertion
+travelled: the input produced two runs for a reason that has nothing to do with `sameStyle`.
+
+**Practice**: aim the case at the entry point that really calls the criterion, and prove it by breaking the
+implementing line (`scripts/redproof.py`) rather than by reading the assertion. Here the merge path is
+`runsOf` in `src/core/layout.ts` (the mind map's own display path, which calls `mergeRuns`), so the case
+lives in `layout.test.ts`, with a unit-level companion in `richtext.test.ts` that calls `mergeRuns` itself.
+★ A case that passes before the fix is not "already correct" —— it is either insensitive or aimed at the
+wrong layer, and the only way to tell is to break the line and watch.
+
+**Tests**: `src/core/layout.test.ts` (the product path), `src/core/richtext.test.ts` (the merge itself).
+
+---

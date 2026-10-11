@@ -233,7 +233,12 @@ export function runsToText(runs: RichRun[]): string {
 /** Whether two runs have exactly the same styles (formulas count as non-mergeable). */
 export function sameStyle(a: RichRun, b: RichRun): boolean {
   return (
+    // ★ **Both** sides. Testing only `a` was the defect: a formula run following a text run merged into it
+    //   whenever the other bits matched, `last.text` grew and the `formula` flag was left behind —— so the
+    //   `$…$` was wrapped as ordinary text and a formula wider than the line was split mid-formula, which
+    //   this module documents as never happening. The superscript case below is the same shape.
     !a.formula &&
+    !b.formula &&
     a.color === b.color &&
     !!a.bold === !!b.bold &&
     !!a.italic === !!b.italic &&
