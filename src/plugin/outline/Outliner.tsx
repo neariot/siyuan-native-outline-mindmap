@@ -190,25 +190,6 @@ function splitHtmlAtCaret(el: HTMLElement): { before: string; after: string } {
   return { before, after: tmp2.innerHTML };
 }
 
-function fmtDueInput(ms: number): string {
-  const d = new Date(ms);
-  const p = (x: number): string => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function fmtDueChip(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function isOverdue(n: OutlineNode): boolean {
-  if (!n.dueDate || n.taskStatus === TASK_DONE) return false;
-  // ⚠️ Local variable names must avoid `t` —— it is the i18n lookup function, and shadowing it makes lookup impossible in this scope
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return n.dueDate < today.getTime();
-}
-
 // ---------- attached paragraph (paragraphs) semantics helpers ----------
 //
 // In the old model a note was **one** HTML string `note` (written to the SiYuan block attribute `memo`).
@@ -1301,29 +1282,6 @@ export default function Outliner(props: OutlinerProps) {
           touch(n);
         }
       }
-    });
-  };
-
-  /** Due date: prompt input YYYY-MM-DD, empty clears it; date-only local semantics */
-  const editDue = (id: string): void => {
-    const cur = nodeById.get(id);
-    const init = cur?.dueDate ? fmtDueInput(cur.dueDate) : '';
-    const v = prompt(t('phDueDate'), init);
-    if (v === null) return;
-    // ⚠️ Do not call this `t` -- the prompt text above needs i18n's t()
-    const s = v.trim();
-    if (s !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(s)) return;
-    mutate((draft) => {
-      const n = findNode(draft, id);
-      if (!n) return;
-      if (s === '') delete n.dueDate;
-      else {
-        const [y, m, d] = s.split('-').map(Number);
-        const dt = new Date(y, m - 1, d);
-        if (isNaN(dt.getTime())) return;
-        n.dueDate = dt.getTime();
-      }
-      touch(n);
     });
   };
 
@@ -3077,23 +3035,6 @@ export default function Outliner(props: OutlinerProps) {
             </span>
           </span>
           {n.taskStatus ? <TaskBox status={n.taskStatus} onCycle={() => toggleTask(n.id)} /> : null}
-          {n.dueDate ? (
-            <button
-              type="button"
-              className={`due-chip${isOverdue(n) ? ' over' : ''}`}
-              title={
-                isOverdue(n)
-                  ? t('tipDueOverdue', { date: fmtDueInput(n.dueDate) })
-                  : t('tipDueNormal', { date: fmtDueInput(n.dueDate) })
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                editDue(n.id);
-              }}
-            >
-              📅{fmtDueChip(n.dueDate)}
-            </button>
-          ) : null}
           {numIdx !== undefined && (
             <span className="num-badge">{numIdx}.</span>
           )}
@@ -3418,7 +3359,6 @@ export default function Outliner(props: OutlinerProps) {
       {/* toolbar */}
       <div className={`om-toolbar${barOpen ? '' : ' om-toolbar--collapsed'}`} onMouseDown={(e) => e.preventDefault()}>
         <button title={t('tipTaskToggle')} onClick={() => setTaskMany(activeIds, TASK_TODO)}>☐</button>
-        <button title={t('tipDueDate')} onClick={() => activeId && editDue(activeId)}>📅</button>
         <button title={t('tipHeading1Hash')} onClick={() => setHeadingMany(activeIds, 1)} className={nodeById.get(activeIds[0])?.heading === 1 ? 'on' : ''}>H1</button>
         <button title={t('tipHeading2')} onClick={() => setHeadingMany(activeIds, 2)}>H2</button>
         <button title={t('tipHeading3')} onClick={() => setHeadingMany(activeIds, 3)}>H3</button>

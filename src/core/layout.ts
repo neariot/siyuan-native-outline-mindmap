@@ -335,19 +335,12 @@ export function runsOf(n: OutlineNode): RichRun[] {
   const kept = merged.filter((r) => r.text !== '');
   if (kept.length === 0) kept.push({ text: '\u200b' });
 
-  if (n.dueDate) {
-    const d = new Date(n.dueDate);
-    kept.push({ text: ` 📅${d.getMonth() + 1}/${d.getDate()}` });
-  }
   return kept;
 }
 
 export function label(n: OutlineNode): string {
   const t = htmlToText(n.text).replace(/\s+/g, ' ').trim();
-  const base = (t || '​').slice(0, 60);
-  if (!n.dueDate) return base;
-  const d = new Date(n.dueDate);
-  return `${base} 📅${d.getMonth() + 1}/${d.getDate()}`;
+  return (t || '\u200b').slice(0, 60);
 }
 
 /** A character's width in the layout's units: CJK is roughly twice a Latin character. */

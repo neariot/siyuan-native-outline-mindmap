@@ -42,7 +42,6 @@ export interface OutlineNode {
   // Heading level. SiYuan natively supports levels 1~6, so it is no longer capped at 3.
   heading?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   finish?: boolean; // wire passthrough (a field of real X nodes, no local semantics yet; kept on import, written back as-is on export)
-  dueDate?: number; // local semantics: due timestamp (ms, day precision); always stripped from wire/OPML/mm export
   // Summary (`summaryData`) and link lines (`linkLines`) used to live here. SiYuan has no native carrier for
   // either, so they were never persisted: they were session-local view state that vanished on reload, while
   // the UI went on offering them. They are removed rather than left looking supported (section 8).

@@ -566,7 +566,7 @@ test.describe('multi-select and batch operations', () => {
     ).toHaveCount(1);
   });
 
-  test('★ the summary and link-line controls are gone: SiYuan has no native carrier, so they never persisted', async ({ page }) => {
+  test('★ the unsaved controls are gone: summary, link lines and the due date', async ({ page }) => {
     // Both were offered while being unable to survive a reload: `summaryData` / `linkLines` have no native
     // counterpart in SiYuan, so they lived only in the session's memory (docs/MAPPING.md 3.3). They are now
     // removed rather than left looking supported —— and this case is what stops a half-removal creeping back:
@@ -597,6 +597,9 @@ test.describe('multi-select and batch operations', () => {
       await expect(page.locator('.summary-bar'), 'no summary bar is rendered').toHaveCount(0);
       await expect(page.locator('.mm-link'), 'no link lines are rendered').toHaveCount(0);
       await expect(page.locator('.mm-summary'), 'no summary bracket is drawn in the mind map').toHaveCount(0);
+      // The due date had the same defect and no test at all: `editDue` wrote `n.dueDate`, and nothing on the
+      // read side ever produced it again, so the chip could not survive a reload.
+      await expect(page.locator('.due-chip'), 'no due-date chip is rendered').toHaveCount(0);
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();

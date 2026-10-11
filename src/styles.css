@@ -683,8 +683,6 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
 .taskbox { flex: none; width: 20px; height: 30px; display: flex; align-items: center; justify-content: center; }
 .taskbox input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
 .num-badge { flex: none; min-width: 26px; height: 30px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 5px 4px 0 0; color: var(--text-weak); font-size: 13px; }
-.due-chip { flex: none; align-self: flex-start; margin-top: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text-weak); border-radius: 10px; font-size: 11px; line-height: 1; padding: 3px 7px; cursor: pointer; }
-.due-chip.over { color: var(--danger); border-color: var(--danger); font-weight: 700; }
 .node-body { flex: 1; min-width: 0; }
 .node-text {
   min-height: 30px; padding: 4px 6px; outline: none; border-radius: 6px;
