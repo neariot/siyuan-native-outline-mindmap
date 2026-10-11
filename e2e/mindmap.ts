@@ -69,6 +69,46 @@ export async function ensureDockOpen(page: Page): Promise<void> {
       .then((w) => w > 0)
       .catch(() => false);
 
+  /**
+   * Is the dock **meant to be open**, whether or not its panel has mounted yet?
+   *
+   * ★★★ This is the signal `isOpen` was missing, and the reason every case used to spend ~10 seconds here
+   *     (measured: 10.4s, 2 clicks, on every one of three consecutive fresh contexts).
+   *
+   *   SiYuan persists "is this dock open" in the icon's own `dock__item--active` class. After a page load
+   *   that class is applied at once, while the panel's content mounts a moment later. So immediately after
+   *   `openDoc`'s readiness checks the state is:
+   *
+   *       icon active: YES        ← the dock is open; SiYuan is still mounting it
+   *       .om-mm-viewswitch: n=0  ← nothing rendered yet
+   *       +2.5s later:       n=1, width=420   ← it opens on its own, with no click
+   *
+   *   `isOpen()` reads that `n=0` and answers "closed", so the helper **clicked** —— and a click toggles,
+   *   so it closed the dock SiYuan was busy opening. The poll then spent its whole 10s budget waiting for a
+   *   panel that could not appear, clicked again (reopening it), and the case proceeded. Three fresh
+   *   contexts in a row: 10.4s / 10.35s / 10.35s, every one of them 2 clicks.
+   *
+   *   With this predicate the same three cases open in 0.3~1.0s and need **no** click at all.
+   */
+  const dockIsActive = async (): Promise<boolean> =>
+    page
+      .evaluate(() => {
+        const icon = document.querySelector('[data-type*="native-outline-mindmap"]');
+        const item = icon?.closest('.dock__item') ?? icon?.parentElement;
+        return !!(item && item.className.includes('dock__item--active'));
+      })
+      .catch(() => false);
+
+  /** Wait (briefly) for an already-active dock's panel to mount, rather than clicking it shut. */
+  const waitForPanel = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await isOpen()) return true;
+      await page.waitForTimeout(50);
+    }
+    return false;
+  };
+
   // ★ Before the early return below, not after: `openDoc` may find the panel already open, and a toast
   //   left by an earlier case would then sit there for the whole test and swallow whatever it clicks.
   //   Clearing it here means every case that opens a document starts from a clean screen.
@@ -76,6 +116,10 @@ export async function ensureDockOpen(page: Page): Promise<void> {
 
   // Do not click if it is really open —— clicking **toggles** it and closes what is open.
   if (await isOpen()) return;
+
+  // ★★ The dock is open but its panel has not mounted yet: **wait for it instead of clicking it shut.**
+  //    A click here is not a no-op, it is the opposite of what is wanted (see `dockIsActive` above).
+  if (await dockIsActive() && (await waitForPanel(10_000))) return;
 
   // ★★ Order matters, and the old order was wrong. `.om-dock` / `.om-mm-viewswitch` /
   //   `.om-mm-empty__title` are the *panel's* content, so they exist only while the panel is **open** ——
@@ -106,12 +150,9 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   //   `force: true` is used here: the dock icon carries a tooltip ("Mindmap / Click to expand/minimize"),
   //   and a plain click's actionability check is blocked by the tooltip or lands off target.
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await entry.click({ force: true });
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      if (await isOpen()) return;
-      await page.waitForTimeout(50);
-    }
+    // Only click a dock that is not already active: the click toggles, so clicking an active dock closes it.
+    if (!(await dockIsActive())) await entry.click({ force: true });
+    if (await waitForPanel(10_000)) return;
   }
 
   throw new Error(

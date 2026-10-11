@@ -751,6 +751,37 @@ the test that caused it.
   error text only said "click timed out". Reading the DOM would have shown a button that was present,
   visible, enabled and stable —— a clickable thing that no click could reach.
 
+### A helper that clicks to make something open, when it is already opening
+
+**Symptom.** Every E2E case spent about **10.4 seconds** in `ensureDockOpen`, and every one of them
+reported `clicks=2`. Measured on three consecutive fresh contexts: 10.40s / 10.35s / 10.35s.
+
+**Cause.** SiYuan records "is this dock open" in the icon's own `dock__item--active` class, which is
+applied **at once** after a page load, while the panel's content mounts a moment later. So right after
+`openDoc`'s readiness checks the state is:
+
+| signal | value | reading |
+|---|---|---|
+| icon `dock__item--active` | **YES** | the dock *is* open; SiYuan is still mounting it |
+| `.om-mm-viewswitch` | `n=0` | nothing rendered yet |
+| the same page, 2.5s later, **with no click** | `n=1, width=420` | it opens on its own |
+
+The helper's `isOpen()` looks only at the panel's width, so it saw `n=0`, answered "closed", and
+**clicked** —— and a click *toggles*, so it closed the dock SiYuan was in the middle of opening. The poll
+then spent its entire 10s budget waiting for a panel that could not appear, clicked a second time
+(reopening it), and the case continued. The work was real; the 10 seconds were spent undoing it.
+
+**Practice.** When a control toggles, the question is never "is it rendered?" but **"what state does the
+application think it is in?"** —— ask the element that carries the persisted state (`dock__item--active`)
+and then *wait for* the rendering, rather than acting on a signal that cannot distinguish "not yet" from
+"no". After the fix the same three cases open in **0.3~1.0s with no click at all**.
+
+★ The distinction that makes this a pitfall and not a typo: `isOpen`'s criterion was *measured*, and the
+measurement recorded in its comment is correct —— `.om-mm-viewswitch` really is `n=1, w=0` when closed and
+`n=1, w=122` when open **after a click**. What the measurement never covered was the state *before any
+click*, where the panel is absent entirely rather than present-and-collapsed. A criterion can be right
+about every case it was measured on and still wrong about the one it is asked first.
+
 ### A check whose criterion is "the result mentions the thing" cannot fail
 
 **Symptom**: `scripts/verify-live.py` had a check named "content width follows the panel", written for a
