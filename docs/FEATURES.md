@@ -85,9 +85,14 @@ carries its UI in a **dock + slash menu**, so it works on mobile.
   editing state would break the caret, so it is not done.
 - **Very large documents (ten thousand nodes) are not virtualised**; multiple
   root maps stack vertically.
-- **Deliberately not preserved** (SiYuan has no native counterpart, and we will
-  never pollute a document with private attributes): summaries, connector lines,
-  cloze. Node bodies survive as they are; these three semantics are lost on a
-  round trip.
+- **Removed, because they could not be preserved**: summaries, connector lines, the cloze mask and the
+  due date all had a control, a renderer and no read path —— SiYuan has no native counterpart for any of
+  them, and we never pollute a document with private attributes, so the value was gone the moment the
+  document was reopened. Offering a control whose result vanishes is worse than not offering it, so they
+  are gone from the model, the outline and the mind map (`MAPPING.md` 3.3, `ARCHITECTURE.md` 8). Node
+  bodies are unaffected.
+- **Fold state is deliberately not saved**: folding a branch is a way of looking at a document, not
+  something the document says, so a reopened document starts unfolded. It is view state, not content ——
+  `scripts/check-unsaved-fields.py` reports it as in-session rather than as a defect.
 - Not implemented: collaboration / encryption / templates / presentation mode /
   MCP.

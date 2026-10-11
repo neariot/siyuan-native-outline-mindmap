@@ -598,6 +598,19 @@ test.describe('multi-select and batch operations', () => {
       await toOutlineView(page);
       await expect(page.locator('.taskbox input[type="checkbox"]').first(),
         'the completed state should still be there after reopening').toBeChecked();
+
+      // The other direction, which is the one a plugin cannot control: the task is completed in SiYuan
+      // itself. The kernel owns the marker, so the plugin has to *read* it back rather than remember it.
+      const rows = (await api.sql(
+        `SELECT id FROM blocks WHERE root_id = '${docId}' AND type = 'i' LIMIT 1`,
+      )) as Array<{ id: string }>;
+      expect(rows.length, 'the fixture should have one list item').toBe(1);
+      await api.call('/api/block/updateTaskListItemMarker', { id: rows[0].id, marker: ' ' });
+      await page.reload();
+      await openDoc(page, docId);
+      await toOutlineView(page);
+      await expect(page.locator('.taskbox input[type="checkbox"]').first(),
+        'a change made in SiYuan should show up in the plugin too').not.toBeChecked();
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();
