@@ -61,6 +61,16 @@ a file nobody reads might as well not exist.
   `.logs/<name>.log`, and read that log. The foreground is for what is known to
   finish in seconds —— "it is probably quick" is not knowing. Do not sit in a
   long wait on any single call either.
+- **★★ Redirect to a log on the FIRST run, then read the log. Never re-run to see
+  output again.** Run it once, capture everything (`npm test > .logs/x.log 2>&1`),
+  and read that file with `rg`/`read` as many times as needed. A second run to
+  "see the failure" costs the whole suite again and may not even reproduce it ——
+  and re-running to check something the log already contains is the same waste.
+  This is not only about the clock: a run that scrolls out of the terminal takes
+  its evidence with it, while the log keeps the failing assertion, the exact line
+  and the context around it. Keep the log until the task is committed, then it can
+  go; `.logs/` is gitignored, so keeping more is cheap. When a command's output
+  matters at all, it goes to a file **by default**, not after the first attempt.
 
 ## 2. Language
 
@@ -367,6 +377,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 | `python3 scripts/check-unsaved-fields.py` | a node model field no reader restores —— the defect behind summary, link lines, the mask and the due date; fold state is printed, not failed |
 | `python3 scripts/check-audit-findings.py` | which findings in `docs/AUDIT-FINDINGS.md` still point at code that exists —— `stale-file` / `stale-line` / `drifted`, and the `cannot-judge` ones a reader must open first. It cannot tell whether a defect is *fixed*, and says so instead of guessing. `--selftest` pins its three decisions, including the prose-vs-identifier criterion its first version got wrong (60 false `drifted`) |
 | `python3 scripts/check-documented-commands.py` | a command a document names that does not exist, and a script no document names —— a command in prose is never executed by anything. It cannot see whether a command does what the prose claims (an invented **flag** in front of a real script passes), and says so |
+| `python3 scripts/check-source-text-tests.py` | a test that asserts on the **text** of product source while importing nothing it could execute —— such a file can only go red when the product is reworded. Fifteen were deleted in one pass; this stops them returning. It reports the mixed cases (imports the product *and* greps its source) without failing them, because those need a reader |
 | `python3 scripts/e2e-coldstart.py` | where an E2E case's startup time goes, phase by phase —— "can we avoid the cold start" is answered with a table instead of from memory, and it says which phases are paid per case and which are one-off |
 
 **Where knowledge lives.** Anything another developer or agent needs —— a measured fact, a pitfall, a
