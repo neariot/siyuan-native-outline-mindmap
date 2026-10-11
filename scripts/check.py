@@ -130,6 +130,15 @@ GATES = [
         "why": "every `om-` / `mm-` class in src/styles.css can actually be put on an element",
     },
     {
+        "name": "verify-live-selftest",
+        # The live check needs a desktop and CDP, so its criteria cannot run here —— but they can be judged
+        # on recorded measurements, and one of them was `'"host" in result`: satisfied by the JSON whatever
+        # the widths were, so the regression it named could not fail it.
+        "command": "python3 scripts/verify-live.py --selftest",
+        "why": "the live checks' criteria still decide the cases they were written for",
+        "requires": lambda: (REPO_ROOT / "scripts" / "verify-live.py").is_file(),
+    },
+    {
         "name": "css-scope",
         "command": "python3 scripts/verify-css-scope.py",
         "why": "no unscoped bare selector survived the build",

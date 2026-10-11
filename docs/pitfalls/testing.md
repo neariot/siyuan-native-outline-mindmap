@@ -750,3 +750,30 @@ the test that caused it.
   panel were all visible in the kept failure screenshot (`test-results/*/test-failed-1.png`), while the
   error text only said "click timed out". Reading the DOM would have shown a button that was present,
   visible, enabled and stable —— a clickable thing that no click could reach.
+
+### A check whose criterion is "the result mentions the thing" cannot fail
+
+**Symptom**: `scripts/verify-live.py` had a check named "content width follows the panel", written for a
+real regression (a hardcoded `max-width: 860px`, after which the content stopped growing when the panel
+was dragged wider). Its whole criterion was:
+
+```python
+check("content width follows the panel", r and "host" in r, r or "no result")
+```
+
+The page returned `{"host": …, "content": …}`, so `"host" in r` is true **whatever the two widths are**.
+The check could not fail for the defect it names, and it read as coverage.
+
+**Practice**: the criterion is the **comparison** (`content >= host - tolerance`, the tolerance being a
+border's worth, not a cap), and a missing or unusable measurement is a failure rather than a pass ——
+`panel_width_verdict` returns `(ok, detail)` and a page that answered "no element" is not "close enough".
+
+★ The criterion was then made checkable without the desktop it needs: it is a function, and
+`python3 scripts/verify-live.py --selftest` feeds it eight recorded measurements, three of which are the
+cases the old criterion passed (a content capped at 860 while the panel grew, a reply with no content
+measurement, and a page that found no elements). That selftest is a gate in `npm run check`, so the
+criterion cannot quietly go back to being satisfied by the shape of the answer.
+
+**Tests**: `scripts/verify-live.py --selftest` (8 cases; making the criterion always-true turns it red).
+
+---

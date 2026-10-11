@@ -38,6 +38,31 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 results = []
 
 
+def content_follows_panel(host_w, content_w, tolerance=8.0):
+    """Whether the content is as wide as the panel that contains it.
+
+    ★ This is a **comparison**, and it used to be `'"host" in result` —— a criterion the returned JSON
+      satisfies whatever the two widths are, so the regression it was written for (a hardcoded
+      `max-width: 860px`, after which content stopped growing when the panel was dragged wider) passed.
+      The tolerance is for a border or a scrollbar, not for a cap: a cap is what the finding is.
+    """
+    if host_w is None or content_w is None or host_w <= 0:
+        return False
+    return content_w >= host_w - tolerance
+
+
+def panel_width_verdict(raw):
+    """`(ok, detail)` for the panel-width check, from the raw JSON the page returned."""
+    try:
+        m = json.loads(raw or "")
+        host_w = float(m["host"])
+        content_w = float(m["content"])
+    except (TypeError, ValueError, KeyError):
+        # Loudly, not silently: a missing measurement is not a passing one.
+        return False, f"no usable measurement: {raw!r}"
+    return content_follows_panel(host_w, content_w), f"host={host_w:.0f} content={content_w:.0f}"
+
+
 def check(name, ok, detail=""):
     results.append((name, bool(ok), detail))
     print(f"  {'✅' if ok else '❌'} {name}" + (f"  {detail}" if detail else ""))
@@ -101,7 +126,8 @@ def run_css(tab):
         content: Math.round(ti.getBoundingClientRect().width),
       });
     })()""")
-    check("content width follows the panel", r and "host" in r, r or "no result")
+    ok, detail = panel_width_verdict(r)
+    check("content width follows the panel", ok, detail)
 
     # ④ SiYuan's own editor must not be hidden.
     #    It once had `[contenteditable]{display:none!important}` with no scope,
@@ -384,12 +410,44 @@ def run_host_isolation(tab):
           "" if not diffs else f"{len(diffs)} places: {'; '.join(diffs[:4])}")
 
 
+def selftest():
+    """The panel-width criterion, on measurements that need no desktop.
+
+    The last three cases are the point: the **old** criterion (`'"host" in raw`) passed all of them, so it
+    could not fail for the regression it named.
+    """
+    cases = [
+        ('{"host":1000,"content":1000}', True, "content fills the panel"),
+        ('{"host":1000,"content":994}', True, "a border's worth of difference"),
+        ('{"host":1000,"content":860}', False, "★ the regression: content capped at 860 while the panel grew"),
+        ('{"host":1000,"content":700}', False, "content narrower still"),
+        ('{"host":1000}', False, "★ no measurement of the content at all"),
+        ("no element", False, "★ the page could not find the elements"),
+        (None, False, "★ no result from the page"),
+        ('{"host":0,"content":0}', False, "a zero-width host measures nothing"),
+    ]
+    bad = 0
+    for raw, expected, why in cases:
+        ok, detail = panel_width_verdict(raw)
+        mark = "✅" if ok == expected else "❌"
+        if ok != expected:
+            bad += 1
+        print(f"  {mark} {why}" + ("" if ok == expected else f" (expected {expected}, got {ok}: {detail})"))
+    print(f"selftest: {'PASS' if bad == 0 else 'FAIL'} ({len(cases)} case(s), {bad} failed)")
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("which", nargs="?", default="all",
                     help="css / resize / color / host / theme / all")
     ap.add_argument("--doc", default=None, help="document id")
+    ap.add_argument("--selftest", action="store_true",
+                    help="the panel-width criterion, on measurements, with no desktop needed")
     args = ap.parse_args()
+
+    if args.selftest:
+        return selftest()
 
     doc = args.doc
     if not doc:

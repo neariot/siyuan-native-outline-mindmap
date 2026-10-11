@@ -95,8 +95,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-live
 
-- **high · test-quality** `scripts/verify-live.py:104`  
-  The 'content width follows the panel' check can never fail for the regression it was written for: it only asserts that the JSON contains the word "host", never comparing the content width with the host width.
 
 ### siyuan
 
