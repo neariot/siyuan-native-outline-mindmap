@@ -118,6 +118,16 @@ GATES = [
         "why": "every optional callback prop a component invokes is supplied by a call site",
     },
     {
+        # Section 1's "never hardcode machine absolute paths". It was a rule enforced by remembering to look,
+        # which is why an audit entry once claimed `.env.example` held a machine path and nothing could check
+        # it either way. The tool prints how many lines it skipped as its own literal cases, and says what it
+        # cannot see (binaries, paths assembled at runtime, gitignored files).
+        "name": "hardcoded-paths",
+        "command": "python3 scripts/check-hardcoded-paths.py",
+        "why": "no literal path that belongs to one machine in a tracked file",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-hardcoded-paths.py").is_file(),
+    },
+    {
         "name": "privacy",
         "command": "python3 scripts/audit-privacy.py",
         "why": "no id-shaped literal and no credential literal in the source",

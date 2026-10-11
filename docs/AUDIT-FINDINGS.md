@@ -47,8 +47,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **medium · privacy** `.env.example:107`  
-  A machine-specific absolute path is hardcoded in a committed config template, which AGENTS section 1 forbids ('Never hardcode machine absolute paths in docs or scripts').
 - **medium · docs** `.github/workflows/ci.yml:75`  
   The manual E2E job cannot run as committed and its dispatch input contradicts the entry point: run-e2e.py takes the target from .env (cfg.siyuan_test / cfg.test_token() / cfg.chromium_path), and the job never creates a .env and never calls setup-python, while the input still claims SIYUAN_URL is what selects the instance.
 - **medium · docs** `README.zh-CN.md:74`  
@@ -348,7 +346,7 @@ conclusion to draw from a complete-looking list of findings.
 - **low · test-quality** `e2e/interactions.spec.ts:146`  
   The fit case's bounds check passes vacuously when no node was measured: the accumulators stay at `Infinity`/`-Infinity`, which satisfy both comparisons (the 0-satisfies-toBeLessThan(N) family this repo records as more dangerous than a false failure).
 - **low · fallback** `e2e/mobile.spec.ts:46`  
-  Five cases resolve the notebook as `process.env.SIYUAN_TEST_NOTEBOOK || (await resolveTestNotebook(api))` — the banned `env || fallback` shape (AGENTS 5.1 #3) that duplicates resolution logic which already lives in testdoc.ts. Today it cannot change the outcome (run-e2e.py exports the key as the empty string and resolveTestNotebook re-reads the same variable), so this is a policy-in-two-places defect rather than a live mis-targeting.
+  (Fixed: all five call sites go through `resolveTestNotebook`, so the value is verified once, in one place.)
 - **low · test-quality** `e2e/mobile.spec.ts:242`  
   The case `the mobile narrow-screen format toolbar toggles open and keeps its state` never tests the state being kept: the only assertion is that the toolbar is not collapsed immediately after opening it.
 - **low · test-quality** `e2e/mobile.spec.ts:117`  
@@ -481,7 +479,7 @@ conclusion to draw from a complete-looking list of findings.
 - **low · docs** `scripts/redproof.py:253`  
   It prints `log: .logs/redproof-<file>.log` but never writes that file - `log` is used only by the print - while the docstring tells the operator the script writes its output there, so a background run read from the printed path shows an earlier run or nothing.
 - **low · dead-code** `scripts/run-e2e.py:66`  
-  `env.setdefault("SIYUAN_TEST_NOTEBOOK", os.environ.get("SIYUAN_TEST_NOTEBOOK", ""))` can never change anything: `env` is already a copy of os.environ, so the default value is the value it already holds (or '' when unset) - it reads as if the entry point injected the notebook when it only forwards it.
+  (Fixed: the key is read through `env.py` and the line is gone -- the entry point validates it and passes it explicitly.)
 - **low · docs** `scripts/run-e2e.py:62`  
   The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
 - **low · bug** `scripts/run-tests.py:83`  
