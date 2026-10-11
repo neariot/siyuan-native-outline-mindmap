@@ -582,13 +582,15 @@ test.describe('multi-select and batch operations', () => {
       await box.click();
       await expect(box, 'the box should read as checked after the click').toBeChecked();
 
-      // The kernel is the ground truth: the marker is what a reopen reads back.
+      // The kernel is the ground truth: the marker is what a reopen reads back. Case-insensitive on
+      // purpose —— SiYuan writes `- [X]`, while our own writer (`map.ts`) emits `[x]`, and the reader
+      // accepts either (`/^\[x\]\s*/i`). Asserting one case would be asserting the writer, not the state.
       await expect
         .poll(async () => {
           const res = await api.call('/api/export/exportMdContent', { id: docId });
           return JSON.stringify(res.data ?? '');
         }, { message: 'the kernel should record the task as done', timeout: 10000 })
-        .toContain('[x]');
+        .toMatch(/\[[xX]\]/);
 
       // And the state has to survive reopening, which is the whole point: close, reload the page, reopen.
       await page.reload();

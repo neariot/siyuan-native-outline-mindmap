@@ -8,6 +8,7 @@ and then going back into SiYuan to click reload —— a long path is hard to re
 
     npm run deploy            # build + deploy
     npm run deploy -- --reload  # after deploying, make SiYuan reload the plugin
+                                #   (a reload that does not happen is an error, not a warning)
 
 All paths come from `.env` (see `.env.example`).
 """
@@ -67,7 +68,7 @@ def api(path, payload):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reload", action="store_true",
-                    help="make SiYuan reload the plugin after deploying")
+                    help="make SiYuan reload the plugin after deploying (fails if it does not reload)")
     ap.add_argument("--no-build", action="store_true",
                     help="skip the build, only deploy the existing output")
     ap.add_argument("--target", action="append", default=[], metavar="DIR",
@@ -161,11 +162,21 @@ def main():
         return 1
 
     if args.reload:
+        # ★ `--reload` was asked for, so a plugin that did not reload is a failure, not a warning: a deploy
+        #   that never told SiYuan to reload anything must not exit 0 and look like it worked
+        #   (docs/AUDIT-FINDINGS.md). The kernel answers `{"code": 0}` on a route it serves, and raises on
+        #   one it does not, so both are checked here rather than guessed at.
         res, err = api("/api/plugins/reloadPlugin", {"name": cfg.plugin_name})
         if err:
-            print(f"  ⚠ Reload failed (you can reload manually inside SiYuan): {err}")
-        else:
-            print(f"  ✓ Reloaded plugin {cfg.plugin_name}")
+            print(f"  ✗ Reload failed: {err}")
+            print("    SiYuan reloads a plugin from its own UI (plugin panel -> Reload); restarting the "
+                  "kernel also picks up the new build.")
+            return 1
+        code = res.get("code") if isinstance(res, dict) else None
+        if code not in (0, None):
+            print(f"  ✗ Reload refused by the kernel: {res}")
+            return 1
+        print(f"  ✓ Reloaded plugin {cfg.plugin_name}")
 
     return 0
 
