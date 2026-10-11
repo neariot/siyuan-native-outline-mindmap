@@ -710,3 +710,43 @@ inside the test layer, the same shape as an environment variable that silently f
 * **A filter change is verified with `--list`**, which needs no browser: `run-e2e.py mindmap -- --list`
   prints `Total: 23 tests in 1 file` before versus 98 after the fix. Cheap checks settle questions that
   a 20-minute run only obscures.
+
+---
+
+## A transient toast swallows every click in the dock
+
+**Symptom.** A click on the plugin entry or on a toolbar button retries until the test times out, and the
+failure looks like the product is broken:
+
+```
+locator resolved to <button class="">导图</button>
+- attempting click action
+  2 × waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - <div data-type="textMenu" class="b3-snackbar__content …">block not found: [<id>]</div>
+      from <div id="message" class="b3-snackbars b3-snackbars--show">…</div> subtree intercepts pointer events
+- retrying click action
+```
+
+It reads as a flake: the same case passes on a rerun, and the cases that failed were the *first* ones in
+the file. In a run of seven cases, two or three failed and the rest passed, twice in a row —— which is
+exactly the shape of a race, and is why it was first mistaken for the plugin not being loaded yet.
+
+**Cause.** SiYuan's snackbar is anchored over the dock and takes pointer events while it is shown, so
+every click inside the dock lands on the toast instead of the control. The toast is *correct*: the
+message said the kernel could not find a block id the page had asked for (its wording is Chinese; we do
+not match on that string anywhere, so this doc paraphrases it). A page still
+showing a document that is then deleted makes the kernel raise `block not found`, and the toast outlives
+the test that caused it.
+
+**Practice.**
+* **Dismiss transient overlays before clicking, as a precondition** —— `dismissSnackbars` in
+  `e2e/mindmap.ts`, called from every helper that clicks in the dock. This is not "is the panel open":
+  a toast says nothing about the panel, and the panel is usually fine.
+* **Do not remove a document from under the page that is showing it.** Navigate away first (the export
+  case's `finally` now reopens the main document before `removeDoc`), otherwise the next test inherits
+  the toast.
+* **A screenshot ends this argument in one step.** The toast, the resolved button, and the *closed*
+  panel were all visible in the kept failure screenshot (`test-results/*/test-failed-1.png`), while the
+  error text only said "click timed out". Reading the DOM would have shown a button that was present,
+  visible, enabled and stable —— a clickable thing that no click could reach.

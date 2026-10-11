@@ -281,6 +281,10 @@ test('XML special characters in nodes are escaped', async ({ page }) => {
     expect(texts, 'a child node containing < > & should be restored too').toContain('x > 10 & y < 20');
     expect(texts, 'the quoted node should be restored').toContain('符号 "测试"');
   } finally {
+    // ★ Navigate away **before** removing it. A page still showing a document that is then removed makes
+    //   SiYuan raise "block not found" for its id, and that toast outlives the test and intercepts the
+    //   clicks of the next one (`dismissSnackbars` in mindmap.ts is the other half of this).
+    await openDoc(page, DOC);
     await removeDoc(api, tempId);
   }
 });

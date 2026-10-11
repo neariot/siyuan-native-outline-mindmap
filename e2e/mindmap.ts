@@ -72,6 +72,32 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   // Do not click if it is really open —— clicking **toggles** it and closes what is open.
   if (await isOpen()) return;
 
+  // A toast over the dock swallows the clicks below (see `dismissSnackbars`).
+  await dismissSnackbars(page);
+
+  // ★★ The precondition, and the reason it is not the same question as "is it open".
+  //
+  //   `.om-mm-viewswitch` exists only once the plugin has registered its panel, so **attached** means
+  //   "the plugin loaded". A closed panel is *legitimately* `display:none` with width 0, which is why
+  //   visibility (`isVisible`, the first bounding box) cannot be used here —— it would report a
+  //   correctly-closed panel as a failure.
+  //
+  //   Measured: the cold start after a fresh page load takes longer than the click loop's own 3 × 3s
+  //   budget, so the loop could expire while the plugin was still mounting and report the panel as
+  //   stuck. The two export cases that run first in their file failed that way while the rest passed.
+  //   Waiting here separates "still loading" (wait, up to the same 60s `openDoc` allows for visibility)
+  //   from "loaded but would not open" (the error below).
+  await page
+    .locator('.om-mm-viewswitch')
+    .last()
+    .waitFor({ state: 'attached', timeout: 60_000 })
+    .catch(() => {
+      throw new Error(
+        'the plugin panel never mounted (.om-mm-viewswitch absent after 60s) —— the plugin did not load; ' +
+          'check the browser console for an onload error',
+      );
+    });
+
   const entry = page.locator('[data-type*="native-outline-mindmap"]').first();
   await entry.waitFor({ state: 'visible', timeout: 30_000 });
 
@@ -138,6 +164,7 @@ export async function openDoc(page: Page, docId: string): Promise<void> {
 
 /** Switch to the mind map view and wait for the canvas to appear. */
 export async function toMindmapView(page: Page): Promise<void> {
+  await dismissSnackbars(page);
   const btn = page.locator('.om-mm-viewswitch button', { hasText: '导图' });
   await btn.click();
   await expect(page.locator('.mm-canvas svg')).toBeVisible({ timeout: 30_000 });
@@ -147,6 +174,7 @@ export async function toMindmapView(page: Page): Promise<void> {
 
 /** Switch back to the outline view. */
 export async function toOutlineView(page: Page): Promise<void> {
+  await dismissSnackbars(page);
   await page.locator('.om-mm-viewswitch button', { hasText: '大纲' }).click();
   await expect(page.locator('.mm-canvas svg')).toHaveCount(0, { timeout: 15_000 });
 }
@@ -172,7 +200,36 @@ export async function toOutlineView(page: Page): Promise<void> {
  * Note the criterion is `isVisible()`: in a wide dock this toggle does not exist at all (`display:none`),
  * in which case there is nothing to do.
  */
+/**
+ * ★★ Dismiss SiYuan's transient toasts before any click in the dock.
+ *
+ * A snackbar (`#message .b3-snackbar`) is anchored over the dock and **intercepts pointer events**, so a
+ * click on the plugin entry or on a toolbar button retries until the test times out:
+ *
+ *     <div data-type="textMenu" class="b3-snackbar__content …">…</div>
+ *       … subtree intercepts pointer events
+ *
+ * Measured: the toast that did this read "block not found" for a document id the page had asked for after
+ * the document had been replaced —— the message was correct, the panel was correct, and the only broken
+ * thing was the click. So this is a precondition for clicking, not part of "is the panel open".
+ *
+ * SiYuan hides these on its own timer; clicking the close button is what a user does and is quicker. A
+ * click that fails because the toast already vanished is fine here, and the toast still standing is *not*
+ * swallowed: the next click then fails with Playwright's own "intercepts pointer events" message, which
+ * names the cause.
+ */
+export async function dismissSnackbars(page: Page): Promise<void> {
+  const closes = page.locator('#message .b3-snackbar__close');
+  for (let left = await closes.count(); left > 0; left -= 1) {
+    await closes
+      .first()
+      .click({ timeout: 2_000 })
+      .catch(() => closes.first().evaluate((el: HTMLElement) => el.click()).catch(() => undefined));
+  }
+}
+
 export async function ensureBarOpen(page: Page): Promise<void> {
+  await dismissSnackbars(page);
   const toggle = page.locator('.om-mm-root .mm-bar-toggle');
   if (!(await toggle.isVisible().catch(() => false))) return; // wide dock: no toggle, it is expanded already
   const collapsed = await page.evaluate(() =>
