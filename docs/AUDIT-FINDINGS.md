@@ -114,10 +114,6 @@ conclusion to draw from a complete-looking list of findings.
   The "reverse check" that is supposed to prove the defect is real hand-builds a strawman that does not touch the code under test, so its assertion is true by construction and can never fail.
 - **medium · test-quality** `src/core/map.test.ts:865`  
   A check passes a literal `true` as its condition, so it is counted in the suite total while asserting nothing — it can never go red, whichever way the code changes.
-- **medium · dead-code** `src/core/map.ts:526`  
-  `hasRichStyle` is exported, documented as the switch that decides which kernel write-back path store.ts takes, and is called by nothing but its own unit test — store.ts routes every write through the DOM path.
-- **medium · dead-code** `src/core/map.ts:835`  
-  The "dropped paragraphs" counter is initialised and stored but never incremented, so `takeDroppedParagraphs()` always returns 0 — the user-facing warning the doc comment promises has no data source, and the only consumers are tests asserting `=== 0`.
 
 ### docs-core
 

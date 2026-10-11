@@ -86,3 +86,28 @@ nothing if nothing uses the helper either.
 **Tests**: `src/plugin/echo-guard.test.ts` (18 checks: the helper's failure path, and the wiring).
 
 ---
+
+### 0.5 Dead code whose comment names a caller that stopped calling it
+
+**Symptom**: two helpers in `src/core/map.ts` described work nothing did. `hasRichStyle` was exported and
+documented as "the switch that decides which kernel write-back path `store.ts` takes" —— `store.ts` had
+since settled on always writing through the DOM path (and says so, with the kernel source quoted), so the
+function was called by nothing but its own 15 unit checks. A `droppedParagraphs` counter was initialised and
+stored but never incremented, so `takeDroppedParagraphs()` always returned `0` —— "the user-facing warning"
+its comment promised had no data source, and its four callers in the tests asserted `=== 0`, which is a
+statement about an empty mechanism.
+
+**Cause**: neither is a crash, so nothing failed. The drift is silent in both directions: a doc that names a
+caller which no longer exists, and a test that pins the behaviour of a mechanism nothing feeds. The second
+is the more dangerous shape —— four green checks that look like they guard "nothing is lost on the round
+trip", while the real protection is the content assertions sitting next to them.
+
+**Practice**: find them by asking what a symbol's **last caller** is, not whether it is exported. Both are
+removed (`docs/ARCHITECTURE.md` had the branch drawn as a diagram and was corrected in the same commit).
+The rule of thumb: a helper that exists only to be tested is either about to be used or already dead —— and
+a counter with no writer is worse than no counter, because a test can assert on it forever.
+
+**Tests**: `src/core/map.test.ts` (15 checks removed with the function; the content assertions around each
+`=== 0` remain and are the ones that can fail).
+
+---

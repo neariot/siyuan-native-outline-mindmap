@@ -140,15 +140,18 @@ Measured:
 
 ⇒ **Before writing, the internal fragment must be turned into the shape that path accepts.**
 
-### Strategy: markdown by default, DOM only when styles are present
+### Strategy: every write goes through the DOM path
 
 ```
-hasRichStyle(html)?
-  ├─ no  → updateBlock(kramdown)
-  └─ yes → updateBlockDom(htmlToSiyuanDom(html))
+updateBlockDom(htmlToSiyuanDom(html))     // dataType=dom
 ```
 
-The DOM path is more fragile (raw tags crash it), so keeping its scope minimal keeps the risk surface minimal too.
+A "markdown by default, DOM only when styles are present" split was tried and **dropped**, settled from the
+kernel source: `kernel/api/block_op.go` parses `dataType=markdown` through Lute, while `dataType=dom` is
+handed to `PerformBlockOperation` **as it is**, with no parsing step —— so "markdown cannot express this
+style" stops being a problem, and the fragile-path worry above no longer buys anything. Two exceptions
+remain, both narrow and argued where they are written: a plain to-do toggle uses the task-marker API, and
+clearing a to-do goes back through markdown (`src/siyuan/store.ts`).
 
 ### Hidden constraint: style and semantics must merge into the same tag
 

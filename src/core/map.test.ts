@@ -3,7 +3,7 @@
 //   node --experimental-strip-types src/core/map.test.ts   (Node 22+)
 // or run it through rsbuild/tsx.
 
-import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, hasRichStyle, makeSiyuanId, SIYUAN_ID_RE, takeDroppedParagraphs, takeTitleParagraphs } from './map';
+import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, makeSiyuanId, SIYUAN_ID_RE, takeTitleParagraphs } from './map';
 import { htmlToText } from '../model/tree';
 import type { OutlineNode } from '../model/types';
 
@@ -522,29 +522,6 @@ check('DOM: unknown tag stripped but its text kept', unknownDom === '文字', un
 // Empty input
 check('DOM: empty input', htmlToSiyuanDom('') === '', htmlToSiyuanDom(''));
 
-// ---------- hasRichStyle: decides between the markdown and DOM paths ----------
-
-// The markdown path can express these → it must not switch to DOM (the DOM path is more fragile; the smaller its surface the better)
-for (const plain of ['<b>粗</b>', '<i>斜</i>', '<s>删</s>', '<code>码</code>',
-                     '<u>划</u>', '<sup>上</sup>', '<sub>下</sub>', '==亮==', '文本二']) {
-  check(`richStyle:${plain.slice(0, 12)} → no`, hasRichStyle(plain) === false, plain);
-}
-// These can only be expressed by the DOM path → it must switch
-for (const styled of [
-  '<span style="color:var(--b3-font-color1);">红</span>',
-  '<span style="background-color:red">底</span>',
-  '<span style="font-size:20px">大</span>',
-  '<span style="font-family:monospace">等</span>',
-]) {
-  check(`richStyle:${styled.slice(0, 20)} → yes`, hasRichStyle(styled) === true, styled);
-}
-// A style without any attribute we support does not count (to avoid switching to the more fragile DOM path by mistake)
-check('richStyle: unrelated style → no',
-  hasRichStyle('<span style="font-weight:bold">权</span>') === false, 'font-weight');
-// Mixed content: switch as soon as one supported style is present
-check('richStyle: mixed content → yes',
-  hasRichStyle('前<b>粗</b>中<span style="color:red">红</span>后') === true, 'mixed');
-
 // ---------- `<font color>` must become a SiYuan inline style (real-bug regression) ----------
 //
 // The tool's colour picker uses `document.execCommand('foreColor')`, and Blink/WebKit produce
@@ -927,7 +904,6 @@ console.log('=== blank-line rules ===');
     !(t[1]?.paragraphs?.length),
     `got=${JSON.stringify(t[1]?.paragraphs)}`,
   );
-  check('nothing is discarded here', takeDroppedParagraphs() === 0, 'should be 0');
 
   // A paragraph appearing before any node belongs to the title node (the document root) instead of being ignored
   const kd2 = ['说明文本', '- {: id="a" }甲', '- {: id="b" }乙'].join('\n');
@@ -939,7 +915,6 @@ console.log('=== blank-line rules ===');
     titleParas.length === 1 && titleParas[0].includes('说明文本'),
     `got=${JSON.stringify(titleParas)}`,
   );
-  check('a leading paragraph no longer counts as discarded', takeDroppedParagraphs() === 0, 'should be 0');
 
   // Round trip of title-node leading paragraphs
   const kdRoundTrip = treeToKramdown(t2, {
@@ -956,7 +931,6 @@ console.log('=== blank-line rules ===');
       backTitleParas[1].includes('第二段说明'),
     `got=${JSON.stringify(backTitleParas)}`,
   );
-  check('the round trip discards nothing', takeDroppedParagraphs() === 0);
 }
 
 // ── literal `<` `>` `&` must not be eaten as tags (fixed regression)
@@ -1207,7 +1181,6 @@ console.log('=== blank-line rules ===');
     paras[1].includes('第二段文本。'),
     `got=${paras[1]}`,
   );
-  check('no paragraph was discarded as unattachable', takeDroppedParagraphs() === 0);
 
   // Write-back and read-out round trip
   const writtenKd = treeToKramdown(tree, {

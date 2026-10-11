@@ -501,26 +501,6 @@ export function htmlToSiyuanDom(fragment: string): string {
   return s;
 }
 
-/**
- * Decide whether a piece of node HTML contains styles that markdown cannot express.
- *
- * ★ Purpose: `store.ts` uses this to choose which kernel path to write back through (see the `updateBlockDom` notes).
- *   The markdown path understands `**` `*` `~~` `` ` `` `==` `<u>` `<sup>` `<sub>`,
- *   but it is powerless against `style` properties such as **color/background/font size/font family** (they get escaped into source text).
- *   Only those need the DOM path.
- *
- * The reason for "use markdown whenever possible" is that the markdown path is more stable:
- * the DOM path does not understand bare HTML tags, and any gap in the conversion collapses into `&lt;protyle-html&gt;`.
- * Keeping the DOM path's scope minimal keeps the risk surface minimal.
- */
-export function hasRichStyle(html: string): boolean {
-  if (!html) return false;
-  // It only looks at `style="…"`, and a supported style property name must **really be there**, to avoid mistaking a plain span's
-  // incidental "style" text for one.
-  const styles = html.match(/style="([^"]*)"/g) ?? [];
-  return styles.some((s) => /(?:^|[;\s"])(color|background-color|font-size|font-family)\s*:/.test(s));
-}
-
 // ---------------------------------------------------------------- Kramdown → HTML
 
 /**
@@ -818,16 +798,6 @@ export function treeToKramdown(
  * Parsing strategy: scan line by line, use the indent width to decide the level, and rebuild the tree with a stack.
  * Ignore the indentation of `<!-- om-id:... -->` lines (they sit at the same level as the node they belong to).
  */
-/**
- * How many "flush-left paragraphs with nowhere to attach" the last `kramdownToTree` dropped.
- *
- * The drop branch is reached only when "a paragraph appears before any list item" — if a node already exists after the paragraph,
- * it is kept as that node's attached paragraph (see the notes in `kramdownToTree`).
- *
- * Why a module-level variable instead of changing the return value: `kramdownToTree` has many call sites,
- * and changing the return type would ripple widely; this count is only used to **warn the user** and does not affect the main flow.
- */
-let lastDroppedParagraphs = 0;
 let lastTitleParagraphs: string[] = [];
 
 /** Read and reset "the heading node's leading paragraphs extracted by the last kramdownToTree" */
@@ -861,7 +831,6 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   const titleParagraphs: string[] = [];
   const stack: { depth: number; node: OutlineNode }[] = [];
   let lastNode: OutlineNode | null = null;
-  let droppedParagraphs = 0;
   // Whether "the document's first block" has been seen — used to recognise the document title (see below)
   let sawFirstBlock = false;
   // Whether the previous "meaningful" line was a block attribute line — used to recognise **empty attached paragraphs** (see below)
@@ -1083,17 +1052,9 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   // Fallback: give a SiYuan-style ID to nodes for which the whole text never provided an ID
   for (const n of flatNodes(roots)) if (!n.id) n.id = makeSiyuanId();
 
-  lastDroppedParagraphs = droppedParagraphs;
   lastTitleParagraphs = titleParagraphs;
   (roots as any).titleParagraphs = titleParagraphs;
   return roots;
-}
-
-/** Read and reset "the number of flush-left paragraphs dropped last time" */
-export function takeDroppedParagraphs(): number {
-  const n = lastDroppedParagraphs;
-  lastDroppedParagraphs = 0;
-  return n;
 }
 
 /** Flatten the node tree depth-first (internal helper) */
