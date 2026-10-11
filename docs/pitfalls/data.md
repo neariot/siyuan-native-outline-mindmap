@@ -186,7 +186,12 @@ Only when the parent has no child list yet fall back to the parent paragraph blo
 
 Measured after the fix: child list count = **1** (confirmed by SQL), the resolved text is `['甲','  子T','  同E','乙','丙']` —— exactly the UI order —— and the three-level case `甲 > {子T > 孙X, 同E}` is still correct 18 s later.
 
-**Test**: `src/plugin/single-child-list.test.ts`
+**Tests**: `src/plugin/single-child-list.test.ts` reads `ensureChildList` through the parser and pins the
+lookup that this whole entry depends on —— the table is **read** before any List is created, a found list and
+a created list are both remembered, and "looked up and absent" is cached as such; plus the probe's markdown
+carrying the `- ` marker, without which the kernel returns a paragraph and there is no List to indent into.
+The structural premise (`parseDomToTree` reports **one** child list per parent) is asserted in
+`src/siyuan/blockmap-anchor.test.ts`.
 
 ---
 
