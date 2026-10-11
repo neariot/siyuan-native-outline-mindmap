@@ -800,3 +800,26 @@ wrong layer, and the only way to tell is to break the line and watch.
 **Tests**: `src/core/layout.test.ts` (the product path), `src/core/richtext.test.ts` (the merge itself).
 
 ---
+
+### A body search that anchors on a line inside the body silently returns the wrong scope
+
+**Symptom**: a check asking about a line inside a React effect got a **28-character** body ——
+`{ alive = false; }`, the effect's cleanup closure —— and every assertion written against it would have been
+made about code the check never meant to look at, while the output looked perfectly reasonable.
+
+**Cause**: `fnBody(src, header)` takes the nearest function **starting at or after** the anchor. That is exactly
+right when the anchor *is* the declaration (`fnBody(src, 'const pushUndo = React.useCallback(')`), and wrong
+when the anchor is a statement inside a body: the answer is then the next nested function, which is often a
+cleanup closure or an unrelated callback further down.
+
+**Practice**: anchor on the header and use `fnBody`; anchor anywhere inside the body and use
+`enclosingBody` (the innermost function that **contains** the anchor). They are deliberately two functions ——
+making `fnBody` "find the enclosing function" would break every existing call site, since a header anchor is
+also contained in the surrounding component. ★ The general lesson is older than this incident: a structural
+probe that returns *something plausible* is more dangerous than one that returns nothing, so a body search
+must be sanity-checked once (print its length) before a check is built on it.
+
+**Tests**: `src/plugin/source-probe.ts` (`fnBody`, `enclosingBody`, `assignmentsTo`, `callArgs`,
+`jsxElementsWithAttr`, `jsxElementsWithAttrContaining`).
+
+---
