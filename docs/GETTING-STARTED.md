@@ -157,7 +157,7 @@ When there are too many nodes, you can "step into" one branch and edit it on its
 
 Once you select **two or more** nodes, a bulk toolbar appears above them,
 letting you do all of this to them at once: Indent / Outdent / Move up / Move down / Set to-do / Complete /
-Clear to-do / ＋ Summary / ＋ Link / Delete.
+Clear to-do / Delete.
 
 | What you want | How |
 |---|---|
@@ -170,15 +170,13 @@ Clear to-do / ＋ Summary / ＋ Link / Delete.
 > **A plain click (no modifier) = edit that line**, and it clears the current multi-selection.
 > To keep the selection, use `Ctrl+click`.
 
-#### ＋ Summary needs a "parent topic"
+#### Summary and link lines are not available
 
-A summary is a pair of braces, and it **hangs off the parent topic of the selected nodes**.
-So:
-
-- ✅ Select two or more child topics under the same parent topic → you can add a summary
-- ❌ Select **top-level** topics (they have no parent topic) → you cannot
-
-To add a summary to top-level topics, select them, press `Tab` to **indent them under a parent topic**, then add it.
+They were removed. SiYuan has no native way to store either one, so a summary (a pair of braces) and a
+link line (a dashed arrow between two topics) could never survive a reload —— they lived only until you
+closed the document, while the toolbar went on offering them. Rather than keep a control whose result
+disappears, both are gone from the product. Existing documents still open; the braces and arrows simply
+no longer appear.
 
 ---
 

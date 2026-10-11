@@ -9,7 +9,6 @@
 //   bold/italic/     <b> <i> <s> <code> <u>
 //   strike/code/u
 //   color/highlight <span style="color:#.."> / <span style="background:#..">
-//   cloze mask       <span data-mask="1">text</span>
 //   formula          <span data-formula="latex source">fallback $..$</span> (rendered by KaTeX)
 //   link             <a href="..">..</a>
 //   tag              <span data-tag="name">#name</span>
@@ -44,31 +43,15 @@ export interface OutlineNode {
   heading?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   finish?: boolean; // wire passthrough (a field of real X nodes, no local semantics yet; kept on import, written back as-is on export)
   dueDate?: number; // local semantics: due timestamp (ms, day precision); always stripped from wire/OPML/mm export
-  // Summary: hangs off the parent node and spans the child nodes listed in memberIds (evidence from the bundle: the summaryData-memberIds structure).
-  // text is an HTML fragment; when memberIds references a deleted node, the read side validates and filters it out. Stripped on wire export (shape not verified).
-  summaryData?: Summary[];
-  // Link lines: directed edges attached to the source node (evidence from the bundle: the linkLines-toNodeId structure).
-  // dashed defaults to true (dashed, to distinguish it from the solid hierarchy lines); label is optional. Stripped on wire export.
-  linkLines?: LinkLine[];
+  // Summary (`summaryData`) and link lines (`linkLines`) used to live here. SiYuan has no native carrier for
+  // either, so they were never persisted: they were session-local view state that vanished on reload, while
+  // the UI went on offering them. They are removed rather than left looking supported (section 8).
   numbered?: boolean;
   collapsed?: boolean; // view state only, stripped on export
   children: OutlineNode[];
 }
 
 // ---- wire format (subset we read/write) ----
-export interface Summary {
-  id: string;
-  memberIds: string[];
-  text: string;
-}
-
-export interface LinkLine {
-  id: string;
-  toNodeId: string;
-  label?: string;
-  dashed?: boolean;
-}
-
 export interface DocMeta {
   id: string;
   name: string;

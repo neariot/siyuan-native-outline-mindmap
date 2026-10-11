@@ -685,11 +685,6 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
 .num-badge { flex: none; min-width: 26px; height: 30px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 5px 4px 0 0; color: var(--text-weak); font-size: 13px; }
 .due-chip { flex: none; align-self: flex-start; margin-top: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text-weak); border-radius: 10px; font-size: 11px; line-height: 1; padding: 3px 7px; cursor: pointer; }
 .due-chip.over { color: var(--danger); border-color: var(--danger); font-weight: 700; }
-.link-chip { flex: none; align-self: flex-start; margin-top: 6px; font-size: 12px; line-height: 1; opacity: 0.85; }
-.summary-bar { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px 26px; padding: 5px 10px; border-left: 3px solid var(--accent); background: rgba(127, 127, 127, 0.08); border-radius: 0 8px 8px 0; font-size: 13px; }
-.summary-tag { flex: none; font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 1px 6px; }
-.summary-text { flex: 1; cursor: pointer; min-width: 0; }
-.summary-bar .icon-btn { flex: none; }
 .node-body { flex: 1; min-width: 0; }
 .node-text {
   min-height: 30px; padding: 4px 6px; outline: none; border-radius: 6px;

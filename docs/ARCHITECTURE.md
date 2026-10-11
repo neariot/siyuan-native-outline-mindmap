@@ -205,7 +205,7 @@ When adding behavior, **prefer writing a test that reproduces the original probl
 
 | Item | Status |
 |---|---|
-| Summary `summaryData` / link lines `linkLines` | SiYuan has no native counterpart, so **writing them out is abandoned**; old documents remain readable |
+| Summary `summaryData` / link lines `linkLines` | SiYuan has no native counterpart, so they never persisted. **Removed from the model and the UI** (docs/MAPPING.md 3.3); old documents remain readable |
 | Cloze `mask` | Only the original text is kept, not the cloze semantics |
 | Images | Migrated to SiYuan assets |
 | Plugin name | Still a placeholder, **cannot be installed** (name to be decided) |

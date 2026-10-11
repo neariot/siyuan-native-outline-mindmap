@@ -61,13 +61,9 @@ console.log('=== ① the memo goes through native paragraphs, not attributes ===
   check('with a memo the model stores an array', Array.isArray(n.paragraphs));
 }
 
-console.log('\n=== ② summary / link line are not written out ===');
-{
-  const withSum: Node = { id: 'n1', text: '甲', summaryData: [{ id: 's1', memberIds: ['a'], text: '概要' }] };
-  const withLink: Node = { id: 'n1', text: '甲', linkLines: [{ id: 'l1', toNodeId: 'n2' }] };
-  check('with a summary → no attribute write', Object.keys(attrsToWrite(withSum)).length === 0);
-  check('with a link line → no attribute write', Object.keys(attrsToWrite(withLink)).length === 0);
-}
+// ② used to assert that a summary and a link line write no attributes. Both fields were removed from the
+// model (SiYuan has no native carrier, so they never persisted), which makes the assertion unexpressible
+// rather than merely true —— see docs/MAPPING.md 3.3.
 
 console.log('\n=== ③ the write-back path produces no attribute transaction at all ===');
 {

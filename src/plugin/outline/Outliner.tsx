@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { DocMeta, LinkLine, OutlineNode } from '../../model/types';
+import type { DocMeta, OutlineNode } from '../../model/types';
 import { TASK_DONE, TASK_NONE, TASK_TODO, NODE_WORD_LIMIT, TITLE_MAX } from '../../model/types';
 import {
   cloneNodes,
@@ -1227,33 +1227,6 @@ export default function Outliner(props: OutlinerProps) {
           });
         }
       }
-      // Clean up dangling references: remove deleted nodes from summaryData.memberIds / linkLines.toNodeId
-      if (goneIds.size > 0) {
-        const sweep = (list: OutlineNode[]): void => {
-          for (const n of list) {
-            if (n.summaryData) {
-              const kept = n.summaryData
-                .map((s) => ({ ...s, memberIds: s.memberIds.filter((m) => !goneIds.has(m)) }))
-                .filter((s) => s.memberIds.length > 0);
-              if (kept.length !== n.summaryData.length) {
-                if (kept.length > 0) n.summaryData = kept;
-                else delete n.summaryData;
-                touch(n);
-              }
-            }
-            if (n.linkLines) {
-              const keep = n.linkLines.filter((l) => !goneIds.has(l.toNodeId));
-              if (keep.length !== n.linkLines.length) {
-                if (keep.length > 0) n.linkLines = keep;
-                else delete n.linkLines;
-                touch(n);
-              }
-            }
-            sweep(n.children);
-          }
-        };
-        sweep(draft);
-      }
       if (fallback && findNode(draft, fallback.node.id)) return { id: fallback.node.id, offset: 'end' };
       const f2 = flattenVisible(draft)[0];
       if (f2) return { id: f2.node.id, offset: 'end' };
@@ -1404,84 +1377,6 @@ export default function Outliner(props: OutlinerProps) {
           touch(n);
         }
       }
-    });
-  };
-
-  /** Summary: the selection must share a parent (not allowed at root level) -> prompt for the body -> attach to the parent node's summaryData */
-  const addSummary = (ids: string[]): void => {
-    const tops = topLevelIds(ids);
-    // ★ Every path out of here says something. Returning silently told the user nothing at all: the
-    //   control they clicked just did not respond, which reads as a broken button.
-    if (tops.length < 2) {
-      alert(t('msgSummaryHint'));
-      return;
-    }
-    const parentOf = (tid: string): string | null => {
-      const e = flattenAll(nodes).find((x) => x.node.id === tid);
-      return e?.parent ? e.parent.id : null;
-    };
-    const pid = parentOf(tops[0]);
-    if (!pid || !tops.every((t) => parentOf(t) === pid)) {
-      // The selection is already 2+ siblings, so repeating "select 2 or more sibling topics" would say
-      // nothing useful; the reason is that a top-level topic has no parent to hang a summary on.
-      alert(t('msgSummaryTopLevel'));
-      return;
-    }
-    const text = prompt(t('phSummaryText'), '');
-    if (text === null || text.trim() === '') return;
-    const html = `<span>${escapeHtml(text.trim())}</span>`;
-    mutate((draft) => {
-      const p = findNode(draft, pid);
-      if (!p) return;
-      p.summaryData = [...(p.summaryData || []), { id: genId(), memberIds: [...tops], text: html }];
-      touch(p);
-    });
-  };
-
-  const editSummary = (parentId: string, sid: string): void => {
-    const s = nodeById.get(parentId)?.summaryData?.find((x) => x.id === sid);
-    if (!s) return;
-    const v = prompt(t('phSummaryText'), htmlToText(s.text));
-    if (v === null) return;
-    if (v.trim() === '') {
-      deleteSummary(parentId, sid);
-      return;
-    }
-    mutate((draft) => {
-      // ⚠️ Locals are renamed to avoid t (the i18n lookup function), otherwise this scope cannot look words up
-      const node = findNode(draft, parentId);
-      const target = node?.summaryData?.find((x) => x.id === sid);
-      if (node && target) {
-        target.text = `<span>${escapeHtml(v.trim())}</span>`;
-        touch(node);
-      }
-    });
-  };
-
-  const deleteSummary = (parentId: string, sid: string): void => {
-    mutate((draft) => {
-      const node = findNode(draft, parentId);
-      if (!node?.summaryData) return;
-      node.summaryData = node.summaryData.filter((x) => x.id !== sid);
-      if (node.summaryData.length === 0) delete node.summaryData;
-      touch(node);
-    });
-  };
-
-  /** Link line: exactly 2 nodes selected -> from selected[0] to selected[1] (directed), the label may be empty */
-  const addLink = (ids: string[]): void => {
-    if (ids.length !== 2 || ids[0] === ids[1]) return;
-    const [from, to] = ids;
-    const label = prompt(t('phLinkLabel'), '');
-    if (label === null) return;
-    mutate((draft) => {
-      const src = findNode(draft, from);
-      if (!src || !findNode(draft, to)) return;
-      if (src.linkLines?.some((l) => l.toNodeId === to)) return;
-      const line: LinkLine = { id: genId(), toNodeId: to, dashed: true };
-      if (label.trim()) line.label = label.trim();
-      src.linkLines = [...(src.linkLines || []), line];
-      touch(src);
     });
   };
 
@@ -3039,30 +2934,6 @@ export default function Outliner(props: OutlinerProps) {
   // ---------- render ----------
   const selSet = useMemo(() => new Set(selected), [selected]);
 
-  // Node ids involved in link lines (including as the target): used to render the 🔗 marker
-  const linkedIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of flatAll) {
-      if (e.node.linkLines && e.node.linkLines.length > 0) {
-        set.add(e.node.id);
-        for (const l of e.node.linkLines) set.add(l.toNodeId);
-      }
-    }
-    return set;
-  }, [flatAll]);
-
-  // Whether a summary is possible for the selection: ≥2 top-level selected nodes sharing a parent (the root level has no parent to attach to, so no summary is possible)
-  const selTops = useMemo(() => topLevelIds(selected), [selected]);
-  const canSummary = useMemo(() => {
-    if (selTops.length < 2) return false;
-    const pidOf = (tid: string): string | null => {
-      const e = flatAll.find((x) => x.node.id === tid);
-      return e?.parent ? e.parent.id : null;
-    };
-    const pid = pidOf(selTops[0]);
-    return pid !== null && selTops.every((t) => pidOf(t) === pid);
-  }, [selTops, flatAll]);
-
   const renderNode = (entry: (typeof flatAll)[number], siblingNumberedIdx: Map<string, number>): JSX.Element => {
     const { node: n, depth } = entry;
     const isSel = selSet.has(n.id);
@@ -3206,11 +3077,6 @@ export default function Outliner(props: OutlinerProps) {
             </span>
           </span>
           {n.taskStatus ? <TaskBox status={n.taskStatus} onCycle={() => toggleTask(n.id)} /> : null}
-          {linkedIds.has(n.id) ? (
-            <span className="link-chip ariaLabel" aria-label={t('tipLinkChip')} title={t('tipLinkChip')}>
-              🔗
-            </span>
-          ) : null}
           {n.dueDate ? (
             <button
               type="button"
@@ -3483,37 +3349,6 @@ export default function Outliner(props: OutlinerProps) {
       if (!entry) return <React.Fragment key={n.id} />;
       return renderNode(entry, numMap);
     });
-    // Summary bar: the parent node's summaryData (validated and filtered when a member is missing), rendered at the end of the child list
-    if (_parent?.summaryData) {
-      for (const s of _parent.summaryData) {
-        const members = s.memberIds.filter((m) => {
-          const e = flatAll.find((x) => x.node.id === m);
-          return e?.parent ? e.parent.id === _parent.id : false;
-        });
-        if (members.length === 0) continue;
-        out.push(
-          <div key={s.id} className="summary-bar ariaLabel" aria-label={t('tipSummaryBar', { n: members.length })} title={t('tipSummaryBar', { n: members.length })}>
-            <span className="summary-tag">{t('lblSummary')}</span>
-            <span
-              className="summary-text ariaLabel"
-              aria-label={t('tipSummaryClickEdit')} title={t('tipSummaryClickEdit')}
-              dangerouslySetInnerHTML={{ __html: s.text || '' }}
-              onClick={() => editSummary(_parent.id, s.id)}
-            />
-            <button
-              type="button"
-              {...tooltip(t('tipSummaryDelete'), 'icon-btn')}
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteSummary(_parent.id, s.id);
-              }}
-            >
-              ✕
-            </button>
-          </div>,
-        );
-      }
-    }
     return out;
   };
 
@@ -3795,8 +3630,6 @@ export default function Outliner(props: OutlinerProps) {
           <button onClick={() => setTaskMany(selected, TASK_TODO)}>{t('cmdMarkTodo')}</button>
           <button onClick={() => setTaskMany(selected, TASK_DONE)}>{t('cmdMarkDone')}</button>
           <button onClick={() => setTaskMany(selected, TASK_NONE)}>{t('cmdClearTodo')}</button>
-          {canSummary && <button onClick={() => addSummary(selected)}>{t('cmdAddSummary')}</button>}
-          {selected.length === 2 && <button onClick={() => addLink(selected)}>{t('cmdAddLink')}</button>}
           <button onClick={() => deleteNodes(selected)}>{t('cmdDelete')} <span className="kbd">Del</span></button>
           <button onClick={() => { setSelected([]); setAnchor(null); }}>{t('cmdCancel')}</button>
         </div>
@@ -4435,19 +4268,6 @@ export default function Outliner(props: OutlinerProps) {
 
       {/* Outline view: bottom floating icon action bar */}
       <div className="om-dock" onMouseDown={(e) => e.preventDefault()}>
-        {selected.length >= 2 && (
-          // ★ Deliberately **not** behind `canSummary`, which the selection bar uses. At the top level the
-          //   bar hides its button (there is no parent to attach to), and hiding is the one answer that
-          //   teaches nothing: the dock keeps the control, and `addSummary` explains the reason when it is
-          //   clicked. Only ≥2 selected decides whether it is offered.
-          <button
-            type="button"
-            {...tooltip(t('cmdAddSummary'), 'dock-btn summary-btn')}
-            onClick={() => addSummary(selected)}
-          >
-            {t('cmdAddSummary')}
-          </button>
-        )}
         <button
           type="button"
           {...tooltip(t('tipAddSiblingEnter'), 'dock-btn add-btn')}
@@ -4561,16 +4381,6 @@ export default function Outliner(props: OutlinerProps) {
                   <div className="mm-ctx-item" onClick={() => { setCtxMenu(null); setTaskMany(selected, TASK_NONE); }}>
                     {t('cmdClearTodo')}
                   </div>
-                  {canSummary && (
-                    <div className="mm-ctx-item" onClick={() => { setCtxMenu(null); addSummary(selected); }}>
-                      {t('cmdAddSummary')}
-                    </div>
-                  )}
-                  {selected.length === 2 && (
-                    <div className="mm-ctx-item" onClick={() => { setCtxMenu(null); addLink(selected); }}>
-                      {t('cmdAddLink')}
-                    </div>
-                  )}
                   <div className="mm-ctx-sep" />
                   <div
                     className="mm-ctx-item mm-ctx-danger"

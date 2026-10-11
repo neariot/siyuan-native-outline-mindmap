@@ -284,12 +284,13 @@ Uploaded to SiYuan assets via `/api/file/put`, and synced along with the documen
 > ⚠️ An `<img>` that has only an alt and no usable address **must never** produce an empty link `![alt]()`;
 > in SiYuan that is a broken image. It should degrade to plain text.
 
-### 3.3 Outline `summaryData` / link lines `linkLines` ⛔ no longer supported
+### 3.3 Outline `summaryData` / link lines `linkLines` ⛔ removed from the product
 
-SiYuan has **no native counterpart**, so — to satisfy "zero custom attributes" — they are **neither read nor written**.
-
-Both are **local view semantics within a session** (valid only in the current editing session)
-and are not persisted across sessions — so there is no "read side / write side" distinction.
+SiYuan has **no native counterpart**, so — to satisfy "zero custom attributes" — they were **neither read
+nor written**, which made them local view semantics that did not survive a reload. A control whose result
+disappears is worse than no control, so the fields and every path that produced them are **removed**: the
+model no longer has `summaryData` / `linkLines`, the outline no longer offers the actions, and the mind map
+no longer draws the brackets and the dashed arrows. Old documents open unchanged.
 
 ## 4. ID strategy
 

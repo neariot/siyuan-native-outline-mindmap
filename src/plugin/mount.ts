@@ -445,8 +445,6 @@ function OmTabApp({
         //     this must switch to `paragraphs` as well —— otherwise the same truncation bug
         //     **replays unchanged** on attached paragraphs.
         parts.push(`${n.id}:paras=${JSON.stringify(n.paragraphs ?? [])}`);
-        parts.push(`${n.id}:sum=${n.summaryData ? JSON.stringify(n.summaryData) : ''}`);
-        parts.push(`${n.id}:lnk=${n.linkLines ? JSON.stringify(n.linkLines) : ''}`);
         if (n.children?.length) walk(n.children);
       }
     };
@@ -483,10 +481,9 @@ function OmTabApp({
       for (const n of l) {
         // Child order is expressed with ids: order changed → fingerprint changes
         const kids = (n.children ?? []).map((c) => c.id).join(',');
-        // Attached paragraphs and summaries/connectors each produce their own block, so they are structure
+        // Attached paragraphs each produce their own block, so they are structure
         parts.push(
-          `${n.id}[${kids}]p${(n.paragraphs ?? []).length}`
-          + `${n.summaryData ? 's' : ''}${n.linkLines?.length ? 'l' + n.linkLines.length : ''}`,
+          `${n.id}[${kids}]p${(n.paragraphs ?? []).length}`,
         );
         if (n.children?.length) walk(n.children);
       }
@@ -2154,32 +2151,6 @@ function OmTabApp({
       /**
        * ★ Clicking a block reference / mention → open the target.
        */
-      // ★★★ Delete a connector (added).
-      //
-      //   Defect: `onDeleteLink` was a Mindmap prop that was **declared but never passed** ——
-      //   across the whole project only the retired web version App.tsx.bak ever passed it.
-      //   So clicking a connector in the mind map and confirming deletion **did nothing at all** (the attributes did not budge).
-      //   Measured: after clicking there was still 1 mm-link and the attributes were unchanged.
-      onDeleteLink: (fromId: string, linkId: string) => {
-        const base = nodesRef.current ?? [];
-        const src = findNode(base, fromId);
-        if (!src?.linkLines?.length) return;
-        const keep = src.linkLines.filter((l) => l.id !== linkId);
-        pushUndo(prevTreeRef.current);
-        prevTreeRef.current = nodesRef.current;
-        const draft = base.map(function strip(n): OutlineNode {
-          if (n.id === fromId) {
-            const next: OutlineNode = { ...n, modified: Date.now() };
-            if (keep.length > 0) next.linkLines = keep;
-            else delete next.linkLines;
-            return next;
-          }
-          return n.children?.length ? { ...n, children: n.children.map(strip) } : n;
-        });
-        nodesRef.current = draft;
-        setNodes(draft);
-        void writeLatest();
-      },
       // ★ Reparenting by drag in the mind map (added).
       //   Same semantics as the outline's moveDrop(zone='child'): dropped onto a node → becomes its child.
       //   Dragging in the mind map used to pan the canvas only, and nodes could not be reparented —— the two views were inconsistent (confirmed by measurement).

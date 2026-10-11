@@ -566,10 +566,12 @@ test.describe('multi-select and batch operations', () => {
     ).toHaveCount(1);
   });
 
-  test('★ "+summary" distinguishes by level: usable for siblings below the top, top-level siblings get the **real reason**', async ({ page }) => {
-    const baseURL = siyuanUrl();
-    const token = siyuanToken();
-    const api = await kernelApi(baseURL, token);
+  test('★ the summary and link-line controls are gone: SiYuan has no native carrier, so they never persisted', async ({ page }) => {
+    // Both were offered while being unable to survive a reload: `summaryData` / `linkLines` have no native
+    // counterpart in SiYuan, so they lived only in the session's memory (docs/MAPPING.md 3.3). They are now
+    // removed rather than left looking supported —— and this case is what stops a half-removal creeping back:
+    // a stale button, a context-menu entry, or a render path that still expects the field.
+    const api = await kernelApi(siyuanUrl(), siyuanToken());
     let docId = '';
     try {
       docId = await createTempDoc(
@@ -578,56 +580,23 @@ test.describe('multi-select and batch operations', () => {
       );
       await openDoc(page, docId);
       await toOutlineView(page);
-
-      const rowIdx = (txt: string) =>
-        page.evaluate((t) => {
-          const rows = [...document.querySelectorAll('.node-row')];
-          for (let i = 0; i < rows.length; i++) {
-            const nt = rows[i].querySelector('.node-text');
-            if (nt && (nt.textContent || '').trim() === t) return i;
-          }
-          return -1;
-        }, txt);
-      const ctrl = async (txt: string) => {
-        const i = await rowIdx(txt);
-        expect(i, `the row "${txt}" should be found`).toBeGreaterThanOrEqual(0);
-        await page.locator('.node-row').nth(i).click({ modifiers: ['Control'] });
-        await page.waitForTimeout(250);
-      };
-
-      // ① Siblings below the top (节点一 + 节点二, the parent is 甲) → summary **available**
-      await ctrl('节点一');
-      await ctrl('节点二');
-      await expect(
-        page.locator('.selbar button', { hasText: '概要' }),
-        'two sibling children should be able to take a summary (the summary hangs on the parent topic 甲)',
-      ).toHaveCount(1);
-
-      // ② Top-level siblings (甲 + 乙) → the summary button **does not appear**, and clicking summary in the toolbar
-      //    must give the **real reason** (there is nothing to attach it to at the top level), instead of telling the user to "select siblings again".
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await toOutlineView(page);
-      await ctrl('甲');
-      await ctrl('乙');
-      await expect(
-        page.locator('.selbar button', { hasText: '概要' }),
-        'top-level siblings should not show the summary button (there is no parent node to attach to)',
-      ).toHaveCount(0);
-
-      let msg = '';
-      page.on('dialog', async (d) => {
-        msg = d.message();
-        await d.accept();
+      const i = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.node-row')];
+        return rows.findIndex((r) => (r.querySelector('.node-text')?.textContent || '').trim() === '节点一');
       });
-      await page.locator('button', { hasText: '概要' }).first().click();
-      await page.waitForTimeout(700);
-
-      expect(msg, 'a message should pop up').not.toBe('');
-      expect(
-        msg,
-        'the user **already** selected 2 siblings, so the message must state the real reason (a top-level topic has no parent node to attach to),'
-          + 'instead of telling them to "select 2 or more sibling topics first" —— that says nothing',
-      ).toContain('顶层');
+      expect(i, 'the fixture row should be found').toBeGreaterThanOrEqual(0);
+      // The old summary button appeared for exactly this selection: two siblings below the top.
+      await page.locator('.node-row').nth(i).click({ modifiers: ['Control'] });
+      await page.locator('.node-row').nth(i + 1).click({ modifiers: ['Control'] });
+      await page.waitForTimeout(300);
+      await expect(page.locator('.selbar'), 'the batch toolbar still appears for 2 selected').toHaveCount(1);
+      // ★ Structural checks, not the label text. The label was a catalogue value, and with its key gone,
+      //   asserting that text would mean writing a dead Chinese literal into a test —— which the fixture rules
+      //   forbid for good reason. What catches a *reintroduced* control is the i18n gate: a new button needs a
+      //   key, and a key with no call site fails the build (scripts/check-i18n-keys.py).
+      await expect(page.locator('.summary-bar'), 'no summary bar is rendered').toHaveCount(0);
+      await expect(page.locator('.mm-link'), 'no link lines are rendered').toHaveCount(0);
+      await expect(page.locator('.mm-summary'), 'no summary bracket is drawn in the mind map').toHaveCount(0);
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();

@@ -4,7 +4,7 @@
  * Background
  *   The plugin CSS is **injected globally** (SiYuan attaches it to the host page with <link>, there is no Shadow DOM),
  *   and the source once had 173 selectors written as bare class names: `.node-row`, `.outliner-title`,
- *   `.btn`, `.link-chip`…… "SiYuan happens not to use this class name right now" is not a reason ——
+ *   `.btn`, `.dock-btn`…… "SiYuan happens not to use this class name right now" is not a reason ——
  *   a host redesign or installing another plugin could collide with it at any moment.
  *
  *   The scoping happens at build time (`scripts/css-scope.mjs` +

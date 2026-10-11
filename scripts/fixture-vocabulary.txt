@@ -20,7 +20,7 @@
 # One entry per line. A token nothing uses is a finding, the same as in language-allowlist.txt.
 
 # structure
-附属 节点 子节点 根节点 孙节点 兄弟节点 分支 主题 子主题 同级主题 项 子项 列表 列表项 层 级 顶层
+附属 节点 子节点 根节点 孙节点 兄弟节点 分支 主题 子主题 同级主题 项 子项 列表 列表项 级
 # kinds of text
 标题 子标题 正文 文本 文字 段落 段 行 字 块 内容 说明 长 短 值 属性 状态
 # carriers and surfaces the tests exercise

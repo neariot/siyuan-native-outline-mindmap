@@ -40,7 +40,11 @@ for (const f of SRC_FILES) {
     'ariaLabel landed inside a ternary expression');
 }
 
-check('overall ariaLabel count >= 35 (covers the icon buttons)', totalAriaLabel >= 35, `actual ${totalAriaLabel}`);
+// ★ The floor moves with the surface, and it is a floor on purpose: it catches a rewrite that drops
+//   `ariaLabel` from a whole file, which the per-file checks above cannot see. It was 35 while the link
+//   chip and the summary bar existed —— both are gone (no native carrier, so they never persisted), and
+//   each carried one.
+check('overall ariaLabel count >= 33 (covers the icon buttons)', totalAriaLabel >= 33, `actual ${totalAriaLabel}`);
 
 // the tooltip() helper itself
 const helper = readFileSync('src/plugin/tooltip.ts', 'utf8');

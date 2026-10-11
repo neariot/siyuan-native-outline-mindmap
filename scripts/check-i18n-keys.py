@@ -116,8 +116,8 @@ def main() -> int:
             or f".i18n.{key}" in source_text
         ):
             return True
-        # `t('<key>')` in a spec, or a spec/doc that asserts (part of) the value. A test matches a short
-        # fragment (`顶层` out of a longer sentence), so a run of two or more CJK characters counts.
+        # `t('<key>')` in a spec, or a spec/doc that asserts (part of) the value. A test usually matches a
+        # short **fragment** of a longer sentence, so a run of two or more CJK characters counts.
         # Deliberately loose: the cost of the two mistakes is not symmetric —— a too-loose rule leaves
         # dead text in a catalogue (mild), a too-strict one deletes a key a spec asserts and the UI shows
         # the raw key id (broken). The E2E suite is the authority either way.

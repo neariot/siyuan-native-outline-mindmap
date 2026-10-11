@@ -52,7 +52,9 @@ This version has **no breaking changes to the public API** and no default config
 3. **Hardened mouse multi-select and range selection**
    - Fully fixed `Ctrl + click` add/remove-from-selection and `Shift + click` range selection, intercepting the conflict with native input cursor dragging; the dot icon supports Ctrl/Shift multi-select as well; a plain click keeps clear focus and selection semantics.
 4. **Precise error messages**
-   - "＋ Summary" now reports the real reason (a top-level sibling has no parent block, so no summary can be added) instead of a vague message.
+   - The summary button now reports the real reason (a top-level sibling has no parent block, so no summary
+     can be added) instead of a vague message.
+     (**Later removed**: SiYuan cannot store a summary, so the control and its message are gone —— docs/MAPPING.md 3.3.)
 5. **Removing experimental features**
    - Removed the text-cloze feature and its toolbar button, which had no native persistence carrier, keeping the native principle of "a single data source, no private copies, no custom attributes"; leftover debug overlays were cleaned up.
 

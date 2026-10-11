@@ -264,7 +264,7 @@ A new E2E case likewise has to "break the implementation and confirm it goes red
 | same as above (**before** the fix) | the same case | ⚠️ **still green** -- the old assertion was `0 === 0`, zero defensive value (see [pitfalls/testing.md](pitfalls/testing.md) 6.9u)|
 | re-`setAnchor` inside `onFocus` (reproducing the anchor stealing) | "★ Shift+click selects a range" | ✅ went red (reported "should have selected 甲..丁, 4 in total")|
 | remove `setSelected([])` from the plain click | "★ a plain click clears the old selection" | ✅ went red (reported "a plain click should clear the selection")|
-| restore the "Summary" hint to a single message | "★ '＋ Summary' distinguishes by level" | ✅ went red (reported "the hint must state the real reason… instead of telling them to select several first")|
+| the summary and link-line controls stay removed | "★ the summary and link-line controls are gone" | asserts neither control is offered and neither `.summary-bar` nor `.mm-link` renders |
 | stub out the `setCollapsedIds` call | "clicking the collapse button really folds the child branch away" | ✅ went red |
 
 ⚠️ When deciding "did it go red after the injection", **first confirm that grep actually matched a case**.

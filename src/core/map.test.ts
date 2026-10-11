@@ -158,15 +158,15 @@ check('empty text produces no bare - line', bareLines.length === 0, `gotLines=${
 // ★ Contract change: the note is **completely dropped**; the `memo` attribute is no longer used.
 //   It is now carried by **native attachment paragraphs** under the listItem (multiple NodeParagraphs).
 //   Reason: memo is a block attribute, so full-text search misses it by default and it only shows an "M" icon.
-//   summary / linkLines have **no** native counterpart in SiYuan and are still not written (see the note below).
+//   `summaryData` / `linkLines` had no native counterpart in SiYuan, so they were never written; they are
+//   now **removed from the model entirely**, which makes "never written" a property of the type rather than
+//   something a test has to check on every round trip.
 const richTree: OutlineNode[] = [
   {
     id: 'r1',
     modified: 1,
     text: '<span>源节点</span>',
     paragraphs: ['备注文本', '第二行'],
-    summaryData: [{ id: 's1', memberIds: ['r2'], text: '概要' }],
-    linkLines: [{ id: 'l1', toNodeId: 'r2' }],
     children: [],
   },
   { id: 'r2', modified: 1, text: '<b>目标</b>', children: [] },
@@ -181,9 +181,6 @@ check('★ attachment paragraph round trip (native NodeParagraph)',
   `got=${JSON.stringify(r1?.paragraphs)}`);
 check('★ the memo attribute is no longer written', !/memo=/.test(richKd), richKd);
 check('★ paragraphs produce no custom-* attribute', !/custom-/.test(richKd), richKd);
-// summary / linkLines: no longer written (no native counterpart in SiYuan), so they are empty after the round trip
-check('★ summary is no longer written (no native counterpart)', !r1?.summaryData?.length, `got=${JSON.stringify(r1?.summaryData)}`);
-check('★ linkLines is no longer written (no native counterpart)', !r1?.linkLines?.length, `got=${JSON.stringify(r1?.linkLines)}`);
 
 // ---- 8. an attachment paragraph with special characters (quotes/braces) must not break the line structure ----
 // ★ Now that the note no longer travels as an attribute, these characters appear in the **body**, so there is no attribute-escaping problem;

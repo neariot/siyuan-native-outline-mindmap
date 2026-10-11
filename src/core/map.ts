@@ -16,12 +16,7 @@
 //   <span data-tag>        → #name         ✅
 //   <a href>               → [text](href)  ✅
 //   <span data-noderef>    → ((id 'text')) ⚠️ requires a block ID
-//   <span data-mask>       → escaped source text (masking is a local semantic, see below)
 //   <img data-img>         → ![alt](assets/...) ⚠️ requires asset management
-//
-// Masking (mask): SiYuan has **no native counterpart**, and it is no longer carried by any private attribute.
-// Current policy: only the source text is kept on write; the mask semantic is not written back (to avoid polluting the document).
-// Mask information is neither written nor read in the current implementation; it is a field **deliberately not preserved**.
 
 import type { OutlineNode } from '../model/types';
 
@@ -202,11 +197,6 @@ export function htmlToKramdown(html: string): string {
   s = s.replace(
     /<span[^>]*data-noderef="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g,
     (_m, target: string, text: string) => `((${unescapeHtml(target)} "${unescapeHtml(text)}"))`,
-  );
-  // Masking: no native equivalent in SiYuan, so only the source text is kept (no private attribute is written)
-  s = s.replace(
-    /<span[^>]*data-mask="1"[^>]*>([\s\S]*?)<\/span>/g,
-    (_m, text: string) => unescapeHtml(text),
   );
 
   // 2) color / background / font size / font family → SiYuan native inline styles
