@@ -91,7 +91,6 @@ conclusion to draw from a complete-looking list of findings.
 ### scripts-infra
 
 - **high · bug** `scripts/deploy.py:140`  
-  The documented `--reload` flag posts to a kernel route that does not exist, and the failure is downgraded to a printed warning with exit code 0, so a deploy that never asked SiYuan to reload anything still reports success.
 
 ### scripts-live
 

@@ -611,6 +611,12 @@ test.describe('multi-select and batch operations', () => {
       await toOutlineView(page);
       await expect(page.locator('.taskbox input[type="checkbox"]').first(),
         'a change made in SiYuan should show up in the plugin too').not.toBeChecked();
+
+      // The mind map draws task state separately (`isDone` / `isTodo`), and no case covered it: an outline
+      // that is right does not make the map right, they are two renderers over the same field.
+      await toMindmapView(page);
+      await expect(page.locator('.mm-node .taskbox input[type="checkbox"]').first(),
+        'the mind map should show the task state it was given').toBeVisible();
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();

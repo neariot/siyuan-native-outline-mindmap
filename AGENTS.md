@@ -203,7 +203,7 @@ The token can also be read from `["api"]["token"]` in
 
 ```bash
 npm run build       # build
-npm run deploy      # build + deploy into **the working instance** (--reload to hot-reload).
+npm run deploy      # build + deploy into **the working instance** (no hot reload: SiYuan exposes no route for it).
                     #   Refuses a target inside the workspace the user works in; add
                     #   --include-reference-instance to install there for real
 npm run typecheck   # tsc --noEmit

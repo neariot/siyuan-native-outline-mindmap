@@ -7,8 +7,11 @@ After changing code you have to verify it, which means manually `cp dist-plugin/
 and then going back into SiYuan to click reload —— a long path is hard to remember, and a script with hardcoded paths is useless on another machine.
 
     npm run deploy            # build + deploy
-    npm run deploy -- --reload  # after deploying, make SiYuan reload the plugin
-                                #   (a reload that does not happen is an error, not a warning)
+
+★ There is no `--reload`. SiYuan serves no route for reloading a plugin: `/api/plugins/reloadPlugin`, which
+this script used to post to, answers **404** (measured), and the failure was printed as a warning with exit
+0, so a deploy that reloaded nothing reported success. Reload from SiYuan's plugin panel, or restart the
+kernel --- both pick the new build up, and neither can be done from here.
 
 All paths come from `.env` (see `.env.example`).
 """
@@ -67,8 +70,6 @@ def api(path, payload):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--reload", action="store_true",
-                    help="make SiYuan reload the plugin after deploying (fails if it does not reload)")
     ap.add_argument("--no-build", action="store_true",
                     help="skip the build, only deploy the existing output")
     ap.add_argument("--target", action="append", default=[], metavar="DIR",
@@ -105,11 +106,20 @@ def main():
             uniq.append(d)
     dsts = uniq
 
-    # ★ The test instance is the only target a build may be deployed to; the workspace the user works in
-    #   is **reference only**. This used to be a docstring claim in another script, which passed an
+    reference = os.path.normpath(cfg.plugin_dir)
+    # ★ `--include-reference-instance` means "install there for real" (AGENTS.md section 1), so it has to
+    #   **add** that instance rather than merely stop the guard below from refusing a list that already
+    #   names it. As a pure un-blocker it did nothing at all with the shipped `.env` —— whose PLUGIN_DIRS
+    #   holds the test instance only —— while reading exactly like a working install switch, and it said
+    #   nothing about having done nothing.
+    if args.include_reference_instance and reference not in dsts:
+        dsts.append(reference)
+        print(f"  + the instance the user works in, added by --include-reference-instance:\n    {reference}")
+
+    # ★ The test instance is the only target a build may be deployed to by default; the workspace the user
+    #   works in is **reference only**. This used to be a docstring claim in another script, which passed an
     #   unrelated variable and so deployed into the user's editor on every run. A rule that matters is a
     #   check here, not a note there.
-    reference = os.path.normpath(cfg.plugin_dir)
     blocked = [d for d in dsts if os.path.normpath(d) == reference]
 
     if args.list:
@@ -119,7 +129,8 @@ def main():
             if not os.path.isdir(d):
                 note = "   (does not exist yet, will be created)"
             if os.path.normpath(d) == reference:
-                note = "   ← the instance the user works in (reference only)"
+                note = ("   ← the instance the user works in"
+                        + ("" if args.include_reference_instance else " (reference only)"))
             print(f"    · {d}" + note)
         if blocked and not args.include_reference_instance:
             print("  ⛔ a deploy would refuse this list; pass --include-reference-instance to include it")
@@ -160,23 +171,6 @@ def main():
                 ok = False
     if not ok:
         return 1
-
-    if args.reload:
-        # ★ `--reload` was asked for, so a plugin that did not reload is a failure, not a warning: a deploy
-        #   that never told SiYuan to reload anything must not exit 0 and look like it worked
-        #   (docs/AUDIT-FINDINGS.md). The kernel answers `{"code": 0}` on a route it serves, and raises on
-        #   one it does not, so both are checked here rather than guessed at.
-        res, err = api("/api/plugins/reloadPlugin", {"name": cfg.plugin_name})
-        if err:
-            print(f"  ✗ Reload failed: {err}")
-            print("    SiYuan reloads a plugin from its own UI (plugin panel -> Reload); restarting the "
-                  "kernel also picks up the new build.")
-            return 1
-        code = res.get("code") if isinstance(res, dict) else None
-        if code not in (0, None):
-            print(f"  ✗ Reload refused by the kernel: {res}")
-            return 1
-        print(f"  ✓ Reloaded plugin {cfg.plugin_name}")
 
     return 0
 
