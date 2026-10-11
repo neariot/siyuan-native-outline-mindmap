@@ -170,13 +170,13 @@ Clear to-do / Delete.
 > **A plain click (no modifier) = edit that line**, and it clears the current multi-selection.
 > To keep the selection, use `Ctrl+click`.
 
-#### Summary and link lines are not available
+#### Summary, link lines, the mask and the due date are not available
 
-They were removed. SiYuan has no native way to store either one, so a summary (a pair of braces) and a
-link line (a dashed arrow between two topics) could never survive a reload —— they lived only until you
-closed the document, while the toolbar went on offering them. Rather than keep a control whose result
-disappears, both are gone from the product. Existing documents still open; the braces and arrows simply
-no longer appear.
+They were removed. SiYuan has no native way to store any of them, so a summary (a pair of braces), a link
+line (a dashed arrow between two topics), the inline-code mask and the due date could never survive a
+reload —— they lived only until you closed the document, while the toolbar went on offering them. Rather
+than keep a control whose result disappears, all four are gone from the product. Existing documents still
+open; the braces, arrows, masks and date chips simply no longer appear.
 
 ---
 
