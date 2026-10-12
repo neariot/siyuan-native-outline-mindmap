@@ -78,6 +78,28 @@ exactly this). It is not used here because the modules that decide list/block be
 (`parentElement`, `classList`), so importing them would test a DOM stub rather than the rule. Revisit if a
 frontend module that is both relevant and DOM-free turns up.
 
+### The other half of the contract: kernel strings we match on
+
+`isTargetGoneError` decides "the user deleted this document" by matching **error text**, because the kernel has
+no stable error codes (`AGENTS.md` §2 keeps such strings verbatim for exactly this reason). That makes three
+literals part of the product's contract with SiYuan:
+
+| literal | produced by | used for |
+|---|---|---|
+| `parent block not found` | `treenode/blocktree.go`, `model/transaction.go` | a write into a deleted document |
+| `tree not found` | `ErrTreeNotFound`, `model/tree.go:194` | a write to a vanished block |
+| `block not found` | `ErrBlockNotFound`, `model/tree.go:193` | a read of a deleted block |
+
+★ The failure mode if SiYuan rewords one is **silent and bad**, which is why this belongs in a gate rather than a
+comment: `isTargetGoneError` answers `false` instead of raising, the UI stops reporting a deleted target, and —
+per that function's own comment — the recovery entry that creates a **duplicate document** never appears. Nothing
+goes red anywhere.
+
+`scripts/check-block-rules.py` reads these three straight out of the kernel's Go source, so a rename is caught
+rather than discovered. Shown red by claiming a literal SiYuan does not say; the verdict then names **which
+kind** of claim failed, because a first version blamed `CanContainBlock` for a string claim and sent the reader
+to a Go function that was never involved.
+
 ★ **Where the rules come from is SiYuan's own code, not a summary of it.** The kernel rejects a heading inside a
 list item with `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`, and the rule behind
 it is `ast.Node.CanContain` in `lute` (which the kernel uses) —— `NodeList.CanContain(NodeHeading)` is `false`,

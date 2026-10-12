@@ -98,6 +98,22 @@ CLAIMS: list[tuple[str, str, bool, str]] = [
     ),
 ]
 
+# ---------------------------------------------------------------------------
+# The second kind of claim: **kernel strings this product matches on**.
+#
+# `isTargetGoneError` decides "the user deleted this document" by matching error text, because the kernel has
+# no stable error codes. That makes those three literals part of the product's contract with SiYuan —— and the
+# failure mode if SiYuan rewords one is quiet and bad: the function returns false, the UI stops reporting a
+# deleted target, and (per its own comment) the recovery entry that creates a duplicate document never appears.
+# The user's comment says it plainly: "a stale child block reports the same `block not found`". Nothing raises.
+# ---------------------------------------------------------------------------
+STRING_CLAIMS: list[tuple[str, str]] = [
+    ("parent block not found", "`isTargetGoneError` on a write into a deleted document"),
+    ("tree not found", "`isTargetGoneError` on a write to a vanished block (`ErrTreeNotFound`)"),
+    ("block not found", "`isTargetGoneError` on a read of a deleted block (`ErrBlockNotFound`)"),
+]
+
+
 GO_DRIVER = r'''package main
 
 import (
@@ -225,6 +241,27 @@ def main() -> int:
             return 2
 
     bad = 0
+    string_bad = 0
+
+    # ---- the string claims, read straight out of the kernel source ----
+    kernel_root = Path(src) / "kernel"
+    go_files = [p for p in kernel_root.rglob("*.go") if "/vendor/" not in str(p)]
+    corpus = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace") for p in go_files
+    )
+    for literal, why in STRING_CLAIMS:
+        if literal in corpus:
+            print(f"  ok   kernel still says {literal!r}")
+        else:
+            bad += 1
+            string_bad += 1
+            print(
+                f"  ✘    {literal!r} is no longer in the kernel source\n"
+                f"         {why}\n"
+                "         ★ A silent break: the function answers false instead of raising, so a deleted target\n"
+                "           stops being reported and the duplicate-document recovery never appears."
+            )
+
     for (parent, child, claimed, why), got in zip(CLAIMS, answers):
         if bool(got) == claimed:
             print(f"  ok   {parent} may contain {child}: {claimed}")
@@ -236,15 +273,24 @@ def main() -> int:
             )
 
     if bad:
+        # ★ The verdict names **which kind** of claim failed. A first version said
+        #   "disagree with treenode.CanContainBlock" for all of them, which is wrong for a string claim and
+        #   sends the reader to a Go function that was never involved.
+        parts = []
+        if bad - string_bad:
+            parts.append(f"{bad - string_bad} containment claim(s) disagree with treenode.CanContainBlock")
+        if string_bad:
+            parts.append(f"{string_bad} matched kernel string(s) are no longer in the source")
         print(
-            f"check-block-rules: FAIL {bad} claim(s) disagree with SiYuan's own treenode.CanContainBlock.\n"
-            "  The comment is wrong, not the source —— fix the claim (and anything that depends on it)."
+            f"check-block-rules: FAIL —— {'; '.join(parts)}.\n"
+            "  The claim is wrong, not the source —— fix it, and anything that depends on it."
         )
         return 1
 
     print(
-        f"check-block-rules: OK {len(CLAIMS)} claim(s) verified against SiYuan's own "
-        f"treenode.CanContainBlock (source: {src})"
+        f"check-block-rules: OK {len(CLAIMS)} containment claim(s) verified against SiYuan's own "
+        f"treenode.CanContainBlock, and {len(STRING_CLAIMS)} matched kernel string(s) still present "
+        f"(source: {src})"
     )
     return 0
 
