@@ -463,9 +463,39 @@ export function layoutHorizontal(
 
   const isCollapsed = (n: OutlineNode): boolean => collapsedSet.has(n.id);
 
+  /**
+   * The vertical band a subtree reserves. **It must equal the extent the layout really draws.**
+   *
+   * ★★★ Three sibling subtrees are laid out by stacking their bands, so a band that under-reports its
+   *   extent makes its neighbour move up into the space it actually occupies. Measured with three parents
+   *   that each hold exactly one child:
+   *
+   *       parent A y=345 · its only child y=374 · parent B y=374 · its only child y=403 ·
+   *       parent C y=403 · its only child y=432
+   *
+   *   —— a staircase, one step per node, 29px apart, instead of three level rows of two.
+   *
+   *   Why: for a **single** child, `childCyOf` forces the child below its parent (a chain must descend, or
+   *   `a > b > c > d` draws as one flat line). That costs `parentH / 2 + V_GAP + childH / 2` from centre to
+   *   centre, so a chain of n nodes really spans `(n - 1) * step + nodeH`. The old body returned the
+   *   **child's** band alone for such a node, which is `n - 1` levels of extent for `n` levels of drawing ——
+   *   an undershoot of one node height (`17px` at the default font size) **per chain level**.
+   *
+   *   So the band is the sum of what the children draw, plus what connecting to them costs when there is
+   *   exactly one (where the descent is forced). Two or more children need no such term: centring already
+   *   separates them, and the parent's own height sits inside the band their stack spans.
+   *
+   *   ★ The leaf case keeps `+ V_GAP`, which is the separation between stacked siblings. It is not part of
+   *     the chain step —— it is what keeps two adjacent leaves from touching.
+   */
   const subtreeH = (n: OutlineNode): number => {
-    if (n.children.length === 0 || isCollapsed(n)) return measureNode(n).h + V_GAP;
-    return n.children.reduce((a, c) => a + subtreeH(c), 0);
+    const h = measureNode(n).h;
+    if (n.children.length === 0 || isCollapsed(n)) return h + V_GAP;
+    const children = n.children.reduce((a, c) => a + subtreeH(c), 0);
+    // A forced descent below the parent: parent's half, the gap, the child's half. The child's half is
+    // already inside `children`, so only this much is added for the connection itself.
+    if (n.children.length === 1) return children + h / 2 + V_GAP;
+    return children;
   };
 
   /**

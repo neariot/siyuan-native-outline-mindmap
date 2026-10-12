@@ -353,6 +353,107 @@ console.log('\nlayout: all 6 structures produce valid coordinates');
 }
 
 {
+  // ★★★ Sibling subtrees each holding exactly ONE child —— the shape that produced a staircase.
+  //
+  //   `subtreeH` decided how tall a subtree is, and the layout stacks those bands to place siblings. For a
+  //   node with a single child it returned the **child's** band alone, ignoring that `childCyOf` forces the
+  //   child *below* its parent (a chain must descend, or `a > b > c > d` draws as one flat line). So the band
+  //   under-reported the extent by one node height per chain level, and each chain child spilled into the
+  //   next sibling's space. Measured on the built plugin, three parents each holding one child:
+  //
+  //       父一 y=345 · 子节点一 y=374 · 父二 y=374 · 子节点二 y=403 · 父三 y=403 · 子节点三 y=432
+  //
+  //   —— one descending step per node instead of three level rows of two.
+  //
+  //   The three-child check above could not see it: with siblings that have no children, centring already
+  //   separates them and no forced descent happens. A shape is only covered when the *forcing* path runs,
+  //   which is why this case is its own block rather than another assertion in that one.
+  console.log('  a single-child subtree reserves the band it actually draws');
+  const chainTree = [
+    N('root', '根', [
+      N('p1', '父一', [N('c1', '子节点一')]),
+      N('p2', '父二', [N('c2', '子节点二')]),
+      N('p3', '父三', [N('c3', '子节点三')]),
+    ]),
+  ];
+  const chainLay = layoutHorizontal(chainTree, 'right', new Set<string>());
+
+  // (a) no two boxes overlap anywhere
+  let chainOverlaps = 0;
+  const cb = chainLay.boxes;
+  for (let i = 0; i < cb.length; i++) {
+    for (let j = i + 1; j < cb.length; j++) {
+      const a = cb[i], b = cb[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) chainOverlaps++;
+    }
+  }
+  // ★★★ The assertion that actually distinguishes correct from staircase: **no two nodes share a y**.
+  //
+  //   The staircase is *evenly spaced*, so an "are the siblings evenly spaced?" check passes on it —— the
+  //   bug satisfies that property. Boxes also do not overlap, because a parent and the previous sibling's
+  //   child land in **different x columns**. Measured on the buggy build, the whole defect is one number:
+  //
+  //       父一 y=345 · 子节点一 y=374 · 父二 y=374 · 子节点二 y=403 · 父三 y=403 · 子节点三 y=432
+  //                              ^^^^ shares its y with 子节点一          ^^^^ shares its y with 子节点二
+  //
+  //   A parent drawn level with the previous sibling's child is the thing a reader sees as "the children
+  //   drifted down", and it is the thing this pins. Two earlier versions of this check were written and
+  //   thrown away because they passed on the bug: an overlap scan (different columns), and an even-spacing
+  //   scan (the staircase is even). Both are recorded here so the next person does not re-derive them.
+  // ★★ The invariant: each sibling's subtree occupies its own vertical range, so reading down the page
+  //    alternates parent → child → next parent → its child. Measured with the fix:
+  //
+  //       父一 60 · 子节点一 108 · 父二 139 · 子节点二 187 · 父三 218 · 子节点三 266
+  //
+  //    and with the bug (one band too short per level):
+  //
+  //       父一 60 · 子节点一 108 · 父二 108 · 子节点二 156 · 父三 156 · 子节点三 204
+  //
+  //    —— in the buggy one, 父二 is drawn **level with 子节点一**. That is what "the children drifted down"
+  //    looks like: every node takes one step, so a subtree's child ends up beside the next subtree's parent.
+  //
+  //    ★ The root is excluded, and legitimately so: it is centred over its **entire** band, so it can share
+  //      a y with a descendant. That is centring working, not a defect —— and including it here was a third
+  //      wrong assertion, caught before keeping it.
+  //
+  //    ★ Two earlier versions of this check were thrown away because they passed on the bug: an overlap scan
+  //      (a parent and the previous child are in different x columns, so they never "overlap"), and an
+  //      even-spacing scan (the staircase is *perfectly* evenly spaced — 48, 48). Both are recorded so the
+  //      next person does not re-derive them.
+  const chain = cb.filter((b) => b.depth > 0).sort((a, b) => a.y - b.y);
+  const expectedOrder = ['p1', 'c1', 'p2', 'c2', 'p3', 'c3'];
+  const gotOrder = chain.map((b) => b.id.split(':')[0]);
+  check(
+    '★★ reading down the page alternates parent → child → next parent (not a staircase)',
+    gotOrder.length === expectedOrder.length && gotOrder.every((id, i) => id === expectedOrder[i]),
+    `read ${gotOrder.join(' · ')}, expected ${expectedOrder.join(' · ')}`,
+  );
+
+  // The same property stated numerically, so the failure names the number rather than only the order: each
+  // depth-1 sibling begins **below** the previous sibling's child, and each child begins below its parent.
+  const at = (id: string) => chain.find((b) => b.id.startsWith(id + ':'))!.y;
+  const wrongOrder = ['p1', 'c1', 'p2', 'c2', 'p3', 'c3'].filter((id, i, all) => i > 0 && !(at(id) > at(all[i - 1])));
+  check(
+    '★★ every node in the chain sits strictly below the one before it',
+    wrongOrder.length === 0,
+    wrongOrder.map((id) => `${id} is not below the node before it`).join('; '),
+  );
+
+  // (c) each parent's only child really is below it —— the chain rule still holds.
+  let notBelow = 0;
+  for (const p of ['p1', 'p2', 'p3']) {
+    const parent = cb.find((b) => b.id.startsWith(p + ':'));
+    const child = cb.find((b) => b.id.startsWith(p.replace('p', 'c') + ':'));
+    if (!parent || !child || !(child.y > parent.y)) notBelow++;
+  }
+  check(
+    '★★ every only-child is drawn below its parent (the chain rule still holds)',
+    notBelow === 0,
+    `${notBelow} child/children not below their parent`,
+  );
+}
+
+{
   console.log('  a collapsed subtree does not appear in the layout');
   const tree = [N('root', '根', [N('a', '甲', [N('a1', '节点一')])])];
   const open = layoutHorizontal(tree, 'right', new Set<string>());
