@@ -70,8 +70,15 @@ conclusion to draw from a complete-looking list of findings.
 
 ### core
 
-- **medium · test-quality** `src/core/empty-span.test.ts:101`  
-  The "reverse check" that is supposed to prove the defect is real hand-builds a strawman that does not touch the code under test, so its assertion is true by construction and can never fail.
+- ~~**medium · test-quality** `src/core/empty-span.test.ts:99`~~ **fixed**
+  The "reverse check" that was supposed to prove the defect is real hand-built a `legacy` function and
+  asserted that **it** leaked `<span></span>` —— a strawman that never touched `htmlToSiyuanDom`, so its
+  assertion was true by construction and could not fail however the product changed. Replaced with checks on
+  the shipped function: an empty span must strip to the **empty string** (so the caller's `|| '\u200b'`
+  actually fires —— the defect was that `'<span></span>'` is truthy, so the fallback never took), no bare
+  empty span may survive into the paragraph DOM, and a span holding text must survive the stripper.
+  Shown red by disabling the strip in `core/map.ts`. The file already had two other checks that go red the
+  same way, so this strawman was contributing nothing.
 - **medium · test-quality** `src/core/map.test.ts:865`  
   A check passes a literal `true` as its condition, so it is counted in the suite total while asserting nothing — it can never go red, whichever way the code changes.
 

@@ -92,16 +92,37 @@ const buildParagraphDom = (html: string): string =>
   check('null semantics (undefined goes through ??) are unaffected', htmlToSiyuanDom('') === '');
 }
 
-// ---- 4. reverse check: before stripping empty spans it really does leak through ----
+// ---- 4. the caller's `|| '\u200b'` fallback can actually fire now ----
 {
-  // Hand-build an old implementation that does not strip empty spans, to confirm the defect form really exists
-  const legacy = (h: string): string =>
-    h.replace(/<b>([\s\S]*?)<\/b>/g, '<span data-type="strong">$1</span>');
-  const leaked = `<div data-type="NodeParagraph">${legacy('<span></span>') || '\u200b'}</div>`;
+  // ★ This replaces a "reverse check" that hand-built a `legacy` function and asserted that **it** leaked
+  //   `<span></span>` —— a strawman that never touched `htmlToSiyuanDom`, so its assertion was true by
+  //   construction and could not fail however the product changed. The defect it meant to demonstrate is
+  //   real, but the demonstration proved nothing; this one exercises the shipped function.
+  //
+  //   The defect's actual mechanism: `'<span></span>'` is **truthy**, so `htmlToSiyuanDom(h) || '\u200b'`
+  //   never took the fallback and the bare span reached the kernel. The fix only works if the stripper makes
+  //   the result **falsy** for a string that is nothing but an empty span. Assert that, on the real function.
+  const strippedFromBareSpan = htmlToSiyuanDom('<span></span>');
   check(
-    '★ the old implementation really does leak a bare empty span into the kernel (proof that this test targets a real defect)',
-    leaked.includes('<span></span>'),
-    `got=${leaked}`,
+    '★ an empty span strips to the empty string, so the fallback after || fires',
+    strippedFromBareSpan === '',
+    `got=${JSON.stringify(strippedFromBareSpan)}`,
+  );
+  check(
+    '★ and it would have been truthy without the strip —— the defect form (a bare span is not falsy)',
+    Boolean('<span></span>'),
+  );
+  // The end-to-end consequence the user saw: no bare empty span can reach the kernel.
+  check(
+    '★ no bare empty span survives into the paragraph DOM',
+    !buildParagraphDom('<span></span>').includes('<span></span>'),
+    `got=${buildParagraphDom('<span></span>')}`,
+  );
+  // And a span with real content must NOT be stripped along with the empty ones.
+  check(
+    'a span holding text survives (the stripper is not a blunt delete)',
+    htmlToSiyuanDom('<span>甲</span>').includes('甲'),
+    `got=${JSON.stringify(htmlToSiyuanDom('<span>甲</span>'))}`,
   );
 }
 
