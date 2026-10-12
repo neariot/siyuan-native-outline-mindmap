@@ -33,6 +33,19 @@ It does not run the E2E suite, because that takes ~16 minutes and belongs in the
 suite —— so the evidence is required, but the waiting is yours to arrange. Without the flag it says so and
 exits: a release whose suite was never run is not something this script will do quietly.
 
+## Replacing a release that is already out
+
+A release can need replacing —— measured: 0.1.8 was published, the map's sibling-staircase fix landed on
+`main` afterwards, and the published build was the one without it. `--replace` is that path, and it is
+deliberately a different invocation rather than something the normal run does when it finds a tag: the
+prerequisites change (the tag must **move**, so "the tag does not exist" is no longer the check), and it
+destroys something already public.
+
+With `--replace` it asks for the user's consent again **in so many words** before touching anything, deletes
+the Release (which is what makes the old `package.zip` stop being downloadable), then re-points the tag at
+`HEAD` and publishes. ★ `gh release delete --cleanup-tag` deletes the **tag** as well as the Release ——
+measured —— so the tag is recreated here rather than assumed to have survived.
+
 ## Consent
 
 `AGENTS.md` §4 requires the user's explicit consent for a tag, a Release, or a push. So this script does
@@ -143,6 +156,12 @@ def main():
     ap.add_argument("--suite-log", help="log of an E2E run to require as green evidence")
     ap.add_argument("--notes", help="release notes file (default docs/RELEASE-<version>.md)")
     ap.add_argument("--skip-push", action="store_true", help="tag and release locally-linked only; do not push main")
+    ap.add_argument(
+        "--replace",
+        action="store_true",
+        help="the tag already exists and this version is being re-published: delete the Release, move the "
+        "tag to HEAD, publish again (requires --yes and a typed confirmation)",
+    )
     args = ap.parse_args()
 
     v = version()
@@ -201,12 +220,38 @@ def main():
         "\n".join(line for line in out.splitlines() if "finding" in line.lower()),
     )
 
-    # 7. the tag does not exist yet
-    code, out = sh("git", "tag", "--list", tag, check=False)
-    checks.require("the tag %s does not exist locally" % tag, not out.strip(), out)
+    # 7. the tag state —— "it must not exist" for a new release, "it must exist and be replaceable" for one
+    #    being re-published. Two different questions, so they are asked separately rather than one relaxed.
+    local_tag = sh("git", "tag", "--list", tag, check=False)[1].strip()
+    remote_tag = None
     if not args.skip_push:
         code, out = sh("git", "ls-remote", "--tags", "origin", tag, check=False)
-        checks.require("the tag %s does not exist on the remote" % tag, code != 0 or not out.strip(), out)
+        remote_tag = out.strip() if code == 0 and out.strip() else None
+
+    if args.replace:
+        checks.require(
+            "--replace was asked for and the tag exists to move",
+            bool(local_tag or remote_tag),
+            "no %s tag locally or on the remote —— this is a normal release, so drop --replace" % tag,
+        )
+        # ★ The tag must point somewhere OTHER than HEAD, otherwise there is nothing to replace and the run
+        #   is a normal release wearing the wrong flag.
+        if local_tag:
+            tag_sha = sh("git", "rev-list", "-n", "1", tag, check=False)[1].strip()
+            head_sha = sh("git", "rev-parse", "HEAD", check=False)[1].strip()
+            checks.require(
+                "the tag is not already at HEAD",
+                tag_sha != head_sha,
+                "%s already points at HEAD (%s) —— nothing to replace; drop --replace"
+                % (tag, head_sha[:8]),
+            )
+    else:
+        checks.require("the tag %s does not exist locally" % tag, not local_tag, local_tag)
+        checks.require(
+            "the tag %s does not exist on the remote" % tag,
+            remote_tag is None,
+            remote_tag or "",
+        )
 
     # 8. the suite evidence, required rather than assumed
     if args.suite_log:
@@ -237,11 +282,31 @@ def main():
         print("    git tag -a %s -m '%s'" % (tag, v))
         print("    git push origin %s" % tag)
         print("    gh release create %s package.zip --title '%s' --notes-file %s" % (tag, v, notes))
+        if args.replace:
+            print()
+            print("  with --replace, the steps are instead: delete the Release (and its tag), push main,")
+            print("  re-tag %s at HEAD, push the tag, then publish." % tag)
         return 0
 
     # ---------------------------------------------------------------- publish (consent given)
     token = gh_token()
     env = dict(os.environ, GH_TOKEN=token)
+
+    if args.replace:
+        print()
+        print("REPLACING %s —— this deletes a Release that is already public." % tag)
+        print("  The old package.zip stops being downloadable, and the tag moves to %s." % sh("git", "rev-parse", "--short", "HEAD", check=False)[1].strip())
+        print("  A user who already downloaded the previous build keeps it, and nothing in it says so.")
+        answer = input("  Type the version (%s) to confirm: " % v).strip()
+        if answer != v:
+            print("  not confirmed —— nothing was changed.")
+            return 1
+        print("deleting the existing Release…")
+        # ★ `--cleanup-tag` removes the **tag** too, not just the Release (measured). So the tag is deleted
+        #   deliberately here and recreated below, rather than left in place and assumed to still be there.
+        sh("gh", "release", "delete", tag, "--yes", "--cleanup-tag", env=env, check=False)
+        sh("git", "tag", "-d", tag, check=False)
+        sh("git", "push", "origin", ":refs/tags/%s" % tag, env=env, check=False)
 
     if not args.skip_push:
         print("pushing main…")
