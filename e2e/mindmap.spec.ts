@@ -6,7 +6,7 @@ import {
 } from './mindmap';
 import {
   kernelApi, ensureTestDoc, resolveTestNotebook, TOP_BRANCHES,
-  createTempDoc, removeDoc,
+  createTempDoc, createTempDocTitled, removeDoc,
 } from './testdoc';
 import { PNG } from 'pngjs';
 import { siyuanUrl, siyuanToken } from './env';
@@ -1268,6 +1268,55 @@ test('★ dropping a node into its own subtree is refused (no cycle, nothing los
     expect(await markdown(), 'a refused drop must leave the document exactly as it was').toBe(before);
     // And 甲 must still be there (a guard that ran after the node was taken out would lose it).
     expect(await markdown()).toMatch(/- 甲/);
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
+
+/**
+ * ★★ A document title is **plain text**, and the root node must not eat the characters that look like
+ * markup.
+ *
+ * The root node's HTML is built by interpolating the title, so before this case existed a document titled
+ * `use <T> for generics` rendered in the map as `use  for generics` —— measured through `htmlToRuns`, which
+ * is what `RichText` feeds —— and `a<b>c` rendered as `ac`. The title comes from `blocks.content` and the
+ * kernel stores it verbatim (checked against the running test instance), so nothing upstream loses it:
+ * only our own rendering did. The exported PNG draws the same runs, so the characters vanished there too.
+ *
+ * The `.mm` export already escaped its title, which is exactly why this went unnoticed: the format that
+ * escapes was tested, and the one the user looks at was not.
+ */
+test('★ a title containing < and > keeps those characters in the root node', async ({ page }) => {
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    // ★ The title the kernel stores verbatim —— no escaping, no sanitising, on the way in.
+    const TITLE = 'E2E-角度<T>-测试';
+    docId = await createTempDocTitled(api, notebook, '- 甲\n  - 乙\n', TITLE);
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    // ★ Read the **tspan**s of the root node, not `textContent`.
+    //
+    //   Measured: `.mm-node`'s `textContent` reads every node's label **twice** (the fixture's two
+    //   one-character labels each come back doubled) —— a second
+    //   copy exists in a child element for all nodes, so doubling it is a property of the render, not of
+    //   the title. Asserting on `textContent` would have made this case pass for the wrong reason once and
+    //   fail for the wrong reason another time. The tspans are the label that is actually drawn.
+    const rootTspans = await page.evaluate(() => {
+      const root = document.querySelector('.mm-node[data-node-id="__root__"]');
+      return root ? [...root.querySelectorAll('tspan')].map((t) => (t.textContent || '')) : null;
+    });
+    expect(rootTspans, 'the root node must be rendered').not.toBeNull();
+    const rootText = (rootTspans ?? []).join('').trim();
+
+    expect(rootText, 'the root node must show the title exactly as stored, angle brackets included').toBe(TITLE);
+    // Name the two halves separately: a lost `<` and a lost `>` are different defects, and the bug dropped
+    // the whole `<T>` run at once, which a single `toContain('<')` would report as one failure.
+    expect(rootText, 'the `<` must survive').toContain('<');
+    expect(rootText, 'the `>` must survive').toContain('>');
+
   } finally {
     if (docId) await removeDoc(api, docId);
     await api.dispose();

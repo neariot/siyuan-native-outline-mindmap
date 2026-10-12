@@ -13,26 +13,24 @@ being done, by being refuted in writing (with the reasoning, below), or by being
 Ordered by what a user would notice. These are verified against the code as it stands, not copied from a
 report.
 
-1. **A document title containing `<` or `>` loses those characters in the mind map.**
-   `src/mindmap/Mindmap.tsx` interpolates the title straight into the root node's HTML, so plain text from
-   `blocks.content` is parsed as markup. The characters vanish in the root node **and** in the exported PNG.
-   (Audit: `medium · bug`, `Mindmap.tsx:553`.)
-2. **The mind map's keyboard goes dead after a context-menu command.**
+1. **The mind map's keyboard goes dead after a context-menu command.**
    Delete / focus-this-node / back-to-full-map all close the menu without returning focus to `.mm-canvas`,
    so Tab, Enter, Delete, F2 and Ctrl+Z do nothing until the user clicks a node again.
-   (Audit: `medium · bug`, `mindmap/Mindmap.tsx` — the citation is now past the end of the file.)
-3. **`scripts/record-demo.py`'s "a document id is required" guard is both case-sensitive and a substring
-   test.** `if "none" in url` lets `--doc None` through to `?id=None` (the recording starts against a page
-   with no document) *and* fires falsely for a real id containing the letters `none`. Two bugs in one line.
-   (Audit: `medium · bug`, `record-demo.py:355`.)
-4. **The shipped Chinese README tells users to run a flag that no longer exists.**
-   `TARGET=plugin npm run build` is quoted at `README.zh-CN.md:74`, and `rsbuild.config.ts` says in a comment
-   that there is no `TARGET` switch. Both READMEs are copied into `package.zip`, so the stale text reaches
-   users. (Audit: `medium · docs`.)
-5. **Two i18n entries render wrong in the UI they ship to.**
-   `msgSummaryHint` has a real newline in English and a literal `\n` in Chinese; `en_US`'s
-   `msgSummaryTopLevel` carries a double-escaped `\u2019` that renders as visible text.
-   (Audit: `medium · bug`, `i18n/zh_CN.json:127`.)
+   (Audit: `medium · bug`, `mindmap/Mindmap.tsx` — the citation is past the end of the file; re-locate it
+   before starting.)
+
+**Done this round** (kept here briefly because each was verified, then removed once committed):
+
+- **A title containing `<` or `>` lost those characters** —— the root node interpolated the title straight
+  into markup. Fixed with the shared `escapeHtml`; `htmlToRuns` already decodes entities, so the two
+  compose. Regression case: `e2e/mindmap.spec.ts` "a title containing < and > keeps those characters in the
+  root node", shown red with the escaping removed (`Expected "E2E-角度<T>-测试"`, `Received "E2E-角度-测试"`).
+- **`record-demo.py`'s document guard was wrong in both directions** —— `if "none" in url` accepted
+  `--doc None` (lowercase-only comparison) and refused a real id containing n-o-n-e (substring test on the
+  built URL). It now tests the precondition: no `--doc` and no `--url`.
+- **The two i18n entries in item 5 no longer exist.** `msgSummaryHint` / `msgSummaryTopLevel` appear in
+  neither catalogue, and `npm run i18n` (which fails on a dead entry) is green —— the finding is stale.
+- **Item 4** (`TARGET=plugin npm run build` in `README.zh-CN.md`) was fixed earlier.
 
 ## Known gaps in our own tooling
 

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { OutlineNode } from '../model/types';
 import { findNode, htmlToText } from '../model/tree';
 import { htmlToRuns, type RichRun } from '../core/richtext';
+import { escapeHtml } from '../model/html-escape';
 import { RichText } from './RichText';
 import { LINE_HEIGHT, MOBILE_MAX_WIDTH, wrapForWidth } from '../core/layout';
 import { centerBaselineDy } from './text-baseline';
@@ -559,7 +560,14 @@ export default function Mindmap({
     if (zoomNode) return zoomNode;
     return {
       id: '__root__',
-      text: title ? `<span>${title}</span>` : `<span>${t('phUntitled')}</span>`,
+      // ★ `title` is **plain text from `blocks.content`**, not HTML —— so it must be escaped before it
+      //   goes into markup. Unescaped, a document titled `use <T> for generics` renders as
+      //   `use  for generics` (the `<T>` is parsed as a tag and dropped) and `a<b>c` renders as `ac`.
+      //   The characters are lost in the root node **and** in the exported PNG, because the export draws
+      //   the same rendered runs. Measured through `htmlToRuns`, which is what RichText feeds.
+      //   The `.mm` export escapes its title already (`exportFreemind`'s `esc`), which is why only the
+      //   on-screen and PNG paths were affected.
+      text: title ? `<span>${escapeHtml(title)}</span>` : `<span>${t('phUntitled')}</span>`,
       modified: Date.now(),
       children: nodes,
       paragraphs: docParagraphs,

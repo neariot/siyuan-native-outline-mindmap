@@ -351,10 +351,19 @@ def main():
         p = os.path.join(ROOT, ".tmp", "demo-docid.txt")
         if os.path.exists(p):
             doc = open(p).read().strip()
-    url = args.url or cfg.build_url("desktop", doc)
-    if "none" in url:
-        print("--doc <docId> or --url is required")
+    # ★ Test **the value that must be present**, not a substring of the URL built from it.
+    #
+    #   This used to be `if "none" in url`, which is wrong in both directions at once (measured):
+    #     · `--doc None` was accepted, because Python's `None` stringifies to `None` and the test was for
+    #       the lowercase `none` —— so the recording started against a page with no document;
+    #     · a real document id containing the letters n-o-n-e was **refused**, because the check looked at
+    #       the whole URL rather than at the id.
+    #   The real precondition is "we have a document id, or an explicit url" —— so say that.
+    if not doc and not args.url:
+        print("--doc <docId> or --url is required", file=sys.stderr)
+        print("   (a document id can also be left in .tmp/demo-docid.txt)", file=sys.stderr)
         return 1
+    url = args.url or cfg.build_url("desktop", doc)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     mp4 = args.out or os.path.join(OUT_DIR, "demo-desktop.mp4")

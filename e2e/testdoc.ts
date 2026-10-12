@@ -247,6 +247,30 @@ export async function resolveTestNotebook(api: KernelApi): Promise<string> {
  */
 export async function createTempDoc(api: KernelApi, notebook: string, markdown: string): Promise<string> {
   const title = `E2E-临时-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  return createTempDocTitled(api, notebook, markdown, title);
+}
+
+/**
+ * Like `createTempDoc`, but the document's **title is given verbatim** —— nothing is sanitised.
+ *
+ * ★ Needed to test a title that contains characters which are markup-significant in HTML (`<`, `>`, `&`).
+ *   The kernel stores such a title exactly as written —— measured against the running test instance, a
+ *   title containing an angle-bracket pair came back byte-identical from `query/sql` —— so the only place
+ *   those characters can be lost is our own rendering.
+ *   A title is **plain text from `blocks.content`**, never HTML.
+ *
+ *   `path` is what the kernel turns into the title, so the caller's string must be a valid path segment:
+ *   no `/`, and not empty.
+ */
+export async function createTempDocTitled(
+  api: KernelApi,
+  notebook: string,
+  markdown: string,
+  title: string,
+): Promise<string> {
+  if (!title || title.includes('/')) {
+    throw new Error(`createTempDocTitled: the title must be a non-empty path segment, got ${JSON.stringify(title)}`);
+  }
   const r = await api.call('/api/filetree/createDocWithMd', {
     notebook,
     path: `/${title}`,
@@ -254,7 +278,7 @@ export async function createTempDoc(api: KernelApi, notebook: string, markdown: 
   });
   if (r.code !== 0 || !r.data) throw new Error(`failed to create the temp document: ${JSON.stringify(r)}`);
   const id = r.data as string;
-  await waitUntilIndexed(api, id); // same as ensureTestDoc: opening it right away would miss the title
+  await waitUntilIndexed(api, id);
   return id;
 }
 
