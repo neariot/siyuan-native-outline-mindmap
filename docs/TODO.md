@@ -19,14 +19,23 @@ section is a fact worth stating rather than a section to delete and re-invent.
 
 **Waiting on a decision, not on work:**
 
-- **The H1 / H2 / H3 / ¶ buttons cannot persist.** Verified, not suspected: the reader takes a level only
+- **Heading levels cannot persist from *either* entry point —— it is a documented feature with no working
+  path, not one broken button.** There are two ways to set a level and both write `node.heading` only:
+    1. the H1 / H2 / H3 / ¶ toolbar buttons (`setHeadingMany`), documented in `docs/GETTING-STARTED.md`;
+    2. typing `# ` + space at the start of a node (`applyInlineShortcuts`), documented in `docs/SHORTCUTS.md`.
+  Neither survives a reload, for the reason below —— and because two documents promise it, hiding the buttons
+  alone would leave the docs describing something that does not happen. The docs are part of whatever the
+  decision turns out to be. Verified, not suspected: the reader takes a level only
   from a non-list line (`const isHeading = !isList && !!headingMatch` — its own comment says SiYuan exports a
   heading *without* a list bullet), while every node in this plugin's documents **is** a list item. So a node
   cannot be a heading, and writing a heading block into one produces `- # 甲` — a heading as literal text
-  inside a list item (measured, and reverted). The options are structural: **hide the four buttons**, make the
+  inside a list item (measured, and reverted). The live write path (`saveNodesIncremental`) emits
+  `NodeParagraph` and has no place for a level; the only writer that emits `# ` (`treeToKramdown`) sits in
+  `saveNodes`, which is documented "create/full-rebuild only" and **has no callers**.
+  The options are structural: **hide the buttons and the shortcut and correct both documents**, make the
   styling explicitly view-only, or change the storage model so a node need not be a list item. The first is
   honest and small; the third is a rewrite. `docs/pitfalls/data.md` has the measurements. **This needs a
-  decision from whoever owns the feature** — the buttons are the promise and the round trip is the delivery,
+  decision from whoever owns the feature** — the control is the promise and the round trip is the delivery,
   and a control that quietly does nothing is worse than a missing one.
 
 **Resolved, verified, and removed from the queue:**
