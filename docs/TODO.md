@@ -128,26 +128,36 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
 
 **Tooling gaps (continued):**
 
-- **The 9 uncalled store methods still need a pass.** `python3 scripts/check-dead-methods.py`
-  reports them on every `npm run check` (the gate is now **strict**: it fails when one of them claims a
-  capability, which `saveNodes` did):
+- ~~**The 9 uncalled store methods still need a pass.**~~ —— **answered**, with the evidence recorded below
+  rather than as nine separate opinions. `python3 scripts/check-dead-methods.py --strict` still prints them
+  (it is not a build failure by design), and the classification is now: **none is the `saveNodes` shape**.
 
-  src/siyuan/api.ts:136  moveDocs
-  src/siyuan/api.ts:519  getBlockAttrs
-  src/siyuan/api.ts:524  setBlockAttrs
-  src/siyuan/api.ts:591  listNotebooks
-  src/siyuan/api.ts:595  createNotebook
-  src/siyuan/store.ts:352  listDocs
-  src/siyuan/store.ts:467  loadNodes
-  src/siyuan/store.ts:2823  searchNodes
-  src/siyuan/store.ts:2845  listFolders
+  The test that matters is the one `saveNodes` failed: **does any user-visible surface promise the
+  capability?** Checked for all nine —— `src/plugin/i18n/*.json`, `docs/FEATURES.md`, `docs/GETTING-STARTED*.md` ——
+  and the answer is no for every one of them, so a dead wrapper cannot make a feature look implemented here.
+  None of the nine is reachable from a test either (the only `setBlockAttrs` hits are a **fake client's own
+  method** and an assertion that it is *not* called, which is not coverage of the wrapper).
 
-  Each needs one of three answers: delete it, keep it with a comment saying who calls it from outside the
-  repository, or wire it up —— and the last is only right if something actually needs it.
-  (`saveNodes` was the one that misled: the only writer emitting `# ` for a heading, called from nowhere,
-  and while it existed the H1 buttons looked supportable. Deleted. `treeToKramdown` was its companion and
-  **stays** on purpose —— documented at the function, because it is the writer half of a tested round-trip
-  and of the "no `custom-*` attributes" portability guarantee.)
+  They fall into two kinds, and only the second needed reading:
+
+  * **`api.ts` wrappers —— `moveDocs`, `getBlockAttrs`, `setBlockAttrs`, `listNotebooks`, `createNotebook`.**
+    Each is a one-line pass-through to a real kernel endpoint (`/api/filetree/moveDocs`,
+    `/api/attr/getBlockAttrs`, …), and each comment describes **what the endpoint does**, not what the plugin
+    promises —— that is a client reference, not a capability claim. Kept: they are how a future caller reaches
+    those endpoints, they cost one line each, and deleting them would mean re-deriving the endpoint shapes
+    from the kernel source. The check that would change this is a promise appearing on a user-visible surface.
+  * **`store.ts` operations —— `listDocs`, `loadNodes`, `searchNodes`, `listFolders`.** These are the
+    product's own operations, so a stale comment here **is** the dangerous shape. Read individually:
+    `loadNodes` was a one-line `(await loadDoc(id)).nodes` that its own comment called "the common path"
+    while nothing took it —— **deleted**, along with the three methods the virtual kernel had accumulated
+    speculatively (`shape`, `removeBlockForTest`, and the `rootOf` they were the only users of). `listDocs`,
+    `searchNodes` and `listFolders` describe operations the plugin does not offer, and their comments say what
+    they *would* do rather than claiming a shipped feature; they stay on the list, and `--strict` would fail
+    the build the moment one of their comments started claiming a capability.
+
+  ★ This entry's own line numbers had gone **stale** (519→555, 524→560, 591→627, 595→631, 467→480), which is
+  the second time a pasted line list has rotted. The gate prints them fresh on every run, so the list above is
+  the one thing not to trust —— run the tool.)
 
   ★ Two methods left this list without being deleted, and both were **false positives in the checker**:
   `moveNodes` (private, called only from `syncStructure` in the same file —— the declaring file was not

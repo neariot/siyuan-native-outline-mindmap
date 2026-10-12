@@ -201,13 +201,6 @@ export class VirtualKernel {
     return lines.join('\n') + '\n';
   }
 
-  /** Flat `[id, type, parentId]` triples —— a compact assertion target for structure. */
-  shape(docId: string): string[] {
-    return this.rows()
-      .filter((b) => b.id === docId || this.rootOf(b.id) === docId)
-      .map((b) => `${b.type}:${b.parentId === docId ? '<doc>' : b.parentId}:${b.content}`);
-  }
-
   /**
    * Delete a block, for **test setup** —— so a case can reach a state (an empty List) that the plugin's own
    * calls would take many steps to reach.
@@ -239,24 +232,6 @@ export class VirtualKernel {
   /** A list's item count —— the condition the kernel's empty-List behaviour depends on. */
   itemCount(listId: string): number {
     return this.childrenOf(listId).filter((c) => c.type === 'i').length;
-  }
-
-  removeBlockForTest(id: string): void {
-    for (const b of this.rows()) {
-      if (b.id === id || b.parentId === id) {
-        this.blocks.delete(b.id);
-        this.vanishedAt.set(b.id, this.now());
-      }
-    }
-  }
-
-  private rootOf(id: string): string {
-    let cur = this.blocks.get(id);
-    while (cur && cur.type !== 'd') {
-      if (!cur.parentId) return cur.id;
-      cur = this.blocks.get(cur.parentId);
-    }
-    return cur?.id ?? '';
   }
 
   // ---------------------------------------------------------------- the kernel's own writes

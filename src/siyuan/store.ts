@@ -476,11 +476,6 @@ export class SiYuanStore {
     };
   }
 
-  /** fetch only the node tree (the common path) */
-  async loadNodes(docId: string): Promise<OutlineNode[]> {
-    return (await this.loadDoc(docId)).nodes;
-  }
-
   /**
    * Fetch the "node ID → SiYuan block ID" mapping table.
    *
