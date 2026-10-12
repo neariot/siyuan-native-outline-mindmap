@@ -20,6 +20,14 @@ is a **lower bound** -- "these provably cannot test anything" -- not a claim tha
 same defect appears in files that import a project module solely to re-implement it locally (the audit
 records several), and only reading them finds that.
 
+★ Measured: a **file-level** "imported but never called" rule does **not** catch that shape, which is why
+this tool does not pretend to. `core/empty-span.test.ts` had a "reverse check" that hand-built a `legacy`
+function and asserted *it* leaked `<span></span>`, never calling `htmlToSiyuanDom` -- while the file's other
+blocks do call it, so the import is genuinely used file-wide. The defect is **block-level**, and a rule that
+looks at imports per file cannot see a block that ignores them. Nothing here is a substitute for reading a
+suspicious check; what makes one worth reading is a check whose condition cannot vary (a literal `true`, a
+value built only from locals), and that is a judgement about the assertion, not about the imports.
+
     python3 scripts/check-vacuous-tests.py            # both halves
     python3 scripts/check-vacuous-tests.py --list     # every test file and what it reaches
     python3 scripts/check-vacuous-tests.py --selftest # the citation rule, no I/O
