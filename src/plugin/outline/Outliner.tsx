@@ -3527,10 +3527,13 @@ export default function Outliner(props: OutlinerProps) {
       <div className={`om-toolbar${barOpen ? '' : ' om-toolbar--collapsed'}`} onMouseDown={(e) => e.preventDefault()}>
         <button title={t('tipTaskToggle')} onClick={() => setTaskMany(activeIds, TASK_TODO)}>☐</button>
         {/* ★ The H1 / H2 / H3 / ¶ buttons are gone on purpose —— see `docs/pitfalls/data.md`.
-            A node in this plugin is always a list item, and SiYuan's own reader takes a heading level only
-            from a **non-list** line (`const isHeading = !isList && !!headingMatch`), so a level set here
-            could never come back. They changed the row's `om-hN` class and nothing else, which looked like a
-            working feature until the document was re-read. */}
+            A node in this plugin is always a list item, and SiYuan's block-structure validator refuses to put
+            a heading inside a List. Measured against the running kernel, asking it to do so answers:
+              `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`
+            The rule is provable from SiYuan's own code: `ast.Node.CanContain` in lute answers
+            `NodeList.CanContain(NodeHeading) = false`. So a level set here could never come back —— the
+            buttons changed the row's `om-hN` class and nothing else, which looked like a working feature
+            until the document was re-read. */}
         <span className="sep" />
         <button title={t('tipBold')} onClick={() => fmt('bold')}><b>B</b></button>
         <button title={t('tipItalic')} onClick={() => fmt('italic')}><i>I</i></button>

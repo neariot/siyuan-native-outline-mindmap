@@ -55,9 +55,18 @@ every key that was actually deleted from, so a stale placeholder could survive i
 ### Heading level: removed, because it could never store anything
 
 The heading buttons and the heading-level shortcut were **dead controls**. SiYuan cannot hold a heading
-inside a list item —— the kernel's own parser decides `isHeading = !isList && headingMatch` —— and this
-plugin writes list items, so the heading never left memory. The persisted `heading` field was never read back
-either.
+inside a list item, and this plugin writes list items —— so the heading never left memory. The persisted
+`heading` field was never read back either.
+
+★ The constraint is enforced by the **kernel's block-structure validator**, and it says so in a precise
+message. Measured against the running instance, asking it to turn a list item into `## 标题`:
+
+    invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]
+
+The rule itself is provable from SiYuan's own code —— `ast.Node.CanContain` in `lute` (the parser the kernel
+uses) answers `NodeList.CanContain(NodeHeading) = false`, while `NodeListItem.CanContain(NodeParagraph)` and
+`NodeListItem.CanContain(NodeList)` are both true. That is also why indenting needs an intermediate `List`:
+`NodeListItem` cannot contain another `NodeListItem`.
 
 It is deleted rather than left in place: a control that quietly does nothing is worse than no control, and
 this one also wrote a field into the document that the reader ignored. **No saved content is affected** ——

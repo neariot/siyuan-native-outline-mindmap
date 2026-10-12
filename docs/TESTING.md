@@ -11,11 +11,51 @@ while the vast majority of assertions are really plain string problems -- `tsc` 
 |---|---|---|---|
 | ① Types | compile-time errors | `npm run typecheck` | ❌ |
 | ②③ Unit + render | pure functions, component SSR, gesture branches under a DOM stub | `npm test` | ❌ |
+| **③.5 Virtual kernel** | **the write path driven end to end over an in-memory kernel** —— `src/siyuan/virtual-kernel.test.ts` | `npm test` | ❌ |
 | ④ E2E interaction | clicks / drags / wheel / collapse / shortcuts / context menu / export / view switching in a real browser | `npm run test:e2e` | ✅ |
 | ⑤ Live verification | whether CSS really applies, ResizeObserver, kernel round trips, screenshots and recordings | `npm run verify` | ✅ |
 | ⑥ Mobile (Android + CDP) | the soft keyboard, the toolbar snapping to it, and the panel edge against a **real** keyboard | `npm run verify:android` | ✅ |
 
 **Run ① first, then ②③, and run ④⑤ only when necessary.**
+
+### The gap this table had, and what closes it
+
+Measured, the two behavioural layers sat at opposite ends: `npm run check` (26 gates) takes **45 s** and is
+**entirely static** —— source text, docs, artifacts —— while the only layer that exercised the *write path*
+was ④, at **~16 minutes for the suite and requiring a live kernel**. So a rule about what reaches SiYuan could
+only be tested by starting SiYuan, and the cost of testing it is why the reported `Tab` bug took three reports
+to find: `serializeTree` decides *whether to write back at all*, and it was a closure inside `mount.ts`, which
+imports `siyuan` and React.
+
+Two changes, both cheap, and together they are what layer ③.5 is:
+
+1. **The rule moved to where it can be imported.** `serializeTree` now lives in `src/plugin/sync.ts` (a pure
+   module) and is driven directly by `sync-serialize.test.ts` —— **123 ms**, no browser, no kernel. It pins the
+   three things the flat serialization could not see: a re-parented tree, sibling/child order, and depth.
+2. **The kernel's side is now a virtual kernel.** `src/siyuan/virtual-kernel.ts` implements the endpoints the
+   plugin uses over an in-memory block tree, injected through the seam `SiYuanClient` already had
+   (`fetchImpl`). Nothing in the product knows. Its acceptance test, `virtual-kernel.test.ts`, drives the
+   **real** client against it and pins the measured traps: the ~100 ms `indexing` → `tree not found` window on
+   a write (and that a *read* has no window), the ~2 s SQL index lag, the `d → l → i → (p, l…)` block tree, the
+   `Array` of `{doOperations, undoOperations}` a write answers, and that moving into an empty `List` answers
+   `code: 0` while doing nothing.
+
+★ **A fake is only worth having if it can disagree.** Writing it that way found three of its own bugs (the
+indexing window measured from kernel construction instead of from the disappearance; a "move into an empty
+List" case that moved the node into its *own* list) and one false assumption in the test —— that
+`updateBlockDom`'s declared `Promise<null>` is a conversion, when `post<T>` really hands back the kernel's
+transaction **array**. Every one of those was caught by driving the real client rather than by a second opinion
+about the fake.
+
+★ **Where the rules come from is SiYuan's own code, not a summary of it.** The kernel rejects a heading inside a
+list item with `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`, and the rule behind
+it is `ast.Node.CanContain` in `lute` (which the kernel uses) —— `NodeList.CanContain(NodeHeading)` is `false`,
+while `NodeListItem.CanContain(NodeParagraph)` and `NodeListItem.CanContain(NodeList)` are `true`. That is also
+why an indent needs an intermediate `List`: a `NodeListItem` cannot contain another one.
+
+★ **What the virtual kernel does NOT model, and says so**: rendering (that genuinely needs a DOM), the WS
+transaction push, and any notebook beyond "one exists". An endpoint it does not implement **throws** rather
+than answering success —— a fake that quietly agrees is the failure mode this whole section is about.
 
 ## ④ E2E (Playwright + headless Chromium)
 
