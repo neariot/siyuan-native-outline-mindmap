@@ -79,6 +79,21 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-dead-methods.py").is_file(),
     },
     {
+        # ★ The release procedure was a rule held in someone's head: bump the version, remember which files
+        #   carry it, write the note. Three files carry it (`package.json`, `src/plugin/plugin.json`, and
+        #   `package-lock.json`, which npm generates from the first), and the bazaar reads the Release while
+        #   SiYuan reads `plugin.json` —— so a half-bumped version ships a plugin reporting a version
+        #   different from the one it was released as, with nothing going red.
+        #   The check is deliberately narrow: it compares the two **authored** sources and asks for the release
+        #   note, and it says in its own output that it does not verify the tag or the Release, because those
+        #   are created outside the repository and need the user's consent (section 4) —— a gate must not
+        #   imply it verified something it cannot see.
+        "name": "versions",
+        "command": "python3 scripts/check-versions.py",
+        "why": "the versioned sources agree, and the current version has release notes",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-versions.py").is_file(),
+    },
+    {
         # ★ Two dead assertions were found by reading, one per round: a `check(..., true, '')` in
         #   `core/map.test.ts` whose name described a measured kernel behaviour while the condition asserted
         #   nothing, and a "reverse check" in `core/empty-span.test.ts` that asserted a locally built strawman
