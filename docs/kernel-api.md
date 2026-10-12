@@ -64,6 +64,21 @@ Practice: accumulate an `everSeen` set and delete only blocks that previously
 appeared in the tree and have now disappeared. Never touch a block we have
 never seen.
 
+### Why one query is not enough after an insert (measured)
+
+`insertBlock`'s return value depends on the **anchor type**, and it can be either the block itself or a
+`NodeList` container holding it. A resolver therefore asks two questions: "is this block itself a
+`listItem`?" and, on a miss, "which child of it is?". Both must be **polled**.
+
+Measured cost of answering them once: the just-inserted block was not in the SQL index yet, so the first
+question answered `self: null` **ten times in a row**, the second found no child `listItem` (the block *was*
+the listItem, and its children are paragraphs), and the resolver returned `''`.
+
+The consequence was silent and large: the new node's "node ID → block ID" mapping could never be
+registered, so the next write-back saw the same batch as "not created yet" and inserted it **again**.
+Measured by creating 4 nodes quickly —— the UI showed 7 nodes and **0 landed in SiYuan**, with no error
+reported anywhere.
+
 The accompanying test must verify that it **really fails once the gate is
 removed**, otherwise it is a fake guard.
 

@@ -1,19 +1,23 @@
 /**
- * ★★ Does making a node an H1 survive a save and a reload?
+ * ★★ A heading the **document** already has must survive the plugin's load-and-save cycle.
  *
- * The outline's H1 / H2 / H3 / ¶ buttons all call `setHeadingMany`, which writes `node.heading` and calls
- * `mutate(..., 'struct')`. The read side **can** restore it —— `core/map.ts` parses the `#` count back into
- * `node.heading` when `loadDoc` runs `kramdownToTree` —— while `saveNodesIncremental` writes each node's
- * block through the **DOM** path as `<div data-type="NodeParagraph">`.
+ * ★ Why this is the case that exists here, and what used to be here.
  *
- * Those two disagree about where the level lives, and nothing raises when they do: the outline shows `om-hN`
- * from its in-memory tree and the buttons look pressed, so only a reload reveals what the document kept.
+ *   The outline once offered H1 / H2 / H3 / ¶ buttons and a `# ` + space shortcut for making a node a
+ *   heading. Both were removed: a node in this plugin is always a list item, and SiYuan takes a heading level
+ *   only from a **non-list** line (`kramdownToTree`: `const isHeading = !isList && !!headingMatch`), so a
+ *   level set that way could never be read back. The case that used to live in this file asserted the
+ *   button's effect and is gone with the buttons.
  *
- * ★ It asserts on what the **plugin's own reader** restores, not on the document text. A node is a list item,
- * so a level appears nested however the kernel spells it; asking the reader "what level do you see now?" is
- * the user-visible question and does not encode the kernel's spelling.
+ *   What is **not** gone is the other direction, and it must not regress: a document that already contains a
+ *   real `# H1` —— written by hand in SiYuan, or by any other tool —— loads as a heading node and is saved
+ *   back as a heading. `OutlineNode.heading`, `core/map.ts`'s reader/writer for it, and the `om-hN` styling
+ *   are all kept for that. Without this case nothing would notice if a later change dropped them.
+ *
+ * ★ It asserts on the **document's block type** after a round trip, not on the outline's CSS class: the class
+ *   is set from the in-memory tree, so it cannot tell "the level was reloaded" from "it never left memory".
  */
-import { test, expect, type Page } from './fixtures';
+import { test, expect } from './fixtures';
 import { openDoc, toOutlineView } from './mindmap';
 import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook } from './testdoc';
 import { siyuanUrl, siyuanToken } from './env';
@@ -29,52 +33,53 @@ test.beforeAll(async () => {
   }
 });
 
-/** Per node row: its heading level as the outline renders it (`h1`..`h6`, or `-` for a plain node). */
-async function rowLevels(page: Page): Promise<string[]> {
-  return page.locator('.om-outline-wrap .node-row').evaluateAll((els) =>
-    els.map((el) => {
-      const m = /om-h([1-6])/.exec(el.className);
-      return m ? `h${m[1]}` : '-';
-    }),
-  );
+/** The heading levels the kernel holds, e.g. `["h2"]`. */
+async function headingLevels(api: Awaited<ReturnType<typeof kernelApi>>, docId: string): Promise<string[]> {
+  const dom = await api.call('/api/block/getBlockDOM', { id: docId });
+  const html = String((dom.data as { dom?: string })?.dom ?? '');
+  return html.match(/data-subtype="h[1-6]"/g) ?? [];
 }
 
-test('★★ H1 applied in the outline is still a heading after a reload', async ({ page }) => {
+test('★★ a document\'s own heading survives loading and saving it from the outline', async ({ page }) => {
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
-    docId = await createTempDoc(api, notebook, '- 甲\n- 乙\n');
+    // ★ The heading must **not** be the document's first block.
+    //
+    //   Measured rule in `kramdownToTree`: a flush-left `# ` on the document's first content line is the
+    //   **document title**, not a node ("the title block is always the document's first block, and nothing
+    //   can be inserted before it"); any other flush-left `# ` is a real h1 node. Writing the fixture as
+    //   `# 手写标题` first would therefore have tested a title, and the case would have passed while proving
+    //   nothing about heading nodes. A list comes first here so the heading is the second block.
+    docId = await createTempDoc(api, notebook, '- 甲\n- 乙\n\n# 手写标题\n');
+    expect(await headingLevels(api, docId), 'the fixture must start with one H1').toEqual(['data-subtype="h1"']);
+
     await openDoc(page, docId);
     await toOutlineView(page);
 
-    const rows = page.locator('.om-outline-wrap .node-row');
-    await rows.first().click();
-    await page.waitForTimeout(200);
-
-    // The format toolbar is `display: none` until opened, and whether it starts open depends on
-    // `localStorage` (`om-outline-bar-open`), the container width and the phone rule —— i.e. on this browser
-    // profile, not on the product. Open it rather than assume.
-    const toolbar = page.locator('.om-toolbar');
-    if (!(await toolbar.isVisible())) await page.locator('.om-toolbar-toggle').click();
-    await expect(toolbar, 'the format toolbar must be open to reach the heading buttons').toBeVisible();
-
-    // ★ Click the button by its own label: the `title` comes from i18n and is locale-dependent, so a
-    //   title-based selector silently matches nothing on the zh_CN test instance.
-    await page.locator('.om-toolbar button', { hasText: /^H1$/ }).click({ force: true });
-    await expect(rows.first(), 'H1 must apply in the outline at once').toHaveClass(/om-h1/);
-
-    // Give the debounced write-back time to run, then reload from the document.
+    // Edit a node, so a write-back is triggered and the whole tree goes through the save path.
+    await page.locator('.om-outline-wrap .node-row').last().click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('丙');
     await page.waitForTimeout(2500);
+
+    await expect
+      .poll(async () => headingLevels(api, docId), {
+        message: 'the document\'s own H1 must still be an H1 after a save',
+        timeout: 20_000,
+      })
+      .toEqual(['data-subtype="h1"']);
+
+    // And after a reload —— the level must come back out of the document, not out of memory.
     await page.reload();
     await openDoc(page, docId);
     await toOutlineView(page);
-
     await expect
-      .poll(async () => rowLevels(page), {
-        message: 'after a reload the node must still be a heading —— otherwise the level never reached the document',
+      .poll(async () => page.locator('.om-outline-wrap .node-row.om-h1').count(), {
+        message: 'the loaded heading must be presented as a heading',
         timeout: 20_000,
       })
-      .toEqual(['h1', '-']);
+      .toBe(1);
   } finally {
     if (docId) await removeDoc(api, docId);
     await api.dispose();
