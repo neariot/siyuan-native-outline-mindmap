@@ -81,6 +81,15 @@ duplication rather than moving lines.
   failed at load 5.3 —— the same build, so the load was the whole difference. Measured both ways on one
   commit (46.7s failing / 11.6s passing), and `run-e2e.py` now warns about the load before any case runs.
 
+- **`src/plugin/mindmap-focus.test.ts` pinned a *number* instead of a behaviour.** Its check read
+  `callSites(src, /^focusCanvas$/).length === 4` —— "the restore is not called from anywhere unexpected
+  (4 close paths)". Adding `focusCanvas()` to the six context-menu actions that needed it (the keyboard was
+  dead after every one of them) made that count 10, so the test went **red for a fix**. A count of call sites
+  cannot tell "unexpected new caller" from "more callers are now correct", and it never looked at whether
+  focus actually returned. **Resolved by deletion**: `e2e/keyboard.spec.ts` drives the real menu, asserts on
+  `document.activeElement`, and then presses Tab to prove the keyboard works rather than merely that focus is
+  set. Two remaining uses of the same shape (a pinned call-site count) are worth auditing.
+
 ## Refuted / already resolved
 
 The audit's own contract is "an entry leaves it by being fixed, **or by being refuted in writing**". The
@@ -104,8 +113,8 @@ was trimmed from 209 entries to 206 by this pass.
   test-quality). **Resolved:** the file was deleted by `c7e1de8` and replaced by
   `src/siyuan/blockmap-anchor.test.ts`, which drives the mapping the write-back actually depends on.
 - **`src/plugin/panel-escape-focus.test.ts` compared two byte-identical hardcoded arrays** (medium ·
-  test-quality). **Resolved:** deleted by `7e8c64b`, replaced by real focus cases in
-  `src/plugin/mindmap-focus.test.ts`.
+  test-quality). **Resolved:** deleted by `7e8c64b`, and the focus behaviour it was meant to cover now lives
+  in `e2e/keyboard.spec.ts` —— see the note below on why `mindmap-focus.test.ts` went too.
 - **`src/plugin/kernel-side-effects.test.ts` asserted against literals it defined itself.** **Resolved:**
   rewritten —— the file's header now records the old defect and states the plugin discipline it holds
   instead.

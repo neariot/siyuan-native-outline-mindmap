@@ -1042,3 +1042,28 @@ ceiling is the tell: real failures vary, a fixed timeout is flat.
   order: host loaded (the plugin's own console line), machine loaded (`uptime`), onload error last.
 - A red proof or a verification run that must be trustworthy should be re-run once the load is back down,
   and the load written into the report either way.
+
+## A pinned count of call sites goes red for a fix
+
+**Symptom**: `src/plugin/mindmap-focus.test.ts` failed with *"the restore is not called from anywhere
+unexpected (4 close paths)"* after six context-menu actions were given the `focusCanvas()` restore they
+needed. No behaviour regressed —— the keyboard had been dead after every one of those items.
+
+**Cause**: the check was `callSites(src, /^focusCanvas$/).length === 4`. It reads like a guard against an
+unexpected new caller, but a count cannot tell **"an unexpected caller appeared"** from **"more callers are
+now correct"** —— and the second is what a fix looks like. It also never asked whether focus actually
+returned, which is the only question that matters.
+
+**Practice**:
+- **Assert the behaviour, not the count of places that implement it.** `e2e/keyboard.spec.ts` drives the real
+  context menu, asserts on `document.activeElement`, and then presses Tab to prove the keyboard *works* ——
+  focus being set and the keyboard working are different claims, and only the second is what the user has.
+- **A count is acceptable when it is a precondition, and must say so.** `echo-guard.test.ts` uses
+  `callSites(...).length >= 2` under the check *"this is the precondition of the check above: if nothing
+  called the helper, an empty list of hand-rolled windows would mean nothing"* —— that is honest, and `>= 2`
+  cannot be broken by adding a correct caller. `ref-nav.test.ts`'s `=== 1` is a real invariant (one
+  `openTab` call site in the application). The deleted one was neither: it was an exact count of *correct*
+  call sites, which is a number that only grows.
+- **When a source-text test fails on your fix, that is information about the test.** Ask which of the two it
+  is before touching the product: if the fix added something correct, delete the count and replace it with a
+  case that drives the behaviour.

@@ -434,8 +434,6 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-tests-b
 
-- **low · test-quality** `src/plugin/mindmap-focus.test.ts:17`  
-  Some files in scope are replica-only: they assert a model the test itself defines, with no assertion on the product, which is below the standard the repository applies to its own replicas.
 - **low · type-escape** `src/plugin/mobile-swipe.test.ts:74`  
   The component is rendered through `as never` with props it does not accept and a required prop missing, and the third case's 'algorithm matches SiYuan' check is a locally built two-object walk that cannot fail.
 - **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  

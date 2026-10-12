@@ -47,7 +47,12 @@ Dependencies should be checked one by one along the write paths, not added "when
 so a miss is inevitable. By the same token, when changing any state, confirm that every entry point that called `setPanel(null)` was changed to
 `closePanel()` (there were 8 bare calls at the time).
 
-**Test**: `src/plugin/panel-focus.test.ts`, `src/plugin/mindmap-focus.test.ts`
+**Test**: `e2e/keyboard.spec.ts` —— "the keyboard still works after a context-menu command" and
+"focus lands on the canvas after clicking a node". Both assert on `document.activeElement`, which is
+the thing that was wrong. Two source-text files used to sit here (`panel-focus.test.ts`,
+`mindmap-focus.test.ts`); they regex-matched `focusCanvas()` call sites in `Mindmap.tsx`, so the
+second one pinned a **count** of close paths and went red when the count was made *more* correct by
+giving six more menu actions the restore they needed.
 
 ---
 

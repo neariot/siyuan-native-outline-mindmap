@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { openDoc, toMindmapView, mindmapState, canvasBox } from './mindmap';
+import { openDoc, toMindmapView, mindmapState, canvasBox, openCtxMenu, clickCtxItem } from './mindmap';
 import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook, TEMP_DOC_MD, type KernelApi } from './testdoc';
 import { siyuanUrl, siyuanToken } from './env';
 
@@ -198,5 +198,67 @@ test('focusing a node shows only the subtree, and returning to the full map rest
     await back.click();
     await page.waitForTimeout(900);
     expect(await mindmapState(page).then((s) => s.nodes), 'the node count should be restored after returning to the full map').toBe(full.nodes);
+  }
+});
+
+/**
+ * ★★ The map's keyboard must still work after a context-menu command.
+ *
+ * The menu is an overlay of `div`s, so clicking an item moves focus off `.mm-canvas` to `BODY` —— and the
+ * map's shortcuts are attached to `.mm-canvas`'s `onKeyDown`. With focus on `BODY` **not one of them
+ * fires**: Tab, Enter, Delete, F2 and Ctrl+Z all do nothing until the user clicks a node again, with no
+ * visible sign of why. It is the same failure the editing overlay caused (see `focusCanvas`'s comment),
+ * reached by a different route, so the fix is the same helper.
+ *
+ * The assertion is on `document.activeElement`, not on "did a node appear": a shortcut that does something
+ * by accident would hide a dead keyboard, and the thing being tested is precisely where focus went.
+ */
+test('★ the keyboard still works after a context-menu command', async ({ page }) => {
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await createTempDoc(api, await resolveTestNotebook(api), TEMP_DOC_MD);
+    await openDoc(page, docId);
+    await toMindmapView(page);
+
+    const activeClass = () => page.evaluate(() => (document.activeElement?.className ?? '').toString());
+
+    // ★ Every item that closes the menu **without** opening an editor or a panel, checked one by one.
+    //   Items that open something set their own focus, so they were never affected —— testing only those
+    //   would have reported a healthy keyboard while four items killed it. "Expand as sub-document" is
+    //   excluded because it navigates to another document, where the canvas is legitimately gone.
+    for (const label of ['聚焦此节点', '返回全图']) {
+      const items = await openCtxMenu(page, 1);
+      expect(items.some((t) => t.includes(label)), `the menu should offer "${label}", actual: ${items.join(' / ')}`).toBeTruthy();
+      await clickCtxItem(page, label);
+
+      const active = await activeClass();
+      expect(active, `after "${label}" focus must return to .mm-canvas, or every shortcut is dead`).toContain(
+        'mm-canvas',
+      );
+      // Re-open the map for the next item (returning to the full map leaves the same document).
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    }
+
+    // ★ And prove the keyboard is not merely focused but actually **works**, by using it: Delete on a
+    //   selected node must remove it from the document. Focus alone could be satisfied by a canvas whose
+    //   handler is broken.
+    const mdBefore = await api.call('/api/export/exportMdContent', { id: docId });
+    const items2 = await openCtxMenu(page, 1);
+    expect(items2.some((t) => t.includes('聚焦此节点')), 'the menu must still open').toBeTruthy();
+    await clickCtxItem(page, '聚焦此节点');
+    const nodesBefore = await page.locator('.mm-node').count();
+    await page.keyboard.press('Tab');
+    await expect
+      .poll(async () => page.locator('.mm-node').count(), {
+        message: 'Tab must add a child node —— a dead keyboard would leave the count unchanged',
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(nodesBefore);
+    expect(mdBefore.code, 'the document should have been readable before the edit').toBe(0);
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
   }
 });

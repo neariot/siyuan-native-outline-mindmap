@@ -1276,7 +1276,7 @@ export default function Mindmap({
         </span>
         {zoomNode && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <button className="btn" onClick={() => onZoomChange?.(null)}>{t('cmdBackToFullMap')}</button>
+            <button className="btn" onClick={() => { onZoomChange?.(null); focusCanvas(); }}>{t('cmdBackToFullMap')}</button>
             <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
               {t('lblFocusBranch')}{label(zoomNode)}
             </span>
@@ -1475,6 +1475,12 @@ export default function Mindmap({
                     if (didDragRef.current) return;
                     onSelectNode?.(b.node.id);
                     onFocusNode?.(b.node.id);
+                    // ★ The menu is an overlay of `div`s, so clicking an item leaves `activeElement` on
+                    //   `BODY` —— and the map's shortcuts live on `.mm-canvas`'s `onKeyDown`, so Tab /
+                    //   Enter / Delete / F2 / Ctrl+Z all go dead with no visible sign. Measured:
+                    //   `activeElement.className === 'fn__flex-column body--toolbar-hide'` after this item.
+                    //   Items that open the editor or the paragraph panel set their own focus and need none.
+                    focusCanvas();
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -1912,6 +1918,7 @@ export default function Mindmap({
                   const n = ctxMenu.id;
                   setCtxMenu(null);
                   onExtractSubDoc(n);
+                  focusCanvas();
                 }}
               >
                 {t('cmdExtractSubDoc')}
@@ -1924,6 +1931,7 @@ export default function Mindmap({
                 const n = ctxMenu.id;
                 setCtxMenu(null);
                 onZoomChange?.(n);
+                focusCanvas();
               }}
             >
               {t('cmdFocusNode')}
@@ -1933,6 +1941,7 @@ export default function Mindmap({
               onClick={() => {
                 setCtxMenu(null);
                 onZoomChange?.(null);
+                focusCanvas();
               }}
             >
               {t('cmdBackToFullMap')}
@@ -1946,6 +1955,7 @@ export default function Mindmap({
                     const n = ctxMenu.id;
                     setCtxMenu(null);
                     onDeleteNode(n);
+                    focusCanvas();
                   }}
                 >
                   {t('cmdDeleteNodeWithChildren')}
