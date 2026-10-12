@@ -100,6 +100,45 @@ rather than discovered. Shown red by claiming a literal SiYuan does not say; the
 kind** of claim failed, because a first version blamed `CanContainBlock` for a string claim and sent the reader
 to a Go function that was never involved.
 
+### The virtual kernel's own fidelity: a mirror validates itself
+
+The virtual kernel (§3.5) is worth a great deal —— it turned a 16-minute suite into ~150 ms ——
+but it carries a cost that has to be paid, not assumed away. **Every case answered by the mirror is
+answered by the thing that would otherwise notice a drift.** If its shapes went stale, the sync and race
+cases would keep passing while describing a kernel that no longer exists, and nothing in this repository
+would object: the mirror is the oracle.
+
+Its field names were written from measurements, which is honest but unverifiable. They are now checked
+against SiYuan's **own generated TypeScript contract** by `scripts/check-kernel-shapes.py`:
+
+| mirror | SiYuan's generated type |
+|---|---|
+| `VTransaction` (`src/siyuan/virtual-kernel.ts`) | `Transaction` |
+| `Op` | `TransactionOperation` |
+
+★ **This is the part of the contract that needed no Go driver at all.** The containment rules had to be
+asked of a function (`treenode.CanContainBlock`), but the *wire shapes* are declared in Go and **generated
+into TypeScript** — `func (b *Bundle) TypeScript(...)` in `kernel/apicontract`, with the artifact committed
+at `app/src/types/api/index.d.ts`. A file in our own language was already saying:
+
+```ts
+export type Transaction = { "doOperations": ...; "timestamp": number; "undoOperations": ...; };
+```
+
+So the mirror is compared field-by-field against it, using the **TypeScript compiler** rather than a
+regex over the source. Two red proofs, both of which the mirror alone could never catch: inventing a field
+(`VTransaction.transactionID`) and keeping every name while changing a kind (`Op.id: string` → `number`).
+
+**What it does not check**: nested structure and optionality. `data?: unknown` in the mirror is not
+compared against `Array<TransactionOperation> | null` upstream, so a change from one array shape to another
+would pass, as would a field becoming optional. This is a rename-and-kind check, not a proof of
+equivalence — stated here so nobody reads more into a green run than it says.
+
+★ And this completes the answer to "why does nothing import SiYuan's side": the **kernel** is Go and cannot
+be imported, but its **contract** is generated into TypeScript and committed upstream. The containment
+rules were genuinely unreachable this way; the shapes never were, and the mirror had been written without
+reading a file that was sitting there.
+
 ★ **Where the rules come from is SiYuan's own code, not a summary of it.** The kernel rejects a heading inside a
 list item with `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`, and the rule behind
 it is `ast.Node.CanContain` in `lute` (which the kernel uses) —— `NodeList.CanContain(NodeHeading)` is `false`,

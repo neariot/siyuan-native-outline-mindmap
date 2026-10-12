@@ -157,6 +157,19 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-block-rules.py").is_file(),
     },
     {
+        # ★ A mirror validates itself. The virtual kernel stands in for the real one so the sync and race
+        #   cases run in milliseconds, but every case answered by the mirror is answered by the thing that
+        #   would otherwise catch a drift —— so if the mirror's shapes go stale, those cases keep passing
+        #   while describing a kernel that no longer exists, and nothing in this repository notices.
+        #   SiYuan declares its API in Go and **generates TypeScript from it** (`kernel/apicontract`,
+        #   `func (b *Bundle) TypeScript`), committed at `app/src/types/api/index.d.ts` —— so this half of
+        #   the contract is already readable in our own language, and the mirror is checked against it.
+        "name": "kernel-shapes",
+        "command": "python3 scripts/check-kernel-shapes.py",
+        "why": "the response shapes the virtual kernel hand-writes match SiYuan's own generated contract",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-kernel-shapes.py").is_file(),
+    },
+    {
         # ★ A command in prose is never executed by anything, so nothing noticed that the Chinese README
         #   told users to run a flag the build does not have, or that two scripts served workflows that no
         #   longer exist. This checks the part a script can decide: that every command a document names
