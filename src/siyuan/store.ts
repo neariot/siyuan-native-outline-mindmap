@@ -1424,10 +1424,9 @@ export class SiYuanStore {
     const paras = children.filter((c) => c.type === 'p');
     const existing = paras.slice(1); // skip the first paragraph
 
-    const norm = (s: string | undefined): string => {
-      const t = (s ?? '').replace(/\u200b/g, '').trim();
-      return t;
-    };
+    // ★ Not a local named `t`: this module imports the i18n function as `t`, so a binding called `t` here
+    //   shadows it. Harmless today (this scope translates nothing) and a trap tomorrow.
+    const norm = (s: string | undefined): string => (s ?? '').replace(/\u200b/g, '').trim();
 
     // 1) update the differing ones position by position
     //
@@ -2849,12 +2848,16 @@ export class SiYuanStore {
       // drop the last segment (the document name); the rest is the parent path
       for (let i = 1; i < parts.length; i++) prefixes.add('/' + parts.slice(0, i).join('/'));
     }
-    const t = Date.now();
+    // ★ Not `t`: this module imports the i18n function as `t` (line 165, used throughout), so a local
+    //   `const t = Date.now()` shadows it. Nothing calls `t()` in this method today, which is exactly why
+    //   it is worth renaming rather than leaving —— the next translated string added here would fail to
+    //   compile with a message about calling a number, pointing nowhere near the cause.
+    const stamp = Date.now();
     return [...prefixes].map((p) => ({
       id: `path:${p}`,
       name: p.split('/').filter(Boolean).pop() || p,
-      createdAt: t,
-      updatedAt: t,
+      createdAt: stamp,
+      updatedAt: stamp,
     }));
   }
 }

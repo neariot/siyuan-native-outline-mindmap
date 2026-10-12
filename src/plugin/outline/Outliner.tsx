@@ -2905,12 +2905,15 @@ export default function Outliner(props: OutlinerProps) {
       setMarqueeActive(false);
       setMarqueeRect(null);
       if (!st) return;
-      const l = Math.min(st.x0, ev.clientX);
-      const t = Math.min(st.y0, ev.clientY);
-      const r = Math.max(st.x0, ev.clientX);
-      const b = Math.max(st.y0, ev.clientY);
+      // ★ `top`/`left` rather than `t`/`l`: this module imports the i18n function as `t`, so a binding named
+      //   `t` shadows it. Harmless while this scope translates nothing, and a confusing compile error the
+      //   moment it does.
+      const left = Math.min(st.x0, ev.clientX);
+      const top = Math.min(st.y0, ev.clientY);
+      const right = Math.max(st.x0, ev.clientX);
+      const bottom = Math.max(st.y0, ev.clientY);
       // A press that never moved is a click on empty space, and clears the selection like one.
-      if (r - l < 4 && b - t < 4) {
+      if (right - left < 4 && bottom - top < 4) {
         setSelected([]);
         setAnchor(null);
         return;
@@ -2931,8 +2934,8 @@ export default function Outliner(props: OutlinerProps) {
       const hits: string[] = [];
       wrapEl.querySelectorAll('.node-row').forEach((row) => {
         const rr = row.getBoundingClientRect();
-        if (rr.bottom <= t || rr.top >= b) return;
-        if (contentLeft !== null && r > contentLeft && rr.left >= r) return;
+        if (rr.bottom <= top || rr.top >= bottom) return;
+        if (contentLeft !== null && right > contentLeft && rr.left >= right) return;
         const id = row.getAttribute('data-node-id');
         if (id) hits.push(id);
       });

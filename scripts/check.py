@@ -79,6 +79,19 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-dead-methods.py").is_file(),
     },
     {
+        # ★ `listFolders` had `const t = Date.now()` in a module that imports the i18n function as `t` and
+        #   calls it in 20-odd places. Harmless there by luck —— that one method translates nothing —— and a
+        #   confusing compile error the moment it does ("Type 'number' has no call signatures", pointing at
+        #   the call, not at the declaration). There is no ESLint in this repository, so `no-shadow` cannot be
+        #   switched on; the rule would otherwise rest on remembering to look.
+        #   Reports a shortlist rather than failing: shadowing is legal TypeScript with no diagnostic, so the
+        #   scan is textual and says so when it prints.
+        "name": "i18n-shadow",
+        "command": "python3 scripts/check-i18n-shadow.py",
+        "why": "no local binding shadows the i18n `t` in a module that translates",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-i18n-shadow.py").is_file(),
+    },
+    {
         # ★ A doc citing a test that no longer exists advertises coverage nothing provides (three entries
         #   pointed at a deleted file), and a test that imports nothing cannot go red. The first fails, the
         #   second prints -- see the module docstring for why it is a lower bound.
