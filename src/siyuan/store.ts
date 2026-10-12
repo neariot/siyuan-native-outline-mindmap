@@ -1509,8 +1509,13 @@ export class SiYuanStore {
     if (want.length > 0) this.nodesWithParas.add(nodeId);
     else this.nodesWithParas.delete(nodeId);
 
-    // this node's paragraph blocks changed, so drop the cache entry and let the next round re-read
-    this.lastListItems.delete(`paras:${liId}`);
+    // ★ Nothing wrote a `paras:`-prefixed key —— every `lastListItems.set` uses a node ID (or ownerNode),
+    //   and every read does too. So this deleted a key that could not exist, while its comment claimed to
+    //   invalidate a paragraph cache "so the next round re-reads" —— the shape that makes dead code look
+    //   load-bearing (the same shape as `saveNodes` claiming a rebuild path nothing called).
+    //
+    //   The cache entry that actually needs dropping is keyed by **node ID**, and `nodesWithParas` above
+    //   already records the current state; the next `loadBlockMap` re-reads from that, not from here.
   }
 
   /**

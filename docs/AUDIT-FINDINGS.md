@@ -545,8 +545,13 @@ conclusion to draw from a complete-looking list of findings.
   Six exported members of the kernel client have no caller anywhere in src/, scripts/, e2e/ or docs/: resolveTokenFromConfig, listNotebooks, createNotebook, moveDocs, getBlockAttrs, setBlockAttrs.
 - **low · bug** `src/siyuan/store.ts:1929`  
   `resolveWantList` registers cleanup placeholders on the instance field `this.pendingPlaceholders` while the cleanup at the end of moveNodes deletes only the set the caller passed, so the documented 'one call owns the set' contract is not implemented and a caller that passes any other Set leaves `- placeholder` list items in the user's document forever.
-- **low · dead-code** `src/siyuan/store.ts:1380`  
-  `syncParagraphs` ends with a delete of a cache key that nothing ever writes, and its comment describes a cache that no longer exists.
+- ~~**low · dead-code** `src/siyuan/store.ts:1513`~~ **fixed**
+  `syncParagraphs` ended with `this.lastListItems.delete(`paras:${liId}`)`, and **nothing ever wrote a
+  `paras:`-prefixed key** —— all seven `lastListItems.set` sites use a node ID (or `ownerNode`), and every
+  read does too, so it deleted a key that could not exist while claiming to invalidate a paragraph cache
+  "so the next round re-reads". The state that actually matters is `nodesWithParas` (a `Set<string>` keyed
+  by node ID, updated a few lines above), which the next `loadBlockMap` reads. Comment corrected; the same
+  shape as `saveNodes`, where a comment made dead code look load-bearing.
 - **low · bug** `src/siyuan/store.ts:2814`  
   `listFolders` shadows the module-level i18n function with `const t = Date.now();` — the exact pitfall the project documents, and the exact thing this same file forbids elsewhere.
 - **low · dead-code** `src/siyuan/store.ts:2339`  
