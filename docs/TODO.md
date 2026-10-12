@@ -57,12 +57,68 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
   recovery button does not appear**, which is the silent-failure shape the fix exists to remove.
   Pinned as a check in `src/plugin/target-gone.test.ts` that asserts today's behaviour and says so.
 
-  ★ Why it is not simply added to the list of substrings: `indexing` is also what a **freshly inserted
-  block** reports while the SQL index lags (this repository has a whole section on that lag), so accepting it
-  unconditionally would make an ordinary write-back look like a deleted document —— the exact false positive
-  `isTargetGoneError`'s own doc comment records ("the document was alive and well, only a child block ID was
-  stale, and the user thought the document was lost"). The honest criterion confirms **the document's own ID**
-  is gone, which is a query rather than a string test, and that is a design decision to make deliberately.
+  ★★ **Corrected by measurement, because the first version of this note guessed.** It said `indexing` "is
+  also what a freshly inserted block reports while the SQL index lags" —— an assumption, never tested. Asked
+  the kernel instead: a block id that **never existed** answers
+  `load block tree [<id>] failed: tree not found`, and a **read** of a deleted id answers `block not found`
+  at every moment, not `indexing`. So `indexing` is not a generic "unknown id / index lag" state —— it is
+  specific to an id that **existed moments ago and is gone**, which is much closer to what this criterion
+  actually wants to detect.
+
+  ★★ The window, measured: it is about **100 ms**. Polling the same deleted id at 50 ms intervals, the
+  message changes between `t=0.001s` (`indexing`) and `t=0.104s` (`tree not found`), and stays `tree not
+  found` afterwards.
+
+  So the impact is small and precisely bounded: only a write landing within ~100 ms of the document
+  disappearing is mis-reported. That is why this is **not** urgent, and also why it is worth keeping: the
+  write-back is debounced at 250 ms, so an edit made in the same instant as an external deletion can land
+  inside the window, and the user then sees a kernel message with no recovery button instead of "the document
+  was deleted" with one.
+
+  ★★★ **What the plugin's own calls actually produce**, measured by making each one after deleting the
+  document —— this is the part that decides the fix, and the earlier drafts of this note got it wrong twice:
+
+  | the plugin's call | the kernel answers | recognised now? | names the **document**? |
+  |---|---|---|---|
+  | `updateBlockDom(<child block id>)` —— the **main write path** | `load block tree [<child>] failed: indexing` | ❌ | ❌ (it names the child) |
+  | `appendBlockDom(<docId>)` —— the create path | `parent block not found: <docId>` | ✅ | ✅ |
+  | `insertBlock(md, '', <child>)` | `insertion target block not found` | ✅ | ❌ |
+
+  So the gap **is** reachable from the main write path, and it is **not** fixed by adding `indexing` to the
+  substring list: that message names the **child**, so the existing `docId` guard would reject it anyway.
+  Adding the substring alone would be inert —— which is why the first plan for this ("add the fourth shape")
+  was wrong.
+
+  Two honest options, both needing a deliberate choice:
+    1. **Keep it.** The window is ~100 ms and the outcome is a raw kernel message instead of a friendly one;
+       no data is lost, and the edits stay in memory. Cheap, and consistent with the rule that a false
+       negative beats a false positive.
+    2. **Confirm by query.** On an unrecognised failure, ask the kernel whether `docId` still exists
+       (`getBlockDOM` on a deleted document answers `block not found` at **every** moment, measured —— unlike
+       the write path, which has the 100 ms transient). That turns the criterion from "does the message look
+       like X" into "is the document still there", which is the question actually being asked.
+  **Option 2 is now implemented** —— `SiYuanClient.blockExists` / `SiYuanStore.docExists` (a read, which has
+  no window: measured `code: 0` while alive, `block not found` at t=0.001s and later) and
+  `describeWriteError` asks it when the text does not settle the question. Unit-tested with the fetch seam
+  (`src/siyuan/block-exists.test.ts`, 7 assertions) and shown red by mutating "any failure = gone" —— the
+  `null` state that must not become `false`.
+
+  ★★★ **But its UI trigger turned out not to be reachable by deleting a document from outside**, measured on
+  a clean instance twice: with the plugin's **dock** open on a document and that document deleted, SiYuan
+  **navigates to another document** and the panel follows it, so the next write goes to the new target and
+  returns `code: 0` —— nothing fails, and no banner is due. Verified by watching the traffic: before the
+  delete the writes name my document, after it they name a different one.
+
+  So the query path is correct and cheap, but today it is a **fallback that the dock cannot reach**. It is
+  kept because (a) it costs one read only on an already-failing write, and (b) the tab entry point
+  (`addTab`/`openTab`, desktop only) binds a **fixed** docId, which is exactly the shape that can go stale.
+  Anyone who reproduces the original symptom should check **which entry point** they were in first.
+
+  ★ A second thing this cost, recorded so the next probe does not repeat it: a **tab-mode probe left two
+  documents behind** on the isolated instance (`openTab` makes SiYuan create a temporary document). Later
+  probes were then writing into that leftover, which made every "delete then write" test look successful for
+  the wrong reason —— the panel was writing to a live document that was not the one under test. Cleaned up;
+  a probe that opens a tab must delete the document it creates.
 
 - **A second measured detail, recorded because it misled a test attempt:** deleting the document currently
   open in SiYuan makes SiYuan **navigate to another document**, and the panel correctly follows it — so the

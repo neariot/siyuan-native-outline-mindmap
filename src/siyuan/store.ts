@@ -377,6 +377,19 @@ export class SiYuanStore {
    *
    * Uses getBlockKramdown to get the document's Kramdown, then parses it into a node tree via core/map.ts.
    */
+  /**
+   * Is the target document still there? `true` alive, `false` gone, `null` could-not-tell.
+   *
+   * ★ The write-error path needs this because matching the kernel's message text has a measured blind spot:
+   * the same situation reports `... failed: indexing` for ~100 ms after a deletion and
+   * `... failed: tree not found` afterwards, and only the second is recognised. A read has no such window.
+   * See `SiYuanClient.blockExists`, which documents the measurement and why `null` must stay distinct from
+   * `false` —— a false "your document was deleted" invites the user to duplicate their work.
+   */
+  async docExists(docId: string): Promise<boolean | null> {
+    return this.client.blockExists(docId);
+  }
+
   async loadDoc(docId: string): Promise<PersistedDoc> {
     const kramdown = await this.client.getBlockKramdown(docId);
     // ★★★ Also remember which notebook this document belongs to (the **content is lost** bug).

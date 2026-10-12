@@ -582,7 +582,35 @@ function OmTabApp({
       setDocGone(true);
       return t('msgTargetDocDeleted');
     }
-    return e instanceof Error ? e.message : String(e);
+    // ★★★ The text match above has a **measured blind spot**, so it cannot be the last word.
+    //
+    //   The write path answers two different messages for one situation. Measured, deleting a document and
+    //   then writing to it: `load block tree [<id>] failed: indexing` before ~100 ms, and
+    //   `... failed: tree not found` after. Only the second is recognised, and the first names the **child**
+    //   block being written rather than the document, so it fails the `docId` guard too. A write landing in
+    //   that window showed a raw kernel message and **no recovery entry point**.
+    //
+    //   So when the text does not settle it, **ask the kernel whether the document is still there** —— a read
+    //   has no such window (measured: `code: 0` alive, `block not found` at every moment after deletion).
+    //   `null` means the question could not be answered (a transport failure is not evidence of deletion), so
+    //   the message is left as-is: a false "your document was deleted" is worse than a plain error, because it
+    //   invites the user to click "save as new document" and duplicate the work.
+    const raw = e instanceof Error ? e.message : String(e);
+    const docIdNow = docIdRef.current;
+    const store = storeRef.current;
+    if (!docIdNow || !store) return raw;
+    void store
+      .docExists(docIdNow)
+      .then((alive) => {
+        if (alive === false) {
+          setDocGone(true);
+          setErr(t('msgTargetDocDeleted'));
+        }
+      })
+      .catch(() => {
+        /* the confirmation is best-effort; the raw message is already shown */
+      });
+    return raw;
   }, []);
   const writeLatest = React.useCallback((): Promise<void> => {
     const docIdNow = docIdRef.current;

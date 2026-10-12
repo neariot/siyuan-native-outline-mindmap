@@ -160,6 +160,42 @@ export class SiYuanClient {
     return this.post<{ dom: string; id: string }>('/api/block/getBlockDOM', { id });
   }
 
+  /**
+   * Does this block (or document) still exist? A **read**, and deliberately so.
+   *
+   * ★★★ Why this is a query when `isTargetGoneError` matches text.
+   *
+   *   The write path answers **two different messages for one situation**, and which one you get depends on
+   *   *when* the write lands. Measured on the isolated instance, deleting a document and then writing to it:
+   *
+   *     t = 0.001s   updateBlock -> `load block tree [<id>] failed: indexing`       (not recognised)
+   *     t = 0.104s   updateBlock -> `load block tree [<id>] failed: tree not found` (recognised)
+   *
+   *   The window is about **100 ms**, and inside it the user is shown a raw kernel message with no recovery
+   *   entry point. Adding the missing substring would not fix it either: the message names the block being
+   *   written, which for this plugin's main write path is a **child** block, so the `docId` guard in
+   *   `isTargetGoneError` rejects it regardless.
+   *
+   *   A **read** has no such window. Measured the same way: `getBlockDOM` answers `code: 0` while the document
+   *   is alive, and `block not found` at t=0.001s and at every later moment after deletion. So "is the
+   *   document still there?" has a reliable answer, and it is the question the UI is actually asking.
+   *
+   * ★ Three states, and the caller must distinguish the third: `true` (alive), `false` (gone), **`null` (could
+   *   not tell)**. A transport failure is not evidence that the document disappeared, and treating it as such
+   *   would produce exactly the false "your document was deleted" alarm that `isTargetGoneError`'s comment
+   *   records. A caller that cannot accept `null` has to handle it explicitly.
+   */
+  async blockExists(id: string): Promise<boolean | null> {
+    if (!id) return null;
+    try {
+      await this.getBlockDOM(id);
+      return true;
+    } catch (e) {
+      if (e instanceof SiYuanError && e.message.toLowerCase().includes('not found')) return false;
+      return null; // transport error, permission, anything else —— not evidence of deletion
+    }
+  }
+
   /** Replace a block's content wholesale with Kramdown */
   updateBlock(id: string, data: string): Promise<null> {
     return this.post<null>('/api/block/updateBlock', { id, dataType: 'markdown', data });
