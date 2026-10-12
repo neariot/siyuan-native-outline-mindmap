@@ -59,24 +59,24 @@ void (async () => {
 
     // ★ The other writer's change arrives WHILE we are writing. This is the measured shape that made the
     //   guard a counter: two write-back windows overlap.
-    const foreignTx = kernel.externalUpdate(para.id, '别人改的');
-    const updates = new Map<string, string>([['node-1', '别人改的']]);
+    const foreignTx = kernel.externalUpdate(para.id, '乙');
+    const updates = new Map<string, string>([['node-1', '乙']]);
 
     // Our write had registered the value we wrote; the foreign value is NOT among them.
-    guard.endApply([docId, para.id], new Map([[para.id, '我们写的']]));
+    guard.endApply([docId, para.id], new Map([[para.id, '甲']]));
 
     check(
       '★ a value we did NOT write is not one of ours, so the other writer is seen',
-      !guard.isOwnValue(para.id, '别人改的'),
+      !guard.isOwnValue(para.id, '乙'),
       'the foreign edit was judged our own echo —— it would be skipped and lost',
     );
     check(
       '★★ a value WE wrote is recognised as ours even after the window closed (the intermediate-state fix)',
-      guard.isOwnValue(para.id, '我们写的'),
+      guard.isOwnValue(para.id, '甲'),
     );
     check(
       '★ and a value we never wrote is not ours at all',
-      !guard.isOwnValue(para.id, '从没写过'),
+      !guard.isOwnValue(para.id, '丙'),
     );
     check('the foreign transaction carries an update op', foreignTx.doOperations.length === 1, JSON.stringify(foreignTx));
   }
@@ -95,8 +95,8 @@ void (async () => {
       '★★ identical content converges: not a conflict',
       (() => {
         const t = new ConflictTracker();
-        t.noteAllSynced([{ id: 'a', text: '基线' }]);
-        return t.check('a', '同一个值', '同一个值', true) === false;
+        t.noteAllSynced([{ id: 'a', text: '甲' }]);
+        return t.check('a', '甲', '甲', true) === false;
       })(),
       'identical content reported as a conflict —— a false alarm the user cannot act on',
     );
@@ -110,9 +110,9 @@ void (async () => {
       '★★★ an external change arriving during our write-back is a conflict (the baseline race)',
       (() => {
         const t = new ConflictTracker();
-        t.noteAllSynced([{ id: 'b', text: '基线' }]);
-        // baseline == current == 基线, the incoming value differs, and a write-back is in flight
-        return t.check('b', '基线', '别人的值', true) === true;
+        t.noteAllSynced([{ id: 'b', text: '甲' }]);
+        // baseline == current == 甲, the incoming value differs, and a write-back is in flight
+        return t.check('b', '甲', '丙', true) === true;
       })(),
       'the other writer edit would be silently overwritten by our in-flight write',
     );
@@ -123,8 +123,8 @@ void (async () => {
       '★★ the same state with NO write in flight is accepted (so the case above isolates the in-flight rule)',
       (() => {
         const t = new ConflictTracker();
-        t.noteAllSynced([{ id: 'c', text: '基线' }]);
-        return t.check('c', '基线', '别人的值', false) === false;
+        t.noteAllSynced([{ id: 'c', text: '甲' }]);
+        return t.check('c', '甲', '丙', false) === false;
       })(),
       'an external change was refused even though nothing was in flight to overwrite it',
     );
@@ -133,8 +133,8 @@ void (async () => {
       '★ local edits plus an external change is a conflict (the baseline differs from the current value here)',
       (() => {
         const t = new ConflictTracker();
-        t.noteAllSynced([{ id: 'd', text: '基线' }]);
-        return t.check('d', '本地改过的', '别人的值', false) === true;
+        t.noteAllSynced([{ id: 'd', text: '甲' }]);
+        return t.check('d', '乙', '丙', false) === true;
       })(),
       'the user uncommitted edit and the external one would be silently merged',
     );
@@ -151,13 +151,13 @@ void (async () => {
 
     // ★ The other writer goes FIRST, then we write. Their edit must survive our write, or we have silently
     //   overwritten a change the user made.
-    kernel.externalUpdate(para.id, '先写的');
-    await client.updateBlockDom(para.id, '<div>后写的</div>');
+    kernel.externalUpdate(para.id, '乙');
+    await client.updateBlockDom(para.id, '<div>甲</div>');
 
     const final = kernel.rows().find((b) => b.id === para.id)?.content ?? '';
     check(
       '★★ a last-writer-wins write really is last (the kernel holds the later value)',
-      final.includes('后写的'),
+      final.includes('甲'),
       `final=${JSON.stringify(final)} —— a write that did not land is the "edit did nothing" symptom`,
     );
   }
@@ -173,12 +173,12 @@ void (async () => {
     // Hold our write open, do the other writer's edit in the gap, then release.
     const gate = kernel.stall('/api/block/updateBlock', 1);
 
-    const ourWrite = client.updateBlockDom(para.id, '<div>我们的</div>');
+    const ourWrite = client.updateBlockDom(para.id, '<div>甲</div>');
     await tick(); // let our write reach the stalled kernel call
     await gate.reached.catch(() => undefined);
 
     // ★ While our write is suspended, the other writer changes the same block.
-    const foreign = kernel.externalUpdate(para.id, '别人的');
+    const foreign = kernel.externalUpdate(para.id, '丙');
 
     gate.release();
     await ourWrite;
@@ -191,7 +191,7 @@ void (async () => {
     const final = kernel.rows().find((b) => b.id === para.id)?.content ?? '';
     check(
       '★★ the document holds one of the two values —— the interleaving is observable in the kernel',
-      final.includes('我们的') || final.includes('别人的'),
+      final.includes('甲') || final.includes('丙'),
       `final=${JSON.stringify(final)}`,
     );
   }

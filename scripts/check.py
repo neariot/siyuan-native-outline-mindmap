@@ -145,6 +145,18 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-check-order.py").is_file(),
     },
     {
+        # ★ Several rules in this tree were derived by hand from the kernel's behaviour and written into
+        #   comments as facts about SiYuan (a list cannot hold a heading; a list item owns its paragraph as a
+        #   child; an item cannot contain an item). Each was measured once, which is honest but unverifiable ——
+        #   no test can re-run a measurement recorded in prose. SiYuan's source is on this machine, and the
+        #   kernel's own `treenode.CanContainBlock` answers the question directly, so the claims are checked
+        #   against it instead of remembered.
+        "name": "block-rules",
+        "command": "python3 scripts/check-block-rules.py",
+        "why": "every claim about which SiYuan blocks may contain which holds against the kernel's own rule",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-block-rules.py").is_file(),
+    },
+    {
         # ★ A command in prose is never executed by anything, so nothing noticed that the Chinese README
         #   told users to run a flag the build does not have, or that two scripts served workflows that no
         #   longer exist. This checks the part a script can decide: that every command a document names

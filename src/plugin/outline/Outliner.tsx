@@ -3530,8 +3530,9 @@ export default function Outliner(props: OutlinerProps) {
             A node in this plugin is always a list item, and SiYuan's block-structure validator refuses to put
             a heading inside a List. Measured against the running kernel, asking it to do so answers:
               `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`
-            The rule is provable from SiYuan's own code: `ast.Node.CanContain` in lute answers
-            `NodeList.CanContain(NodeHeading) = false`. So a level set here could never come back —— the
+            The rule is checked against SiYuan's own source: `scripts/check-block-rules.py` (a gate) runs the
+            kernel's `treenode.CanContainBlock` and asserts `NodeList`/`NodeHeading` is false. So a level set
+            here could never come back —— the
             buttons changed the row's `om-hN` class and nothing else, which looked like a working feature
             until the document was re-read. */}
         <span className="sep" />

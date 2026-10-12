@@ -63,10 +63,11 @@ message. Measured against the running instance, asking it to turn a list item in
 
     invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]
 
-The rule itself is provable from SiYuan's own code —— `ast.Node.CanContain` in `lute` (the parser the kernel
-uses) answers `NodeList.CanContain(NodeHeading) = false`, while `NodeListItem.CanContain(NodeParagraph)` and
-`NodeListItem.CanContain(NodeList)` are both true. That is also why indenting needs an intermediate `List`:
-`NodeListItem` cannot contain another `NodeListItem`.
+The rule itself is asked of SiYuan's own code rather than remembered: `scripts/check-block-rules.py` runs the
+kernel's `treenode.CanContainBlock` (through `lute`'s real `ast` types) and asserts that
+`NodeList`/`NodeHeading` is **false**, while `NodeListItem`/`NodeParagraph` and `NodeListItem`/`NodeList` are
+**true**. That is also why indenting needs an intermediate `List`: `NodeListItem` cannot contain another
+`NodeListItem`.
 
 It is deleted rather than left in place: a control that quietly does nothing is worse than no control, and
 this one also wrote a field into the document that the reader ignored. **No saved content is affected** ——

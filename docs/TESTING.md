@@ -47,6 +47,37 @@ List" case that moved the node into its *own* list) and one false assumption in 
 transaction **array**. Every one of those was caught by driving the real client rather than by a second opinion
 about the fake.
 
+### Where the rules come from: SiYuan's own code, executed
+
+The kernel is **Go**; a plugin is **TypeScript**. So "import SiYuan's code" has no direct form, and a rule
+derived from the kernel's behaviour is otherwise a **measurement written into a comment** —— honest, but
+unverifiable: no test can re-run prose, and the next reader has to take it on trust.
+
+The way through is that the relevant package is **standalone**. `kernel/treenode` holds the containment rules
+(`CanContainBlock`, `ValidateBlockSubtree`) and imports only `lute/ast`, so:
+
+    go build ./treenode/     # succeeds with no database, no SQL, no HTTP
+
+`scripts/check-block-rules.py` exploits exactly that: a ~40-line Go driver imports
+`github.com/siyuan-note/siyuan/kernel/treenode` and the real `lute` `ast` types, and answers
+`CanContainBlock` for each claim this repository makes. It is a **gate** (`block-rules`, 1.6 s). Verified: with a
+claim flipped to the wrong value it fails and names it; flipping it back passes all six.
+
+★ It checks the **rule**, not our model of it —— `CanContainBlock` is the function the kernel itself calls to
+reject a bad tree, the one behind `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`.
+A disagreement therefore means our comment is wrong, not the source.
+
+★ **What an earlier attempt got wrong**, recorded because it is the obvious wrong turn: importing the *whole*
+kernel module fails on its dependency graph (SQL parsers, a checksum server that timed out). The package that
+holds the rules does not need any of it. Ask what the rule's own package imports before concluding that a
+Go kernel cannot be reached from a TypeScript project.
+
+★ **The frontend is TypeScript, and that half is genuinely importable** —— upstream's own tests transpile
+`app/src/**` with the TypeScript compiler and run it in a `node:vm` context (`protyle/util/lute.test.ts` does
+exactly this). It is not used here because the modules that decide list/block behaviour reach for a real DOM
+(`parentElement`, `classList`), so importing them would test a DOM stub rather than the rule. Revisit if a
+frontend module that is both relevant and DOM-free turns up.
+
 ★ **Where the rules come from is SiYuan's own code, not a summary of it.** The kernel rejects a heading inside a
 list item with `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`, and the rule behind
 it is `ast.Node.CanContain` in `lute` (which the kernel uses) —— `NodeList.CanContain(NodeHeading)` is `false`,

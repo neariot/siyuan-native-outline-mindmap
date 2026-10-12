@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Ask **SiYuan's own block-structure rules** whether a parent block may contain a child.
+
+## Why this exists
+
+Several rules in this repository were derived by hand from the kernel's behaviour, and written into comments
+as if they were facts about SiYuan:
+
+  * a `NodeList` cannot contain a `NodeHeading` —— the reason the heading buttons were removed;
+  * a `NodeListItem` owns its paragraph as a **child** (`d → l → i → p`);
+  * a `NodeListItem` cannot contain another `NodeListItem`, which is why an indent needs an intermediate `List`.
+
+Each was measured against a running kernel, which is honest but **slow and unverifiable**: the measurement
+lives in a comment, no test can re-run it, and the next person has to take it on trust. SiYuan's source is on
+this machine (`SIYUAN_SRC`), so the rules can be **asked** instead of remembered.
+
+★ This checks the *rule*, not our model of it. `kernel/treenode.CanContainBlock` is the function the kernel
+itself calls to reject a bad tree —— the same one that answers
+`invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]` —— so a disagreement here means our
+comment is wrong, not that the source is.
+
+## What it is not
+
+  * **Not a reimplementation.** It compiles and runs the kernel's own `treenode` package against the real
+    `github.com/88250/lute/ast` types. There is no second copy of the rule to drift.
+  * **Not a full kernel build.** `treenode` is standalone (`go build ./treenode/` needs no database, no SQL, no
+    HTTP), so this is a small program rather than the whole kernel —— the full module's dependency graph is
+    what made an earlier attempt at importing the kernel fail, and it is avoidable.
+  * **Not a replacement for the live instance.** The running kernel is still what settles "what does the API
+    return"; this settles "what does the rule say", which is the part a comment can get wrong quietly.
+
+## When the source is absent
+
+An explicit skip, not a failure: `SIYUAN_SRC` is empty on a machine without a checkout, which `env.py` records
+as an explicit statement rather than a guess (`AGENTS.md` §5.1 #6). The tool says so and exits 0 with a
+`sources missing` note —— and it says **what could not be checked**, so nobody reads the skip as a pass.
+
+Exit 0 = every claimed rule matched (or the source is absent), 1 = a claim disagrees with the kernel's rule.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import env  # noqa: E402
+import script_log  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# The claims this repository makes about SiYuan's block structure.
+#
+# Each entry is (parent, child, may_contain, why-it-matters). A `True` claim says "the kernel allows this", a
+# `False` claim says "the kernel forbids this, so code depending on it cannot work".
+# ---------------------------------------------------------------------------
+CLAIMS: list[tuple[str, str, bool, str]] = [
+    (
+        "NodeList",
+        "NodeHeading",
+        False,
+        "a list cannot hold a heading —— the reason the H1/H2/H3 buttons could never store a level "
+        "(measured: `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]`)",
+    ),
+    (
+        "NodeListItem",
+        "NodeParagraph",
+        True,
+        "a list item's own paragraph is its CHILD (the `d → l → i → p` shape the reader and writer assume)",
+    ),
+    (
+        "NodeListItem",
+        "NodeList",
+        True,
+        "a nested list lives inside the parent item —— what an indent is made of",
+    ),
+    (
+        "NodeListItem",
+        "NodeListItem",
+        False,
+        "a list item cannot hold another directly, which is WHY an indent needs an intermediate List",
+    ),
+    (
+        "NodeDocument",
+        "NodeList",
+        True,
+        "a document's top level is a list —— the root shape the plugin reads",
+    ),
+    (
+        "NodeList",
+        "NodeListItem",
+        True,
+        "the ordinary case; if this were false nothing would work and the claim list itself would be wrong",
+    ),
+]
+
+GO_DRIVER = r'''package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/88250/lute/ast"
+	"github.com/siyuan-note/siyuan/kernel/treenode"
+)
+
+type query struct {
+	Parent string `json:"parent"`
+	Child  string `json:"child"`
+}
+
+func main() {
+	var queries []query
+	if err := json.NewDecoder(os.Stdin).Decode(&queries); err != nil {
+		fmt.Fprintln(os.Stderr, "bad input:", err)
+		os.Exit(2)
+	}
+
+	// ast.NodeType is an enum, so the wire names are looked up rather than cast.
+	byName := map[string]ast.NodeType{}
+	for t := ast.NodeDocument; t <= ast.NodeTextMark; t++ {
+		byName[t.String()] = t
+	}
+
+	out := make([]bool, 0, len(queries))
+	for _, q := range queries {
+		p, okP := byName[q.Parent]
+		c, okC := byName[q.Child]
+		if !okP || !okC {
+			fmt.Fprintf(os.Stderr, "unknown node type: parent=%q child=%q\n", q.Parent, q.Child)
+			os.Exit(2)
+		}
+		// ★ THE kernel's own rule, not a copy of it.
+		out = append(out, treenode.CanContainBlock(p, c))
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+		fmt.Fprintln(os.Stderr, "encode:", err)
+		os.Exit(2)
+	}
+}
+'''
+
+GO_MOD = """module siyuanblockrules
+
+go 1.26.5
+
+require github.com/siyuan-note/siyuan/kernel v0.0.0
+
+replace github.com/siyuan-note/siyuan/kernel => %s
+"""
+
+
+def go_toolchain() -> str | None:
+    """A `go` binary capable of building the kernel module (it pins a newer version than may be installed)."""
+    if not shutil.which("go"):
+        return None
+    return shutil.which("go")
+
+
+def main() -> int:
+    src = env.cfg.siyuan_src
+    if not src:
+        # ★ An explicit skip that names what was NOT checked. §5.1 #6: an empty value that means "this machine
+        #   does not have it" is legal; the failure mode to avoid is reporting it as a pass.
+        print(
+            "check-block-rules: SKIPPED —— SIYUAN_SRC is not configured (or is not a SiYuan checkout), so the\n"
+            "  kernel's block-structure rules could NOT be verified. The claims in src/ about which blocks may\n"
+            "  contain which are therefore unconfirmed on this machine. Set SIYUAN_SRC in .env to check them."
+        )
+        return 0
+
+    go = go_toolchain()
+    if not go:
+        print(
+            "check-block-rules: SKIPPED —— no `go` toolchain, so the kernel's rules could NOT be verified.\n"
+            "  Install Go (the kernel's go.mod pins its version) to check the block-containment claims."
+        )
+        return 0
+
+    with tempfile.TemporaryDirectory(prefix="block-rules-") as tmp:
+        d = Path(tmp)
+        (d / "main.go").write_text(GO_DRIVER, encoding="utf-8")
+        # ★ `replace` must point at the directory holding the kernel's own go.mod —— the module root is
+        #   `<src>/kernel`, not `<src>` (the repo root has no go.mod). Pointing one level too high fails with
+        #   "reading <src>/go.mod: no such file or directory", which is how this was found.
+        kernel_dir = Path(src) / "kernel"
+        if not (kernel_dir / "go.mod").is_file():
+            print(
+                f"check-block-rules: SKIPPED —— no kernel/go.mod under SIYUAN_SRC ({src}), so this is not a "
+                "SiYuan source checkout and the block rules could NOT be verified."
+            )
+            return 0
+        (d / "go.mod").write_text(GO_MOD % kernel_dir, encoding="utf-8")
+
+        env_vars = dict(os.environ)
+        # The kernel's go.mod pins a newer toolchain than may be installed; let Go fetch it rather than
+        # failing with "requires go >= 1.26.5 (running 1.26.4)".
+        env_vars["GOTOOLCHAIN"] = "auto"
+        env_vars["GOFLAGS"] = "-mod=mod"
+
+        proc = subprocess.run(
+            [go, "run", "."],
+            cwd=d,
+            input=json.dumps([{"parent": p, "child": c} for p, c, _, _ in CLAIMS]),
+            capture_output=True,
+            text=True,
+            env=env_vars,
+            timeout=600,
+        )
+        if proc.returncode != 0:
+            print("check-block-rules: could not run the kernel's rule —— the toolchain or module failed")
+            print((proc.stderr or proc.stdout).strip()[:1500])
+            return 2
+
+        try:
+            answers = json.loads(proc.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            print("check-block-rules: the driver did not answer as JSON:")
+            print(proc.stdout.strip()[:1500])
+            return 2
+
+    bad = 0
+    for (parent, child, claimed, why), got in zip(CLAIMS, answers):
+        if bool(got) == claimed:
+            print(f"  ok   {parent} may contain {child}: {claimed}")
+        else:
+            bad += 1
+            print(
+                f"  ✘    {parent} may contain {child}: claimed {claimed}, kernel says {bool(got)}\n"
+                f"         why it matters: {why}"
+            )
+
+    if bad:
+        print(
+            f"check-block-rules: FAIL {bad} claim(s) disagree with SiYuan's own treenode.CanContainBlock.\n"
+            "  The comment is wrong, not the source —— fix the claim (and anything that depends on it)."
+        )
+        return 1
+
+    print(
+        f"check-block-rules: OK {len(CLAIMS)} claim(s) verified against SiYuan's own "
+        f"treenode.CanContainBlock (source: {src})"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    with script_log.track("check-block-rules"):
+        sys.exit(main())
