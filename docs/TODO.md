@@ -78,7 +78,9 @@ duplication rather than moving lines.
 - **Done: a performance self-test that was measuring the machine.** It failed at 2.29x on a loaded box; the
   linear sample was below `performance.now()`'s resolution, so its ratio was noise. n=6000 + a heavier
   linear body, and a sub-resolution sample is now its own failure.
-- **Done: an E2E error message that blamed the plugin for a loaded machine.** Measured both ways on one
+- **Done: an E2E error message that blamed the plugin for a loaded machine.**
+  Verified: the full suite passed **110/110 in 14.0m** at load 1.2, including all four cases that had
+  failed at load 5.3 —— the same build, so the load was the whole difference. Measured both ways on one
   commit (46.7s failing / 11.6s passing), and `run-e2e.py` now warns about the load before any case runs.
 
 ## Refuted / already resolved
