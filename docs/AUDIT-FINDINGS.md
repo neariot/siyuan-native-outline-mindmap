@@ -79,8 +79,20 @@ conclusion to draw from a complete-looking list of findings.
   empty span may survive into the paragraph DOM, and a span holding text must survive the stripper.
   Shown red by disabling the strip in `core/map.ts`. The file already had two other checks that go red the
   same way, so this strawman was contributing nothing.
-- **medium · test-quality** `src/core/map.test.ts:865`  
-  A check passes a literal `true` as its condition, so it is counted in the suite total while asserting nothing — it can never go red, whichever way the code changes.
+- ~~**medium · test-quality** `src/core/map.test.ts:854`~~ **fixed**
+  A check passed a literal `true` as its condition, so it was counted in the suite total while asserting
+  nothing. It recorded a real kernel measurement (consecutive indented lines with no blank line before them
+  are merged into the first paragraph, so the content loses its paragraph boundary) but could never go red
+  on it. ★ It is **not** replaced with an assertion, because the parser cannot see the difference ——
+  measured, `kramdownToTree('- node\n  A\n  B\n')` and `kramdownToTree('- node\n\n  A\n  B\n')` both give
+  `paragraphs: ["<span>A</span>", "<span>B</span>"]`; the merge is the kernel's. So the measurement is kept
+  as a comment, and the claim that *is* testable at this layer (the writer emits the blank line) is already
+  asserted just above. Real `check()` calls: 155 → 154.
+- ★ **A literal `true`/`false` condition is worth searching for**, and a single-line regex is not enough to
+  find it: the condition sits on its own line in each real case. Six exist; five are the **correct** pattern
+  (a hard failure inside a `catch`, or a missing fixture that must fail loudly), and only this one was a
+  defect. The distinction is whether the condition *can* vary —— `false` in a `catch` can, because the
+  `catch` may not run.
 
 ### docs-core
 

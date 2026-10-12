@@ -845,17 +845,22 @@ console.log('=== blank-line rules ===');
   const kd2 = treeToKramdown(back, { docTitle: 'T' });
   check('★ the new format is stable across the round trip', kd === kd2, kd === kd2 ? '' : 'kd is unstable');
 
-  // ⑤ Reverse check of "why a blank line is required":
-  //    Measured on the kernel —— consecutive indented lines without a blank line are merged into the **first paragraph itself**:
+  // ⑤ Why a blank line is required (measured on the **kernel**, not here —— so it is recorded, not checked).
+  //
+  //    Consecutive indented lines with no blank line before them are merged into the **first paragraph
+  //    itself** by SiYuan:
   //      input:  - node / ␣␣A / ␣␣B
   //      kernel:  p 'node⏎A⏎B'   ← all merged into **one** paragraph
-  //    In other words, without the blank line the content does not disappear, it **loses the paragraph boundary**.
-  //    This explains why ① is necessary: a blank line is the only paragraph-separator signal.
-  check(
-    '★ no blank line → the paragraph boundary is lost (the content merges into the first paragraph, so this cannot be omitted)',
-    true,
-    '',
-  );
+  //    Without the blank line the content does not disappear; it **loses the paragraph boundary**, which is
+  //    why ① is necessary: a blank line is the only paragraph-separator signal.
+  //
+  //    ★ This used to be a `check(..., true, '')` —— a literal condition, so it was counted in the suite
+  //      total while asserting nothing and could never go red. It is **not** replaced with an assertion here
+  //      because the parser cannot see the difference: measured, `kramdownToTree('- node\n  A\n  B\n')` and
+  //      `kramdownToTree('- node\n\n  A\n  B\n')` both yield `paragraphs: ["<span>A</span>", "<span>B</span>"]`.
+  //      The merge is the **kernel's**, so there is nothing at this layer to go red on the claim itself. What
+  //      the round trip *can* pin is that the writer emits the blank line —— asserted in ① above, which is
+  //      what a regression would actually break.
 }
 
 
