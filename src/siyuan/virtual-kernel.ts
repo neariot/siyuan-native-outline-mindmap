@@ -160,6 +160,63 @@ export class VirtualKernel {
     return this.now() - this.startMs;
   }
 
+  // ---------------------------------------------------------------- external edits (for race tests)
+
+  /**
+   * Simulate an edit made by **another client** —— the user typing in SiYuan itself, or a second window.
+   *
+   * ★ This is what makes a data race testable at all. The races that hurt here are not two threads touching
+   *   one variable; they are **two writers to the same document** interleaving: our write-back is in flight
+   *   while the kernel reports someone else's change, or someone else's change lands between our read and our
+   *   write. Without a way to inject the second writer, the only layer that could produce that interleaving was
+   *   a real browser against a real kernel, where the timing is not ours to choose.
+   *
+   * Returns the transaction the kernel would have pushed, so a caller can hand it to the plugin's own
+   * transaction handler exactly as the WebSocket would.
+   */
+  externalUpdate(id: string, content: string): VTransaction {
+    const b = this.blocks.get(id);
+    if (!b) throw new Error(`externalUpdate: no block ${id}`);
+    b.content = content;
+    return this.tx([{ action: 'update', id, data: content }]);
+  }
+
+  /** Simulate another client **deleting** a block. Returns the transaction, as `externalUpdate` does. */
+  externalDelete(id: string): VTransaction {
+    const b = this.blocks.get(id);
+    if (!b) throw new Error(`externalDelete: no block ${id}`);
+    const gone = this.rows().filter((x) => x.id === id || x.parentId === id);
+    for (const x of gone) {
+      this.blocks.delete(x.id);
+      this.vanishedAt.set(x.id, this.now());
+    }
+    return this.tx([{ action: 'delete', id }]);
+  }
+
+  /**
+   * Hold a kernel call open until `release()` is called.
+   *
+   * ★ A race needs two things in flight at once, and a test that awaits each call in turn can never produce
+   *   that. This lets an ordinal call (the Nth `/api/block/updateBlock`, say) be **suspended** while the test
+   *   does something else, then released —— so "our write-back is still in flight" is a state a test can hold
+   *   rather than a hope about machine speed.
+   */
+  stall(endpoint: string, ordinal = 1): { release: () => void; reached: Promise<void> } {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let seen = 0;
+    let markReached!: () => void;
+    const reached = new Promise<void>((r) => {
+      markReached = r;
+    });
+    this.stalls.push({ endpoint, ordinal, gate, onReach: () => { seen++; if (seen >= ordinal) markReached(); } });
+    return { release, reached };
+  }
+
+  private stalls: Array<{ endpoint: string; ordinal: number; gate: Promise<void>; onReach: () => void }> = [];
+
   // ---------------------------------------------------------------- inspection (for tests)
 
   doc(id: string): VDoc | undefined {
@@ -311,6 +368,17 @@ export class VirtualKernel {
       const endpoint = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
       this.log.push({ endpoint, body });
+      // ★ A stalled endpoint suspends HERE, before the kernel acts —— so a test can hold "our write is in
+      //   flight" open while it injects the other writer's change. The call count is per endpoint, so
+      //   `stall('/api/block/updateBlock', 2)` suspends the second one and lets the first through.
+      const stall = this.stalls.find((st) => st.endpoint === endpoint);
+      if (stall) {
+        stall.ordinal--;
+        if (stall.ordinal === 0) {
+          stall.onReach();
+          await stall.gate;
+        }
+      }
       const reply = this.handle(endpoint, body);
       return new Response(JSON.stringify(reply), {
         status: 200,

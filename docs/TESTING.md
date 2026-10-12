@@ -53,6 +53,33 @@ it is `ast.Node.CanContain` in `lute` (which the kernel uses) —— `NodeList.C
 while `NodeListItem.CanContain(NodeParagraph)` and `NodeListItem.CanContain(NodeList)` are `true`. That is also
 why an indent needs an intermediate `List`: a `NodeListItem` cannot contain another one.
 
+### Data races: two writers to one document
+
+The races that hurt this plugin are not two threads sharing a variable —— they are **two writers to the same
+document overlapping in time**: our write-back in flight while the kernel reports someone else's change; the
+other writer's edit landing between our read and our write; two of our own write-backs overlapping so the first
+to finish clears a flag the second still needs (which is why `EchoGuard.applyingCount` is a **counter, not a
+boolean**, with the measurement in its comment).
+
+`src/plugin/sync-race.test.ts` drives these against the virtual kernel, in **153 ms**, with no browser and no
+live instance. Three primitives make an interleaving something a test can *hold* rather than hope for:
+
+| primitive | what it removes |
+|---|---|
+| `kernel.externalUpdate(id, text)` / `externalDelete(id)` | the inability to be the second writer; each returns the transaction the WebSocket would have pushed, so it can be fed to the plugin's own handler |
+| `kernel.stall(endpoint, n)` | awaits each call in turn, which can never produce two in flight at once —— this suspends the Nth call of an endpoint while the test acts |
+| `kernel` clock + `sqlIndexDelayMs` | timing that depends on machine speed |
+
+★ **Every case was shown red.** The overlap case fails when `isApplying` is backed by a boolean (the historical
+defect). The baseline-race case —— an external change received while our write-back is in flight, which our
+write will overwrite —— fails when that rule is removed from `ConflictTracker.check`.
+
+★★ **And one of them was green with the race restored, twice.** That is written up in
+`docs/pitfalls/testing.md` §6.9t: a case that shares a stateful tracker with an earlier case *inherits its
+baseline*, and a case whose fixture offers a fallback path is satisfied by the fallback. What isolates this
+particular rule is `baseline == current` and nothing else, pinned as a **pair** —— the same state with the flag
+off must answer *no conflict*.
+
 ★ **What the virtual kernel does NOT model, and says so**: rendering (that genuinely needs a DOM), the WS
 transaction push, and any notebook beyond "one exists". An endpoint it does not implement **throws** rather
 than answering success —— a fake that quietly agrees is the failure mode this whole section is about.

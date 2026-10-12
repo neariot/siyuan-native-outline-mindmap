@@ -1146,3 +1146,47 @@ So:
   docstring asks for these invariants at the pure-function level. It is also why the earlier three-child
   case could not see this one: with siblings that have **no** children, centring already separates them and
   the *forcing* path never runs. **A branch is only covered by a case that reaches it.**
+
+### 6.9t A race case that passes for a different reason than the race
+
+**Symptom.** A new data-race case stayed **green with the race restored** —— twice in a row, and the second
+time after an explicit attempt to make it specific.
+
+**Cause, first time.** The case asserted a conflict on a tracker that a **previous case in the same block had
+already used**:
+
+```
+tracker.check('n1', '甲', '甲', true)       // current === incoming -> synced.set(n1, '甲'), returns false
+tracker.check('n1', '乙', '丙', true)       // base is now 甲, and the fallback ...
+```
+
+With the in-flight rule removed, the second call still answered `true` —— by falling through to
+`base !== current` instead. The assertion could not tell the rule under test from the fallback that replaced it.
+
+**Cause, second time (the interesting one).** After giving each case its own tracker, the case used a state where
+the fallback **also** answers "conflict": baseline `甲`, current `乙` (already drifted). Removing the
+in-flight rule still returned `true`.
+
+**What actually isolates this rule.** Only `baseline == current`:
+
+| state | fallback branch | answer |
+|---|---|---|
+| baseline == current (`甲`/`甲`), no write in flight | "local value still equals the baseline → accept" | **no conflict** |
+| baseline == current (`甲`/`甲`), write in flight | the in-flight rule | **conflict** |
+
+So the case must hold `base == current` and differ only in `writeInFlight`. It is now pinned as a **pair** —— the
+same state with the flag off must answer *no conflict* —— because otherwise "conflict for any differing incoming
+value" satisfies it and the pair is what makes it specific.
+
+**Practice.**
+
+- **Put the defect back and run it, every time.** Both versions were plausible, read correctly, and were green.
+  Neither survived the mutation, and nothing except the mutation would have said so.
+- **A case inherits the state its predecessors left.** Give each assertion its own fixture when the code under
+  test keeps state —— sharing one tracker is what made the first version vacuous.
+- **Pin the negative next to the positive.** "This state is a conflict" is only evidence when "the same state
+  with the one difference removed is not" is asserted beside it; otherwise a rule that always says *conflict*
+  passes both.
+- **`AGENTS.md` §7 already says this** ("before believing a red-proof, check the mutation is the one the
+  criterion reads"). The trap is that here it was *my own* mutation and my own criterion, and the criterion was
+  the thing that was blind —— which is why the red proof is not a formality to run after the test looks right.
