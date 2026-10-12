@@ -164,6 +164,29 @@ def _temp_doc_prefix():
     return m.group(1) if m else None
 
 
+
+# ★ How long to wait before confirming a candidate is really a leftover. Long enough for an in-flight
+#   `removeDocByID` to land (deletion is visible to a read immediately, unlike creation), short enough that a
+#   suite does not notice it. Only paid when the index lists something.
+_LEFTOVER_SETTLE_SECONDS = 2.0
+
+
+def _document_still_exists(call, doc_id):
+    """True when the kernel still serves this document. A read, so it has no index lag.
+
+    ★ Deliberately **not** `query/sql` again: the index is what listed the candidate, and the index is what
+    lags (1~3 s after a creation, `docs/kernel-api.md` 7.3). Reading the block itself answers the question the
+    report is really asking —— "is this document still there?" —— with no window (measured: `getBlockDOM`
+    returns `code: 0` while alive and `block not found` at every moment after a deletion).
+    """
+    if not doc_id:
+        return False
+    try:
+        return call("/api/block/getBlockKramdown", {"id": doc_id}).get("code") == 0
+    except Exception:  # noqa: BLE001 —— a failure to check is not evidence of a leftover
+        return False
+
+
 def _report_leftover_documents():
     """Warn about temp documents a run left behind on the isolated instance.
 
@@ -178,10 +201,21 @@ def _report_leftover_documents():
     It **reports** rather than failing: a leftover is not by itself a product defect, and a run that ends red
     for an unrelated reason should not also be blamed for this. The point is that nobody has to wonder.
 
-    ★ It can **under-report** right after a creation, because the SQL index lags by 1~3 s (`docs/kernel-api.md`
-    7.3) —— measured: a document created and queried immediately was absent from the 80 rows the query
-    returned. Being quiet here is the safe direction (a false "you left a document behind" would be worse than
-    a missed one), and at the end of a suite the creations are seconds old anyway.
+    ★ Measured lag, so the next person does not have to guess: the SQL index shows a new document within
+    **~2 s** (`t=0` absent, `t=2 s` present, and it stays). Inside that window this query cannot see the
+    document at all, so the check can *under-report* —— quiet, which is the safe direction.
+
+    ★★ The other direction bit once and is handled below: a green 118-case run reported **one** temp document
+    that was already gone when inspected (`getBlockKramdown` → `code: -1`) —— the index had listed a document
+    whose deletion was still in flight, i.e. the run was clean and the check said otherwise. A report that
+    cries wolf gets ignored, so each candidate is now **confirmed with a read** before it is reported: reads
+    have no such window (`docs/kernel-api.md` 7.3).
+
+    ★ A trap worth recording, because it cost a cycle while verifying this: `createDocWithMd` takes the
+    document **title from the path**, not from a `# heading` in the markdown. A verification document created
+    with a heading and a plain path therefore had a title that does not start with the temp prefix, and the
+    check correctly ignored it —— which looked like the check failing to detect a leftover it should have
+    found. `createTempDocTitled` passes the title in the path for this reason.
 
     It asks the isolated instance only, never the workspace the user works in (section 5.1 #4).
     """
@@ -222,9 +256,29 @@ def _report_leftover_documents():
     if prefix is None:
         print("  · leftover-document check skipped: could not read TEMP_DOC_TITLE_PREFIX from e2e/testdoc.ts")
         return
-    leftovers = [r for r in rows if str(r.get("content", "")).startswith(prefix)]
-    if not leftovers:
+    candidates = [r for r in rows if str(r.get("content", "")).startswith(prefix)]
+    if not candidates:
         print("  ✓ no temp documents left behind on the test instance")
+        return
+
+    # ★★ Confirm each candidate is really a leftover, rather than reporting what the index happens to hold.
+    #
+    #   Measured: a green 118-case run reported one temp document, and by the time it was inspected it was
+    #   already gone (`getBlockKramdown` → `code: -1`) —— the SQL index had listed a document whose deletion
+    #   was still in flight. A check that cries wolf on a race gets ignored, and an ignored check is worse than
+    #   none, so this re-reads each candidate after a short settle and reports only the ones that survive.
+    #
+    #   The settle is bounded and only runs when there is something to confirm, so the common case (nothing
+    #   left behind) still costs exactly one query.
+    import time
+
+    time.sleep(_LEFTOVER_SETTLE_SECONDS)
+    leftovers = [r for r in candidates if _document_still_exists(call, str(r.get("id", "")))]
+    if not leftovers:
+        print(
+            "  ✓ no temp documents left behind on the test instance (%d transient one(s) seen and gone)"
+            % len(candidates)
+        )
         return
     print(f"  ⚠ {len(leftovers)} temp document(s) left on the test instance —— a case or probe did not clean up:")
     for r in leftovers[:5]:
