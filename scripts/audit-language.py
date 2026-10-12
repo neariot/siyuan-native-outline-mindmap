@@ -689,13 +689,72 @@ def _json_needle(value):
     return literal, escaped
 
 
+def _strip_jsonc_comments(text):
+    """Remove `//` and `/* */` comments, respecting string literals.
+
+    ★ `tsconfig*.json` is **JSONC**, not JSON: TypeScript accepts comments in it, and a config file is
+    exactly where the reason for a setting belongs. `json.loads` rejects them, which made the whole audit
+    fail with "1 file(s) could not be audited" the moment a `tsconfig.e2e.json` carried an explanatory
+    comment —— a real explanation the repository wants, rejected by a parser that was stricter than the
+    format. Measured: `tsconfig.json` parsed only because it happened to have no comments.
+
+    Written by hand rather than adding a JSONC dependency: the transform is small, and comment-vs-string
+    is the only subtlety (`"//not-a-comment"` inside a value must survive). The scanner reports findings
+    by locating the value's text in the **raw** source afterwards, so stripping comments here cannot move
+    a line number for a value that has one.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escaped = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                # Keep newlines so line numbers survive the removal.
+                if text[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def scan_json(path, text):
     """`json.loads` decides *whether* there is CJK; the line is then located in the raw text.
 
-    A JSON file has no comments, so a JSON string value is the only surface that can carry prose.
+    A plain JSON file has no comments, so a JSON string value is the only surface that can carry prose.
+    `tsconfig*.json` is JSONC and may have them —— see `_strip_jsonc_comments`, which removes them for the
+    parse while leaving the raw text (and therefore every reported line number) untouched.
     """
+    parseable = text
+    if path.endswith(".json") and os.path.basename(path).startswith("tsconfig"):
+        parseable = _strip_jsonc_comments(text)
     try:
-        document = json.loads(text)
+        document = json.loads(parseable)
     except json.JSONDecodeError as exc:
         raise ScanError("json.loads failed: line %d: %s" % (exc.lineno, exc.msg))
 

@@ -238,7 +238,10 @@ npm run build       # build
 npm run deploy      # build + deploy into **both** instances (no hot reload: SiYuan exposes no route
                     #   for it). --test-only skips the instance the user works in —— use it for a red
                     #   proof, never for a normal build
-npm run typecheck   # tsc --noEmit
+npm run typecheck   # tsc --noEmit for **both** programs: `src` (what ships) and `e2e` (the suite), via
+                    #   tsconfig.json and tsconfig.e2e.json. `npm run typecheck:e2e` runs the second alone.
+                    #   ★ They are separate configs because Playwright transpiles with esbuild, which strips
+                    #     types without checking them —— 42 real errors sat in `e2e/` while nothing looked
 npm run check       # every fast gate in one command (typecheck + unit + docs index + language +
                     #   i18n keys + privacy + css scope)
 npm run i18n        # every `t('<key>')` exists in both catalogues; no entry is dead text
