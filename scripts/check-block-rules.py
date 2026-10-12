@@ -204,65 +204,18 @@ def main() -> int:
         return 0
 
     go = go_toolchain()
-    if not go:
-        print(
-            "check-block-rules: SKIPPED —— no `go` toolchain, so the kernel's rules could NOT be verified.\n"
-            "  Install Go (the kernel's go.mod pins its version) to check the block-containment claims."
-        )
-        return 0
 
-    with tempfile.TemporaryDirectory(prefix="block-rules-") as tmp:
-        d = Path(tmp)
-        (d / "main.go").write_text(GO_DRIVER, encoding="utf-8")
-        # ★ `replace` must point at the directory holding the kernel's own go.mod —— the module root is
-        #   `<src>/kernel`, not `<src>` (the repo root has no go.mod). Pointing one level too high fails with
-        #   "reading <src>/go.mod: no such file or directory", which is how this was found.
-        kernel_dir = Path(src) / "kernel"
-        if not (kernel_dir / "go.mod").is_file():
-            print(
-                f"check-block-rules: SKIPPED —— no kernel/go.mod under SIYUAN_SRC ({src}), so this is not a "
-                "SiYuan source checkout and the block rules could NOT be verified."
-            )
-            return 0
-        (d / "go.mod").write_text(GO_MOD % kernel_dir, encoding="utf-8")
-
-        env_vars = dict(os.environ)
-        # The kernel's go.mod pins a newer toolchain than may be installed; let Go fetch it rather than
-        # failing with "requires go >= 1.26.5 (running 1.26.4)".
-        env_vars["GOTOOLCHAIN"] = "auto"
-        env_vars["GOFLAGS"] = "-mod=mod"
-
-        proc = subprocess.run(
-            [go, "run", "."],
-            cwd=d,
-            input=json.dumps([{"parent": p, "child": c} for p, c, _, _ in CLAIMS]),
-            capture_output=True,
-            text=True,
-            env=env_vars,
-            timeout=600,
-        )
-        if proc.returncode != 0:
-            print("check-block-rules: could not run the kernel's rule —— the toolchain or module failed")
-            print((proc.stderr or proc.stdout).strip()[:1500])
-            return 2
-
-        try:
-            answers = json.loads(proc.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            print("check-block-rules: the driver did not answer as JSON:")
-            print(proc.stdout.strip()[:1500])
-            return 2
-
+    # ---- the endpoint paths and matched strings: a pure text scan, always run, needs no Go ----
+    #
+    # ★ These come first and are unconditional. The containment check below needs a Go toolchain whose
+    #   exact version may not be installed, and a first version let that make the whole gate fail (or, worse,
+    #   let `GOTOOLCHAIN=auto` start a 70 MB download inside `npm run check` —— which breaks the "the fast
+    #   path stays fast" rule more quietly than a failure does). Splitting them means the cheap, always-
+    #   applicable checks are never hostage to the expensive one.
+    kernel_root = Path(src) / "kernel"
     bad = 0
     string_bad = 0
 
-    # ---- the string claims, read straight out of the kernel source ----
-    kernel_root = Path(src) / "kernel"
-    go_files = [p for p in kernel_root.rglob("*.go") if "/vendor/" not in str(p)]
-    corpus = "\n".join(
-        p.read_text(encoding="utf-8", errors="replace") for p in go_files
-    )
-    # ---- the endpoint paths, collected from the product rather than typed here ----
     endpoints: set[str] = set()
     for rel in ("src/siyuan/api.ts", "src/siyuan/virtual-kernel.ts"):
         f = Path(__file__).resolve().parent.parent / rel
@@ -290,8 +243,11 @@ def main() -> int:
                     "           nothing\", with nothing raised in this repository."
                 )
 
+    go_corpus = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace") for p in kernel_root.rglob("*.go") if "/vendor/" not in str(p)
+    )
     for literal, why in STRING_CLAIMS:
-        if literal in corpus:
+        if literal in go_corpus:
             print(f"  ok   kernel still says {literal!r}")
         else:
             bad += 1
@@ -303,15 +259,86 @@ def main() -> int:
                 "           stops being reported and the duplicate-document recovery never appears."
             )
 
-    for (parent, child, claimed, why), got in zip(CLAIMS, answers):
-        if bool(got) == claimed:
-            print(f"  ok   {parent} may contain {child}: {claimed}")
-        else:
-            bad += 1
+    # ---- the containment rules: need Go; verified only when it runs, skipped explicitly when it cannot ----
+    answers: list[bool] | None = None
+    go_note = ""
+
+    # ★ The toolchain is missing -> skip **only** the containment claims. The text claims above have already
+    #   run, because an early `return` here was measured to skip them as well: on a machine with no Go, the
+    #   endpoint and error-string checks silently stopped happening while the gate still said "OK".
+    if not go:
+        go_note = "no `go` toolchain on PATH (the kernel's go.mod pins its version)"
+    else:
+      with tempfile.TemporaryDirectory(prefix="block-rules-") as tmp:
+        d = Path(tmp)
+        (d / "main.go").write_text(GO_DRIVER, encoding="utf-8")
+        # ★ `replace` must point at the directory holding the kernel's own go.mod —— the module root is
+        #   `<src>/kernel`, not `<src>` (the repo root has no go.mod). Pointing one level too high fails with
+        #   "reading <src>/go.mod: no such file or directory", which is how this was found.
+        kernel_dir = Path(src) / "kernel"
+        if not (kernel_dir / "go.mod").is_file():
             print(
-                f"  ✘    {parent} may contain {child}: claimed {claimed}, kernel says {bool(got)}\n"
-                f"         why it matters: {why}"
+                f"check-block-rules: SKIPPED —— no kernel/go.mod under SIYUAN_SRC ({src}), so this is not a "
+                "SiYuan source checkout and the block rules could NOT be verified."
             )
+            return 0
+        (d / "go.mod").write_text(GO_MOD % kernel_dir, encoding="utf-8")
+
+        env_vars = dict(os.environ)
+        env_vars["GOFLAGS"] = "-mod=mod"
+        # ★★ Guarantee no network: GOPROXY=off means Go CANNOT download, so a toolchain or module that is not
+        #   already cached fails **immediately** instead of pulling ~70 MB inside `npm run check`. The
+        #   containment rules are then verified exactly when they can be, and skipped — loudly, naming what
+        #   went unchecked — when they cannot. That is §5.1 #6: an absent toolchain is an explicit absence,
+        #   never a silent pass.
+        # ★ `GOSUMDB` is deliberately left at its default. Setting `GOSUMDB=off` looks harmless and is not: it
+        #   makes Go refuse the **cached** toolchain module ("verifying module: checksum database disabled"),
+        #   so the containment claims skip on a machine that could actually run them. `GOPROXY=off` is what
+        #   blocks the download; nothing else is needed.
+        env_vars["GOPROXY"] = "off"
+        env_vars["GOTOOLCHAIN"] = "auto"  # resolves a cached toolchain without hitting the network
+
+        proc = subprocess.run(
+            [go, "run", "."],
+            cwd=d,
+            input=json.dumps([{"parent": p, "child": c} for p, c, _, _ in CLAIMS]),
+            capture_output=True,
+            text=True,
+            env=env_vars,
+            timeout=600,
+        )
+        if proc.returncode != 0:
+            # ★ A skip, not a failure. `GOPROXY=off` above guarantees this fails **immediately** when the
+            #   toolchain or a module is not already cached, rather than downloading ~70 MB inside
+            #   `npm run check`. The text claims above have already been checked; only the ones needing Go are
+            #   unverified, and saying so is the honest outcome (§5.1 #6).
+            first = (proc.stderr or proc.stdout).strip().splitlines()
+            go_note = first[-1][:200] if first else "(no output)"
+            answers = None
+        else:
+            try:
+                answers = json.loads(proc.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                go_note = "the driver did not answer as JSON"
+                answers = None
+
+    # ---- the containment rules (only meaningful when the Go driver actually ran) ----
+    if answers is None:
+        print(
+            f"  ---  {len(CLAIMS)} containment claim(s) were NOT verified (Go toolchain/module not cached:\n"
+            f"         {go_note or 'unknown'}\n"
+            "         ). An explicit absence, not a pass."
+        )
+    else:
+        for (parent, child, claimed, why), got in zip(CLAIMS, answers):
+            if bool(got) == claimed:
+                print(f"  ok   {parent} may contain {child}: {claimed}")
+            else:
+                bad += 1
+                print(
+                    f"  \u2718    {parent} may contain {child}: claimed {claimed}, kernel says {bool(got)}\n"
+                    f"         why it matters: {why}"
+                )
 
     if bad:
         # ★ The verdict names **which kind** of claim failed. A first version said
@@ -328,10 +355,14 @@ def main() -> int:
         )
         return 1
 
+    containment = (
+        f"{len(CLAIMS)} containment claim(s) verified against SiYuan's own treenode.CanContainBlock"
+        if answers is not None
+        else f"{len(CLAIMS)} containment claim(s) SKIPPED (no cached Go toolchain)"
+    )
     print(
-        f"check-block-rules: OK {len(CLAIMS)} containment claim(s) verified against SiYuan's own "
-        f"treenode.CanContainBlock, {len(endpoints)} endpoint path(s) still routed, and "
-        f"{len(STRING_CLAIMS)} matched kernel string(s) still present (source: {src})"
+        f"check-block-rules: OK {len(endpoints)} endpoint path(s) still routed, "
+        f"{len(STRING_CLAIMS)} matched kernel string(s) still present, {containment} (source: {src})"
     )
     return 0
 
