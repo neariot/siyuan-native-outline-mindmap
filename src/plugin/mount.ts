@@ -426,14 +426,44 @@ function OmTabApp({
    */
   const lastStructureRef = React.useRef<string | null>(null);
   /**
-   * Serialize the node tree into a comparable string (a flat sequence of id + text only).
-   * Used to tell whether the tree changed again after this write-back —— far cheaper than a deep-equal.
+   * Serialize the node tree into a comparable string, **including its shape**, so that "did the tree change
+   * again?" cannot mistake a re-parented tree for an unchanged one.
+   *
+   * ★★★ The `(` / `)` markers are the whole point, and they were missing for a long time.
+   *
+   *   This function is the evidence behind the write-coalescing decision:
+   *   ```
+   *   if (serializeTree(nodesRef.current) !== lastWrittenTreeRef.current) {
+   *     await writeLatestRef.current();   // one catch-up write-back
+   *   }
+   *   ```
+   *   It used to emit only `id:text` per node, in traversal order, with **no nesting and no child order**.
+   *   So `甲 | 乙 | 丙` (flat) and `甲(乙) | 丙` (乙 indented) produced **byte-identical** strings, and the
+   *   catch-up write was skipped while the UI showed the new indent.
+   *
+   *   Measured (Shift+Tab then Tab in quick succession —— the reported "tab demote does not sync"):
+   *   ```
+   *   [A] onChange kind=struct shape= 98uu | t7vl | uxa6        ← Shift+Tab produced no tree change
+   *   [C] write callback read shape= 98uu | t7vl | uxa6         ← so W1 wrote the flat tree
+   *   [mv] → SKIP (already in place)  ×3                        ← W1 correctly had nothing to move
+   *   [A] onChange kind=struct shape= 98uu | ␣t7vl | uxa6       ← Tab indented 乙
+   *   [B] catch-up: nodesRef shape= 98uu | ␣t7vl | uxa6         ← the indent IS in nodesRef
+   *   → no second write callback, no second moveNodes pass      ← the check said "unchanged"
+   *   ```
+   *   SiYuan kept the flat document and no error was raised anywhere.
+   *
+   *   ★ This is the **third** appearance of the same pitfall in this one function, and the first two were
+   *     "fixed" the wrong way —— by adding fields (the note, then `paragraphs`) rather than by encoding the
+   *     tree's shape. Adding fields cannot catch a change that moves a node without altering it, so the
+   *     bug replayed on the next field that mattered. The markers close the class: any re-parenting or
+   *     reordering now changes the string.
    */
   const serializeTree = (tree: OutlineNode[]): string => {
     const parts: string[] = [];
     const walk = (l: OutlineNode[]): void => {
       for (const n of l) {
-        parts.push(`${n.id}:${n.text ?? ''}`);
+        // `(` opens this node's children and `)` closes them, so depth and sibling order are both encoded.
+        parts.push(`(${n.id}:${n.text ?? ''}`);
         // ★★★ Fields **beyond the body text** must be included as well (the measured **truncated-note** bug).
         //
         //   This serialization is used to tell whether the tree changed again after the previous write-back:
@@ -459,6 +489,7 @@ function OmTabApp({
         //     **replays unchanged** on attached paragraphs.
         parts.push(`${n.id}:paras=${JSON.stringify(n.paragraphs ?? [])}`);
         if (n.children?.length) walk(n.children);
+        parts.push(')');
       }
     };
     walk(tree);
