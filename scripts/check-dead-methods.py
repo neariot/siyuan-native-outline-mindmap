@@ -31,6 +31,16 @@ SRC = ROOT / "src"
 SCAN_DIRS = [SRC, ROOT / "e2e"]
 
 # `async saveNodes(docId: string, ...)` or `saveNodes(...)` on its own line, inside a class body (2 spaces).
+# ★ The name must not be a TypeScript keyword. Without this, `if (` and `for (` inside a method body match a
+#   bare name at two-space indent, so `if` and `for` are collected as "methods". They are never *reported*
+#   (they have call sites everywhere), but they were the two most expensive entries in the scan: `if` appears
+#   in every file, so it paid the full regex over the largest sources on every run. Found by measuring which
+#   (name, file) pairs cost >10ms rather than by reading the pattern.
+_TS_KEYWORDS = {
+    "if", "for", "while", "switch", "catch", "return", "function", "class", "const", "let", "var",
+    "do", "else", "try", "throw", "new", "typeof", "delete", "void", "in", "of", "case", "default",
+    "break", "continue", "yield", "await", "super", "this", "import", "export", "interface", "type",
+}
 METHOD_RE = re.compile(r"^  (?:public |private |protected )?(?:async )?([a-zA-Z_][A-Za-z0-9_]*)\s*\(", re.M)
 # ★ A capability claim in the doc comment above a method.
 #
@@ -64,11 +74,37 @@ def store_classes() -> list[tuple[pathlib.Path, int, str]]:
 
 def method_ranges(path: pathlib.Path) -> list[tuple[str, int]]:
     """(method name, line) for every method declaration at class-body indentation."""
-    return [(m.group(1), path.read_text(encoding="utf-8")[: m.start()].count("\n") + 1)
-            for m in METHOD_RE.finditer(path.read_text(encoding="utf-8"))]
+    text = path.read_text(encoding="utf-8")
+    return [(m.group(1), text[: m.start()].count("\n") + 1)
+            for m in METHOD_RE.finditer(text)
+            if m.group(1) not in _TS_KEYWORDS]
 
 
-def call_site_count(name: str, defining: pathlib.Path) -> int:
+_SCANNED: list[str] | None = None
+
+
+def scanned_sources() -> list[str]:
+    """Every scanned file's text, read **once**.
+
+    ★ It used to re-glob and re-read the whole tree for every method —— 66 methods over two directories,
+    which measured ~31s and made this the slowest gate in `scripts/check.py` by a wide margin (the next
+    slowest was ~5s). Reading each file once and keeping the text brings it down to well under a second,
+    which matters because this runs on every `npm run check`: a gate slow enough to resent is a gate people
+    start skipping.
+    """
+    global _SCANNED
+    if _SCANNED is None:
+        texts: list[str] = []
+        for d in SCAN_DIRS:
+            if not d.is_dir():
+                continue
+            for p in list(d.rglob("*.ts")) + list(d.rglob("*.tsx")):
+                texts.append(p.read_text(encoding="utf-8", errors="replace"))
+        _SCANNED = texts
+    return _SCANNED
+
+
+def call_site_count(name: str, defining: pathlib.Path) -> int:  # noqa: ARG001 (see docstring)
     """How many places call `.name(` or `this.name(` —— **including inside the declaring file**.
 
     ★ The declaring file must be scanned too. Skipping it was a measured false positive: `moveNodes` is
@@ -82,13 +118,22 @@ def call_site_count(name: str, defining: pathlib.Path) -> int:
     #   ones —— and a checker that hides a caller is how a live method gets deleted as dead code.
     pattern = re.compile(r"\bthis\s*\??\s*\.\s*" + re.escape(name) + r"\s*\(|" +
                          r"[A-Za-z_$][\w$]*\s*\??\s*\.\s*" + re.escape(name) + r"\s*\(")
+    # ★ A plain substring guard first, and it is what makes this gate fast.
+    #
+    #   Measured: the regex costs ~50ms on a 200 KB file (`Outliner.tsx`), and this runs it against every
+    #   scanned file for every method —— 66 x 2 directories, 7,260 `findall` calls, **29.3s**, which made
+    #   this the slowest gate in `scripts/check.py` by six times over the next one. Profiling put 29.3 of
+    #   29.4 seconds inside `re.Pattern.findall`, so the cost was the regex, not the I/O (the first guess
+    #   here was "it re-reads the tree per method" —— wrong, and only the profile showed it).
+    #
+    #   `name in text` is a plain substring search: ~1.5ms for twenty files against 55.7ms for a single
+    #   `findall`. A method name absent from a file cannot have a call site in it, so the guard is exact,
+    #   not an approximation —— and most methods are absent from most files.
     total = 0
-    for d in SCAN_DIRS:
-        if not d.is_dir():
+    for text in scanned_sources():
+        if name not in text:
             continue
-        for p in list(d.rglob("*.ts")) + list(d.rglob("*.tsx")):
-            text = p.read_text(encoding="utf-8", errors="replace")
-            total += len(pattern.findall(text))
+        total += len(pattern.findall(text))
     return total
 
 
