@@ -61,6 +61,18 @@ a file nobody reads might as well not exist.
   `.logs/<name>.log`, and read that log. The foreground is for what is known to
   finish in seconds —— "it is probably quick" is not knowing. Do not sit in a
   long wait on any single call either.
+- **★★ Never wrap a suite in `timeout N`.** A cap the suite does not need kills it mid-run, and
+  Playwright prints its failure report at the **end** —— so the run dies before saying *why* anything
+  failed, and the log keeps only the `✘` markers. That is worse than not running it: five "failures"
+  with no detail cost more to chase than the run cost to do properly. Let Playwright's own per-case
+  timeout (`playwright.config.ts`) be the only bound, run it in the background, and read the log when
+  it finishes. Two concurrent suites on a four-core box is the same mistake from the other side —— one
+  run at a time, and stop the previous one before starting the next.
+- **★★ Wait for the condition, never for a stopwatch.** A fixed "wait 10s, three times" is a question
+  about the machine, not about the code: measured, `cancelling the confirm dialog does not delete the
+  node` failed at 46.7 / 47.4 / 45.1 s under load and passed in 11~13 s idle, on one build, with the
+  plugin loaded and the panel never closed. Poll until the thing is true and let the case timeout be the
+  only bound; a slow machine should make a suite take longer, not make it lie.
 - **★★ Redirect to a log on the FIRST run, then read the log. Never re-run to see
   output again.** Run it once, capture everything (`npm test > .logs/x.log 2>&1`),
   and read that file with `rg`/`read` as many times as needed. A second run to

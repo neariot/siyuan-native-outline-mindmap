@@ -59,6 +59,11 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   //    because the 120-second test timeout fires first and the page is torn down).
   //
   //   What is wanted is the instantaneous state right now: a miss is 0 and it returns immediately.
+  // ★ How long to keep trying to open the panel: most of Playwright's per-case budget (120 s, set in
+  //   playwright.config.ts), leaving room for the assertions. Derived from that one value rather than a
+  //   second invented number, so raising the case timeout raises this too.
+  const PANEL_OPEN_BUDGET_MS = 90_000;
+
   const isOpen = async (): Promise<boolean> =>
     page
       .evaluate(() => {
@@ -149,14 +154,29 @@ export async function ensureDockOpen(page: Page): Promise<void> {
   //
   //   `force: true` is used here: the dock icon carries a tooltip ("Mindmap / Click to expand/minimize"),
   //   and a plain click's actionability check is blocked by the tooltip or lands off target.
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  // ★★ Wait for the **condition**, not for a stopwatch.
+  //
+  //   This used to be `3 attempts × waitForPanel(10_000)` —— three rounds of an arbitrary ten-second guess,
+  //   which is where the "fails at 46~47 s" signature came from: 3 × 10 s of waiting plus the clicks. That is
+  //   not a budget the plugin needs, it is a guess that a slow machine turns into a false failure. Measured:
+  //   the same case on the same build failed at 46.7 s / 47.4 s / 45.1 s under load and passed in 11~13 s on
+  //   an idle machine, with the plugin loaded and the panel never closed.
+  //
+  //   A fixed number of milliseconds answers "is this machine fast enough today?", which is not the question.
+  //   Playwright already bounds the whole case (`timeout: 120_000` in playwright.config.ts), so the honest
+  //   shape is: click when the dock is not active, then poll until the panel really mounts, and let the
+  //   overall case timeout —— not an invented sub-budget —— be the thing that eventually gives up.
+  const deadline = Date.now() + PANEL_OPEN_BUDGET_MS;
+  for (let attempt = 1; ; attempt += 1) {
     // Only click a dock that is not already active: the click toggles, so clicking an active dock closes it.
     if (!(await dockIsActive())) await entry.click({ force: true });
-    if (await waitForPanel(10_000)) return;
+    if (await waitForPanel(Math.max(1_000, Math.min(10_000, deadline - Date.now())))) return;
+    // Re-click a few times for the documented toggle/restore race, but stop when the budget is spent.
+    if (attempt >= 6 || Date.now() >= deadline) break;
   }
 
   throw new Error(
-    'after 3 clicks on the plugin entry the panel is still closed (.om-mm-viewswitch width stayed 0).\n' +
+    `the panel is still closed after ${PANEL_OPEN_BUDGET_MS / 1000}s of trying (.om-mm-viewswitch width stayed 0).\n` +
       'Before blaming the plugin: the plugin loading and the panel opening are two separate things, and this\n' +
       'message cannot tell them apart. Measured: with the machine under load, four cases in one run failed\n' +
       'here after 46.7-48.4s while every other case passed in ~5s, and the same cases passed in 8-12s on an\n' +
