@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -114,6 +115,18 @@ STRING_CLAIMS: list[tuple[str, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# The third kind of claim: **endpoint paths the plugin actually calls**.
+#
+# `SiYuanClient` calls 21 endpoints by string literal. If SiYuan renames one, the call answers a 404-shaped
+# error and every write-back that used it fails —— but nothing raises in this repository, the failure appears
+# as "my edit does nothing" in the user's editor. The paths are readable out of the kernel's route table, so
+# a rename is a question rather than something to discover.
+#
+# ★ The list is **derived from the product**, not typed by hand: `src/siyuan/api.ts` and the virtual kernel are
+#   scanned for `'/api/...'` literals, so an endpoint added to the product is checked without being remembered
+#   here (and one removed from the product stops being claimed).
+# ---------------------------------------------------------------------------
 GO_DRIVER = r'''package main
 
 import (
@@ -249,6 +262,34 @@ def main() -> int:
     corpus = "\n".join(
         p.read_text(encoding="utf-8", errors="replace") for p in go_files
     )
+    # ---- the endpoint paths, collected from the product rather than typed here ----
+    endpoints: set[str] = set()
+    for rel in ("src/siyuan/api.ts", "src/siyuan/virtual-kernel.ts"):
+        f = Path(__file__).resolve().parent.parent / rel
+        if not f.is_file():
+            continue
+        endpoints.update(re.findall(r"['\"](/api/[A-Za-z0-9_/]+)['\"]", f.read_text(encoding="utf-8")))
+    if not endpoints:
+        bad += 1
+        print(
+            "  ✘    no '/api/...' literal was found in src/siyuan/api.ts —— the scan found nothing, which is\n"
+            "         not the same as the endpoints being correct. Refusing to report a pass on an empty list."
+        )
+    else:
+        routes_corpus = "\n".join(
+            p.read_text(encoding="utf-8", errors="replace") for p in (kernel_root / "api").rglob("*.go")
+        )
+        for ep in sorted(endpoints):
+            if f'"/api/{ep[len("/api/"):]}"' in routes_corpus:
+                print(f"  ok   {ep} is still routed by the kernel")
+            else:
+                bad += 1
+                print(
+                    f"  ✘    {ep} is not in the kernel's route table\n"
+                    "         ★ A silent break: the call fails at runtime and the user sees \"my edit did\n"
+                    "           nothing\", with nothing raised in this repository."
+                )
+
     for literal, why in STRING_CLAIMS:
         if literal in corpus:
             print(f"  ok   kernel still says {literal!r}")
@@ -289,8 +330,8 @@ def main() -> int:
 
     print(
         f"check-block-rules: OK {len(CLAIMS)} containment claim(s) verified against SiYuan's own "
-        f"treenode.CanContainBlock, and {len(STRING_CLAIMS)} matched kernel string(s) still present "
-        f"(source: {src})"
+        f"treenode.CanContainBlock, {len(endpoints)} endpoint path(s) still routed, and "
+        f"{len(STRING_CLAIMS)} matched kernel string(s) still present (source: {src})"
     )
     return 0
 
