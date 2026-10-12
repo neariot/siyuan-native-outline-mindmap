@@ -27,6 +27,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 | `TARGET=plugin npm run build` in `README.zh-CN.md` | The flag no longer exists in any README |
 | Two i18n entries rendered wrong | **Refuted** —— the keys are in neither catalogue and `npm run i18n` is green |
 
+Verified as a whole: the full E2E suite passed **112/112 in 14.6m** at load 1.2 with all five changes in
+the build, and every gate is green.
+
 ## Known gaps in our own tooling
 
 Defects in how we check things, rather than in the product. Each one means a class of defect can reach a
