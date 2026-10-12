@@ -1,6 +1,6 @@
 # 0.1.8
 
-38 commits since `v0.1.7`. The theme is **silent loss**: edits that the outline showed and SiYuan never
+43 commits since `v0.1.7`. The theme is **silent loss**: edits that the outline showed and SiYuan never
 stored, with nothing raised, nothing logged, and no visual difference. Every case below was reproduced
 against a running kernel before it was changed.
 
@@ -72,6 +72,22 @@ message and **no recovery button**. The path now asks the kernel whether the doc
 which has no such window) instead of relying on the message text alone. A failure that could not be
 classified is left alone rather than assumed to be a deletion —— a false "your document was deleted" invites
 someone to duplicate their work.
+
+### ★ In the map, a node with a single child pushed it down, and the next sibling sat level with that child
+
+A parent with exactly one child drew that child below it —— and the **next sibling** was then drawn level with
+that child, once per sibling, so a document of parents-each-with-one-child came out as a staircase:
+
+```
+parent A   y=345
+its child  y=374
+parent B   y=374   ← level with parent A's child
+```
+
+The band a subtree reserves (used to stack siblings) counted the *child's* extent but not the descent the
+layout forces between a parent and its only child, so every level reserved one node height less than it drew.
+Now each parent and its child measure as a consistent pair (326 / 355, 374 / 403, 422 / 451) with even
+spacing. A chain still descends, and a branching node's children still straddle it.
 
 ## Also in this release
 
