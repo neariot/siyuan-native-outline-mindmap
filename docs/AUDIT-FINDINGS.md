@@ -534,8 +534,13 @@ conclusion to draw from a complete-looking list of findings.
 
 ### siyuan
 
-- **low · test-quality** `src/siyuan/api.ts:245`  
-  `uploadAsset` performs its own request with the global `fetch` instead of `this.fetchImpl`, so the documented test-injection seam ('Custom fetch (makes test injection easy)') does not cover the image-migration path and an injected fake cannot observe or fail it.
+- ~~**low · test-quality** `src/siyuan/api.ts:249`~~ **fixed**
+  `uploadAsset` performed its own request with the global `fetch` instead of `this.fetchImpl`, so the
+  documented test-injection seam did not cover the image-migration path —— the one place that writes a file
+  into the workspace was the one place a test could not substitute or break. Now uses `fetchImpl`, with
+  `src/siyuan/upload-asset.test.ts` covering it: 13 assertions over the endpoint, the error path, and the
+  multipart body (including that the path sits under `data/assets/` —— `assets/...` is accepted with
+  `code: 0` but lands where SiYuan never looks). Shown red by restoring the global `fetch`.
 - **low · dead-code** `src/siyuan/api.ts:602`  
   Six exported members of the kernel client have no caller anywhere in src/, scripts/, e2e/ or docs/: resolveTokenFromConfig, listNotebooks, createNotebook, moveDocs, getBlockAttrs, setBlockAttrs.
 - **low · bug** `src/siyuan/store.ts:1929`  

@@ -242,7 +242,11 @@ export class SiYuanClient {
     fd.append('isDir', 'false');
     fd.append('file', file, safeName);
 
-    const res = await fetch(`${this.baseUrl}/api/file/putFile`, {
+    // ★ `this.fetchImpl`, not the global `fetch` —— the constructor documents this seam as "Custom fetch
+    //   (makes test injection easy)", and this call used to bypass it. The consequence is not theoretical:
+    //   an injected fake could not observe or fail the image-migration path, so the one place that writes a
+    //   file into the user's workspace was the one place a test could not substitute or break.
+    const res = await this.fetchImpl(`${this.baseUrl}/api/file/putFile`, {
       method: 'POST',
       headers: { Authorization: `Token ${this.token}` },
       body: fd,
