@@ -165,9 +165,16 @@ release while every gate stays green.
   others of the same shape were deleted, and the cycle rule it claimed to cover is now an E2E case
   (`e2e/mindmap.spec.ts`, "dropping a node into its own subtree is refused"), shown red with the guard
   disabled. A gate (`check-source-text-tests.py`) stops the shape returning.
-- **`scripts/check-vacuous-tests.py` cannot see the "block appended below the summary / `process.exit`"
-  shape** —— a test file whose new checks run *after* the pass/fail line and the exit, so they can never
-  fail the run. That shape was hit for real while adding the chain-descent checks.
+- ~~`scripts/check-vacuous-tests.py` cannot see the "block appended below the summary / `process.exit`"
+  shape~~ —— **done**: `scripts/check-check-order.py` decides it by **position in the AST** rather than by
+  matching text, and it is a gate in `npm run check` (`check-order`, 0.25 s). It found the shape in a real file
+  when demonstrated (appending a `check` below the report block was reported at its line number) and is clean on
+  the tree. ★ Writing it took three attempts, each of which **reported clean on a file containing the defect**,
+  and each was caught only by running it against a real mutated file: the report line was being matched in
+  comment/string-stripped text (where "passed"/"failed" no longer exist), "is this `process.exit`
+  unconditional?" was the wrong question (the idiom always wraps it in `if (fail)`, yet the run still ends
+  there), and the brace walk tested `depth < base` where the closing brace returns *to* base. The tool's own
+  header records all three.
 - **The outline's drag-and-drop reorder has no E2E case for its three zones at the range level**
   (the 25% / 75% boundaries are unit-tested, and all three zones are now covered end-to-end —— what is
   missing is a case for the *boundary* values themselves).

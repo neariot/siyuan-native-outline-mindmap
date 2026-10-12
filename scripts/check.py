@@ -135,6 +135,16 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-vacuous-tests.py").is_file(),
     },
     {
+        # ★ The same defect as `vacuous-tests`, one level down and **inside** a file that does reach the
+        #   product: the file imports the real thing, its first checks can fail, and a check added later sits
+        #   below the line that reports and exits. It runs never, so it can never fail the run, and the file
+        #   reads as though the case is covered. Hit for real while adding the chain-descent checks.
+        "name": "check-order",
+        "command": "python3 scripts/check-check-order.py",
+        "why": "every check in a test file runs before the run ends",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-check-order.py").is_file(),
+    },
+    {
         # ★ A command in prose is never executed by anything, so nothing noticed that the Chinese README
         #   told users to run a flag the build does not have, or that two scripts served workflows that no
         #   longer exist. This checks the part a script can decide: that every command a document names

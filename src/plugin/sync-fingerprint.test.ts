@@ -45,7 +45,7 @@ const withParas = (n: OutlineNode, paragraphs: string[]): OutlineNode => ({ ...n
 {
   // ★ The entire reason the function exists. If a text edit changed the fingerprint, every keystroke would run
   //   the full reconciliation again and the measured 189-call cost would come straight back.
-  const before = [N('甲', '原文')];
+  const before = [N('甲', '正文')];
   const after = [N('甲', '文本')];
   check(
     '★★★ a text edit does NOT change the fingerprint (or the typing-lag optimisation is void)',
