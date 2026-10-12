@@ -335,3 +335,14 @@ literal `#` text inside a list item. Measured; that was tried and reverted.
   buttons" or "make the styling explicitly view-only", not "leave a control that quietly does nothing".
 - **`code: 0` and a plausible `getBlockDOM` are not proof the structure is legal.** Read the document back
   and look at the shape (see the list-item heading entry above).
+
+Measured structure for the paragraph above, since the markdown spelling of it is actively misleading:
+a document written as
+```
+- 甲
+  # 乙
+```
+parses to `NodeList → NodeListItem → NodeParagraph(甲)` followed by `NodeHeading(乙)` **at the top level** ——
+the heading is a *sibling of the list*, not a child of the list item. SiYuan lifts it out. The markdown
+export still shows `- 甲\n\n  # 乙`, with the indentation preserved, which is exactly why reading the export
+invites the wrong conclusion: **the export renders, the tree decides.**
