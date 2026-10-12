@@ -49,22 +49,19 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
 
 **Tooling gaps (continued):**
 
-- **The 12 uncalled store methods still need a pass.** `python3 scripts/check-dead-methods.py`
+- **The 9 uncalled store methods still need a pass.** `python3 scripts/check-dead-methods.py`
   reports them on every `npm run check` (the gate is now **strict**: it fails when one of them claims a
   capability, which `saveNodes` did):
 
   src/siyuan/api.ts:136  moveDocs
-  src/siyuan/api.ts:515  getBlockAttrs
-  src/siyuan/api.ts:520  setBlockAttrs
-  src/siyuan/api.ts:587  listNotebooks
-  src/siyuan/api.ts:591  createNotebook
+  src/siyuan/api.ts:519  getBlockAttrs
+  src/siyuan/api.ts:524  setBlockAttrs
+  src/siyuan/api.ts:591  listNotebooks
+  src/siyuan/api.ts:595  createNotebook
   src/siyuan/store.ts:352  listDocs
   src/siyuan/store.ts:467  loadNodes
-  src/siyuan/store.ts:2424  findAnchor
-  src/siyuan/store.ts:2470  resolveListItem
-  src/siyuan/store.ts:2880  setHeadingTitle
-  src/siyuan/store.ts:2905  searchNodes
-  src/siyuan/store.ts:2927  listFolders
+  src/siyuan/store.ts:2823  searchNodes
+  src/siyuan/store.ts:2845  listFolders
 
   Each needs one of three answers: delete it, keep it with a comment saying who calls it from outside the
   repository, or wire it up —— and the last is only right if something actually needs it.
@@ -72,6 +69,13 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
   and while it existed the H1 buttons looked supportable. Deleted. `treeToKramdown` was its companion and
   **stays** on purpose —— documented at the function, because it is the writer half of a tested round-trip
   and of the "no `custom-*` attributes" portability guarantee.)
+
+  ★ Two methods left this list without being deleted, and both were **false positives in the checker**:
+  `moveNodes` (private, called only from `syncStructure` in the same file —— the declaring file was not
+  being scanned) and `setHeadingTitle` (called as `store?.setHeadingTitle(...)`, and the pattern required a
+  plain identifier before the dot, so optional chaining hid the call). This codebase uses `store?.`
+  heavily, so the second gap was hiding real callers rather than hypothetical ones. Both are pinned: the
+  scan includes the declaring file, and the pattern allows `?.`.
 
 ## Known gaps in our own tooling
 

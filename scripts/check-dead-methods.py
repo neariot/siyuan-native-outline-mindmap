@@ -75,8 +75,13 @@ def call_site_count(name: str, defining: pathlib.Path) -> int:
     private and called only from `syncStructure`, in the same file, so it was reported as dead. A method's
     own definition does not match this pattern (there is no receiver), so scanning the whole file is safe.
     """
-    pattern = re.compile(r"\bthis\s*\.\s*" + re.escape(name) + r"\s*\(|" +
-                         r"[A-Za-z_$][\w$]*\s*\.\s*" + re.escape(name) + r"\s*\(")
+    # ★ Optional chaining must be allowed between the receiver and the dot. Missing it was a measured false
+    #   positive: `mount.ts` calls `store?.setHeadingTitle(docId, name)`, and `store?` does not match
+    #   `[A-Za-z_$][\w$]*`, so the call was invisible and the method was reported dead. This codebase uses
+    #   optional chaining heavily (`store?.`, `nodesRef?.`), so the gap hid real callers, not hypothetical
+    #   ones —— and a checker that hides a caller is how a live method gets deleted as dead code.
+    pattern = re.compile(r"\bthis\s*\??\s*\.\s*" + re.escape(name) + r"\s*\(|" +
+                         r"[A-Za-z_$][\w$]*\s*\??\s*\.\s*" + re.escape(name) + r"\s*\(")
     total = 0
     for d in SCAN_DIRS:
         if not d.is_dir():
