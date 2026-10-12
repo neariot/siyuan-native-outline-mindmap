@@ -166,6 +166,21 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
   heavily, so the second gap was hiding real callers rather than hypothetical ones. Both are pinned: the
   scan includes the declaring file, and the pattern allows `?.`.
 
+## A lesson about the audit queue (it is not busywork)
+
+The queue had **27 `drifted` and 117 `cannot-judge`** entries, and the tempting reading is "a tool complaining
+about line numbers". Reading two of them found a real defect that no gate could see: `e2e/testdoc.ts` returned
+the kernel's envelope unchecked, so a **kernel refusal read as success** on three paths — `sql()`, both
+`removeDocByID` helpers, and `lsNotebooks`. A spec could therefore **pass while the thing it measured never
+happened**, and a failed delete looked like a clean teardown while the document stayed on the instance (the
+same defect the leftover check exists to catch, seen from the other side). Fixed in one place, since all three
+went through the same helper.
+
+★ `drifted` means **the citation moved**, not that the finding is wrong — and the tool says so, in those words,
+at the bottom of every run. The five line numbers in the entry above had rotted by up to 36 lines while the
+defect was still exactly where it said. Treating "drifted" as noise would have thrown away a real finding; the
+answer is to read the entry, not to trust or distrust its coordinates.
+
 ## Known gaps in our own tooling
 
 Defects in how we check things, rather than in the product. Each one means a class of defect can reach a
