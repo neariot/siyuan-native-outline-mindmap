@@ -122,8 +122,16 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · type-escape** `e2e/fixtures.ts:2`  
   No e2e file is typechecked at all, so real type errors sit in the helpers: tsconfig's include is `src` only, and compiling the eight helper files with the project's own strict settings yields two errors - `pngjs` has no declaration (the whole frameStats implementation is `any`) and e2e/mindmap.ts:104 reads `window.siyuan`, which does not exist on Window.
-- **medium · test-quality** `e2e/mindmap.ts:222`  
-  contentBox returns Infinity/-Infinity sentinels when it measured nothing (it even filters zero-width nodes out), and one caller compares those sentinels with >= and <=, so 'fit fits all the nodes' passes with zero measured nodes - a missing precondition reported as a pass instead of a failure (AGENTS section 7 forbids a helper that returns sentinels for a missing precondition).
+- ~~**medium · test-quality** `e2e/mindmap.ts:359`~~ **fixed**
+  `contentBox` returned `{ l: Infinity, t: Infinity, r: -Infinity, b: -Infinity }` when it measured nothing,
+  and the "fit fits all the nodes" case compares those with `>=` / `<=` —— **all four comparisons are
+  satisfied by the sentinels** (`Infinity >= anything`, `-Infinity <= anything`), so it passed with an empty
+  panel. Verified in isolation before touching anything: all four assertions pass with zero nodes measured.
+  `contentBox` now **throws** when it measured 0 nodes, naming the precondition, the same rule `canvasBox`
+  beside it already followed. A regression case asserts the throw *and* that its message names the reason
+  (so it cannot be satisfied by an unrelated TypeError), shown red by removing the guard —— and the 28-case
+  mind-map suite still passes, which is the evidence that the callers were really measuring nodes rather than
+  sailing through on `Infinity`.
 - **medium · test-quality** `e2e/testdoc.ts:62`  
   The kernel's result code is dropped on three paths, so a kernel refusal becomes 'nothing found' or 'nothing to do': `sql()` returns `j?.data ?? []` whatever the code says, the removeDocByID calls ignore their response, and lsNotebooks' failure becomes an empty notebook list.
 

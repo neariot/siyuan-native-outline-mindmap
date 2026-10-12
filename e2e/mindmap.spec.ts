@@ -158,6 +158,45 @@ test('control group: applying the same structure twice changes nothing', async (
  * so a button labeled "scale to fit all nodes" still could not fit everything.
  * Trade-off: **do not fit to font size** —— fitting everything takes priority.
  */
+/**
+ * ★★ `contentBox` must **refuse** to answer when it measured nothing.
+ *
+ * ## The defect this pins
+ *
+ * It used to return `{ l: Infinity, t: Infinity, r: -Infinity, b: -Infinity }` when no `.mm-node` had a
+ * non-zero rect. The "fit fits all the nodes" case below then asserts
+ *
+ *     content.l >= canvas.l - 2      content.r <= canvas.r + 2
+ *
+ * and **every one of those comparisons is satisfied by the sentinels** —— `Infinity >= anything` is true and
+ * `-Infinity <= anything` is true. So the case passed with an empty panel: a missing precondition reported as
+ * a pass, which is the failure mode that stays quiet (§7, "a test helper must not ... return nulls for a
+ * missing precondition").
+ *
+ * `canvasBox` next to it already throws for its own missing precondition. This asserts the same rule applies
+ * here, so a future refactor cannot reintroduce the sentinels and have the caller keep passing.
+ *
+ * It deliberately opens **no document**: the point is that there is nothing to measure. That is why it is a
+ * case of its own rather than an assertion inside a case that has a panel open.
+ */
+test('★ contentBox refuses to answer when it measured no nodes', async ({ page }) => {
+  // No document, no panel —— nothing can be measured. `about:blank` guarantees it rather than assuming it.
+  await page.goto('about:blank');
+
+  let message = '';
+  try {
+    await contentBox(page);
+  } catch (e) {
+    message = String(e);
+  }
+
+  expect(message, 'contentBox must throw instead of returning Infinity sentinels').not.toBe('');
+  // It must name the precondition, not fail with a bare TypeError somewhere downstream.
+  expect(message, `the error should say what went wrong, got: ${message.slice(0, 200)}`).toMatch(
+    /measured 0 nodes/,
+  );
+});
+
 test('fit button fits all the nodes', async ({ page }) => {
   // ★ Do not manufacture a "narrow panel" by shrinking the viewport: measured with a 900×700 viewport,
   //   SiYuan's right dock gets pushed entirely off screen (the dock sits at 908~1145 while the viewport is only 900 wide),

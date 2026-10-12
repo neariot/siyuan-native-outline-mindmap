@@ -359,11 +359,32 @@ export async function geometry(page: Page): Promise<{ id: string; x: number; y: 
 export async function contentBox(page: Page): Promise<{ l: number; t: number; r: number; b: number }> {
   return page.evaluate(() => {
     let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    let measured = 0;
     for (const n of document.querySelectorAll('.mm-node')) {
       const x = n.getBoundingClientRect();
       if (x.width <= 0) continue;
       l = Math.min(l, x.left); t = Math.min(t, x.top);
       r = Math.max(r, x.right); b = Math.max(b, x.bottom);
+      measured++;
+    }
+    // ★★★ Fail fast when nothing was measured, instead of returning the sentinels.
+    //
+    //   The sentinels are a trap for the caller: with zero visible nodes this returned
+    //   `{ l: Infinity, t: Infinity, r: -Infinity, b: -Infinity }`, and the "fit fits all the nodes" case
+    //   asserted `content.l >= canvas.l - 2` and `content.r <= canvas.r + 2` —— **all four of which are
+    //   satisfied by the sentinels**, so the case passed with nothing on screen. A missing precondition
+    //   reported as a pass is the worst kind of check (section 7: a helper must not return sentinels for a
+    //   missing precondition), and it is invisible: the panel is simply empty or not yet laid out.
+    //
+    //   `canvasBox` directly below already throws for its own missing precondition; this is the same rule.
+    //   Zero-width nodes are filtered on purpose (a collapsed subtree has zero rects), so "measured 0" really
+    //   does mean "there was nothing to measure", not "there was one node with no extent".
+    if (measured === 0) {
+      throw new Error(
+        'contentBox measured 0 nodes —— the mind map has no visible .mm-node. ' +
+          'Either the panel is not open yet, or the document is empty; assert that precondition in the ' +
+          'case rather than comparing the Infinity sentinels, which every >= / <= test passes.',
+      );
     }
     return { l, t, r, b };
   });
