@@ -72,6 +72,30 @@ def main():
         return 1
     env["SIYUAN_TEST_NOTEBOOK"] = cfg.test_notebook
 
+    # ★★ Report the machine's load before any case runs.
+    #
+    #   The suite's helpers use fixed timeouts (45s for "the panel opened", 60s for "the dock registered"),
+    #   and under load those stop measuring the product: measured, four unrelated cases failed at
+    #   46.7-48.4s in one run while every other case passed in ~5s, and the same cases passed in 8-12s on an
+    #   idle machine with the identical build. The failure message blamed the plugin.
+    #
+    #   This warns rather than refuses. A loaded run still produces trustworthy *passes* —— a case that
+    #   finishes in 5s under load would pass anywhere —— so aborting would throw away real signal. What it
+    #   cannot do is support a claim that something is broken, and that is what the warning says.
+    try:
+        load1 = os.getloadavg()[0]
+        cores = os.cpu_count() or 1
+        if load1 > cores:
+            print(f"⚠️  Load average is {load1:.1f} on {cores} core(s) —— this exceeds 1.0 per core.", file=sys.stderr)
+            print("   A FAILURE in this run may be the machine, not the plugin: the helpers use fixed", file=sys.stderr)
+            print("   timeouts (45s/60s) and under load they stop measuring the product. A PASS is still", file=sys.stderr)
+            print("   meaningful. Re-run before reporting a defect. See docs/pitfalls/testing.md.", file=sys.stderr)
+            print(f"   (The heaviest processes: `ps -eo pcpu,cmd --sort=-pcpu | head`)", file=sys.stderr)
+        else:
+            print(f"   load average {load1:.1f} on {cores} core(s) —— fine for this suite")
+    except OSError:
+        pass  # getloadavg is unavailable on some platforms; not a reason to refuse to run
+
     cmd = ["npx", "playwright", "test"]
     if args.ui:
         cmd.append("--ui")

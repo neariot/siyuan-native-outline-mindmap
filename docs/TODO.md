@@ -70,6 +70,17 @@ duplication rather than moving lines.
     `core/layout.ts:954` builds a string). These are *not* the same function, so they stay until a third
     caller wants the same extra state —— then the shared version takes the state as a callback.
 
+- **Done: the shared escape/decode module.** Five site-local variants across three files; consolidating
+  them exposed a real defect —— `model/tree.ts` decoded `&amp;` before the entities it can create, so a
+  user's literal `&nbsp;` was displayed as a space. Pinned with a case that fails on the wrong order.
+- **Done: an undo baseline that could be one edit stale.** `flushWrite` recorded its argument while
+  `writeLatest()` writes `nodesRef.current`. The other six writes of that ref were checked and are correct.
+- **Done: a performance self-test that was measuring the machine.** It failed at 2.29x on a loaded box; the
+  linear sample was below `performance.now()`'s resolution, so its ratio was noise. n=6000 + a heavier
+  linear body, and a sub-resolution sample is now its own failure.
+- **Done: an E2E error message that blamed the plugin for a loaded machine.** Measured both ways on one
+  commit (46.7s failing / 11.6s passing), and `run-e2e.py` now warns about the load before any case runs.
+
 ## Refuted / already resolved
 
 The audit's own contract is "an entry leaves it by being fixed, **or by being refuted in writing**". The
