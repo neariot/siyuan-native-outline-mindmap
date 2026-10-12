@@ -21,6 +21,8 @@ section is a fact worth stating rather than a section to delete and re-invent.
 
 | Was | How it was checked |
 |---|---|
+| **A structural edit was silently dropped when the next key arrived too soon** (reported as "tab demote does not sync", then "it works probabilistically") | `serializeTree` —— the evidence behind the write-coalescing check —— emitted a flat `id:text` list with no nesting, so `甲\|乙\|丙` and `甲(乙)\|丙` compared **equal** and the catch-up write was skipped. Parentheses around each node's children now encode the shape. Case shown red with the markers removed: back-to-back fails, paused passes —— the reported asymmetry exactly (`e2e/struct-sync.spec.ts`) |
+| **A stray `placeholder` list item could survive an indent** | The kernel forces a dummy item while the intermediate `List` is created (an empty `List` is invisible to `moveBlock`, which then answers `code: 0` and does nothing). It was registered in the store's instance field while cleanup deleted from the caller's set, so with two write-backs in flight the wrong set was cleaned. The scope is now required and caller-owned —— a missing one is a compile error. Case shown red: `Expected substring: not "placeholder"` |
 | A title containing `<` or `>` lost those characters in the map **and** the PNG | Fixed with the shared `escapeHtml`; regression case shown red (`Expected "E2E-角度<T>-测试"`, `Received "E2E-角度-测试"`) |
 | The keyboard went dead after a context-menu command | `focusCanvas()` on the five affected items; case shown red twice (`activeElement` was `BODY`) |
 | `record-demo.py`'s document guard was wrong in both directions | It accepted `--doc None` and refused a real id containing n-o-n-e; now tests the precondition |
@@ -29,6 +31,20 @@ section is a fact worth stating rather than a section to delete and re-invent.
 
 Verified as a whole: the full E2E suite passed **112/112 in 14.6m** at load 1.2 with all five changes in
 the build, and every gate is green.
+
+★ **The two silent-loss defects above are the same failure shape, and it is worth naming.** Both dropped a
+structural edit while every layer reported success:
+
+- the write-coalescing check asked *"did the tree change?"* with a criterion that **could not see the
+  change** (flat list, no nesting) —— the third time that function was fixed by adding a *field* rather
+  than by encoding the *shape*;
+- the placeholder was registered in one set and deleted from another, so the cleanup ran successfully on
+  the wrong collection.
+
+Neither raised anything, and in the second case the visible symptom (a stray `placeholder` line) looked
+like the feature working as designed. `docs/pitfalls/testing.md` carries both, because the lesson is about
+criteria rather than about trees: **a check that cannot distinguish the failure from the success is worse
+than no check**, and it is what `docs/pitfalls/` exists to collect.
 
 ## Known gaps in our own tooling
 
