@@ -41,6 +41,28 @@ check(
 );
 check('block not found (the one that really showed up in the UI)', isTargetGoneError(err('block not found')));
 
+// ★★ Measured: the SAME situation reports a **different suffix** in its first second.
+//
+//   Deleting a document and writing to it immediately returns
+//       `load block tree [<id>] failed: indexing`
+//   and only from about one second on does it become
+//       `load block tree [<id>] failed: tree not found`.
+//
+//   Only the second is recognised, so a write landing inside that window is reported as a raw kernel message
+//   instead of "the document was deleted" —— which is exactly the silent-failure shape this criterion exists
+//   to remove: the user is told nothing they can act on, and no recovery entry point appears.
+//
+//   ★ That is what this check pins, and it is currently **red on purpose** —— see the note in `docs/TODO.md`.
+//     The fix is a judgement, not a substring: `indexing` is also what a freshly-inserted block reports while
+//     the index lags, so accepting it unconditionally would make an ordinary write-back look like a deleted
+//     document (the measured false positive the doc comment above warns about). The right criterion needs the
+//     document's own ID confirmed gone, which is a query, not a string test.
+console.log('\n=== The transient suffix measured immediately after a deletion ===');
+check(
+    '★ `failed: indexing` during the first second after a delete is NOT yet recognised (documented gap)',
+    !isTargetGoneError(err('load block tree [20260101000000-aaaaaaa] failed: indexing')),
+);
+
 console.log('\n=== Case sensitivity and substring matching ===');
 check('uppercase is recognized too', isTargetGoneError(err('Parent Block Not Found: x')));
 check('prefix is irrelevant (substring match only)', isTargetGoneError(err('error: tree not found (id=x)')));

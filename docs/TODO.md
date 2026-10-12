@@ -47,6 +47,29 @@ like the feature working as designed. `docs/pitfalls/testing.md` carries both, b
 criteria rather than about trees: **a check that cannot distinguish the failure from the success is worse
 than no check**, and it is what `docs/pitfalls/` exists to collect.
 
+**A measured gap in "the target document was deleted" (needs a decision, not a substring):**
+
+- **`isTargetGoneError` misses the message the kernel returns for the first second after a deletion.**
+  Measured on the isolated instance by deleting a document and writing to it: `updateBlock` answers
+  `load block tree [<id>] failed: indexing` at t=0, and `... failed: tree not found` from about t=1s on.
+  Only `tree not found` (and `parent block not found` / `block not found`) are recognised, so a write landing
+  in that window is shown as a raw kernel message rather than "the document was deleted" —— and **the
+  recovery button does not appear**, which is the silent-failure shape the fix exists to remove.
+  Pinned as a check in `src/plugin/target-gone.test.ts` that asserts today's behaviour and says so.
+
+  ★ Why it is not simply added to the list of substrings: `indexing` is also what a **freshly inserted
+  block** reports while the SQL index lags (this repository has a whole section on that lag), so accepting it
+  unconditionally would make an ordinary write-back look like a deleted document —— the exact false positive
+  `isTargetGoneError`'s own doc comment records ("the document was alive and well, only a child block ID was
+  stale, and the user thought the document was lost"). The honest criterion confirms **the document's own ID**
+  is gone, which is a query rather than a string test, and that is a design decision to make deliberately.
+
+- **A second measured detail, recorded because it misled a test attempt:** deleting the document currently
+  open in SiYuan makes SiYuan **navigate to another document**, and the panel correctly follows it — so the
+  write-back then succeeds against the new target instead of failing. Reproducing "the target is gone" from an
+  E2E case is therefore not as simple as deleting the open document; the criterion is better unit-tested (it
+  is), and an E2E case needs the document to disappear **without** the editor switching away.
+
 **Tooling gaps (continued):**
 
 - **The 9 uncalled store methods still need a pass.** `python3 scripts/check-dead-methods.py`
