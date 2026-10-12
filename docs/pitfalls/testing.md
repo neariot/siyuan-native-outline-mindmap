@@ -1107,3 +1107,42 @@ produced **byte-identical** strings. The catch-up write was skipped. Traced on t
   also documents the workaround users had found for themselves.
 - **Assert on the document, not the screen, when the screen is what lies.** The outline was correct
   throughout; only `exportMdContent` showed the truth.
+
+---
+
+## A band that under-reports its extent makes the drawing wrong, and the obvious assertions still pass
+
+**Symptom** (reported): "the mind map's child nodes seem to drift downward for no reason", and "by rights
+they should be level".
+
+**What it was.** Three parents each holding exactly one child drew as a staircase —— 345 / 374 / 403 / 432,
+one step per node —— so **parent B was drawn level with parent A's child**. `subtreeH` reports the vertical
+band a subtree reserves, and the layout stacks those bands to place siblings; for a **single** child it
+returned the *child's* band alone, ignoring that `childCyOf` forces the child below its parent (the rule that
+stops `a > b > c > d` drawing as one flat line). A chain of n levels reserved the extent of n−1: one node
+height short, **per level**.
+
+**The practice, and the reason this entry exists:** the first two regression tests written for it **passed
+with the defect restored**, so they would have shipped a fix nobody could keep honest.
+
+| assertion | why it passed on the bug |
+|---|---|
+| scan every box pair for overlap | a parent and the previous sibling's child are in **different x columns** —— they never overlap |
+| "are the siblings evenly spaced?" | the staircase is **perfectly** evenly spaced (48, 48) |
+| "no two nodes share a y" | the **root** is centred over its whole band and legitimately shares a y with a descendant |
+
+So:
+
+- **Check the assertion against the defect, not against the fix.** Each of the three was written from "this
+  sounds like it should hold" and only the third attempt was tested with the bug put back. Running it once
+  green proves nothing about what it can see.
+- **A property the defect also satisfies is not a criterion.** Even spacing, non-overlap and "all y values
+  distinct except the root" are all *true of the buggy layout*. The property that separates them is
+  **order**: reading down the page must give parent → child → next parent → its child.
+- **Locate the defect in one number before choosing the assertion.** Here the whole bug is "parent B and
+  parent A's child share a y"; the failure message now names that (`p2 is not below the node before it`)
+  rather than describing geometry in general.
+- **A layout bug raises nothing and only looks wrong**, which is why `src/core/layout.test.ts`'s own
+  docstring asks for these invariants at the pure-function level. It is also why the earlier three-child
+  case could not see this one: with siblings that have **no** children, centring already separates them and
+  the *forcing* path never runs. **A branch is only covered by a case that reaches it.**
