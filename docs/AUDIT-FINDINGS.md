@@ -115,8 +115,13 @@ conclusion to draw from a complete-looking list of findings.
   The release note promises that refreshing/switching no longer loses the map's zoom; zoom is in fact deliberately not persisted, which the project records as a design decision elsewhere.
 - **medium · docs** `docs/SHORTCUTS.md:52`  
   The documented mindmap interactions do not exist: a single click does not jump back to the outline, and a double click does not focus a branch -- it starts inline editing.
-- **medium · test-quality** `docs/pitfalls/editor.md:437`  
-  6.9bb's prescribed practice (assert the shortcut table's group and entry counts) is implemented nowhere, and the test the entry names compares two hardcoded copies of the same list, so it cannot see the drift the entry is about.
+- ~~**medium · test-quality** `docs/pitfalls/editor.md:450`~~ **fixed**
+  The practice 6.9bb prescribes is now implemented: `src/plugin/shortcut-table.test.ts` asserts the table's
+  group and entry counts (5 / 26, measured 2026-10-12, recorded as a dated measurement rather than a constant),
+  that no group is empty, and that every entry is well-formed. `SHORTCUTS` is exported from `Outliner.tsx` so
+  the shape can be read at all. Shown red by removing one entry. ★ Writing it caught two mistakes of my own,
+  both recorded in the pitfall entry: a hand-count of the table was wrong by one, and an assertion that the
+  labels are "real text" was testing the wrong layer (outside SiYuan `t()` returns the key).
 
 ### e2e-helpers
 
