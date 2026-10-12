@@ -17,31 +17,11 @@ and the next work is the tooling gaps and the modularity list, which are the hon
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
 
-**Waiting on a decision, not on work:**
-
-- **Heading levels cannot persist from *either* entry point —— it is a documented feature with no working
-  path, not one broken button.** There are two ways to set a level and both write `node.heading` only:
-    1. the H1 / H2 / H3 / ¶ toolbar buttons (`setHeadingMany`), documented in `docs/GETTING-STARTED.md`;
-    2. typing `# ` + space at the start of a node (`applyInlineShortcuts`), documented in `docs/SHORTCUTS.md`.
-  Neither survives a reload, for the reason below —— and because two documents promise it, hiding the buttons
-  alone would leave the docs describing something that does not happen. The docs are part of whatever the
-  decision turns out to be. Verified, not suspected: the reader takes a level only
-  from a non-list line (`const isHeading = !isList && !!headingMatch` — its own comment says SiYuan exports a
-  heading *without* a list bullet), while every node in this plugin's documents **is** a list item. So a node
-  cannot be a heading, and writing a heading block into one produces `- # 甲` — a heading as literal text
-  inside a list item (measured, and reverted). The live write path (`saveNodesIncremental`) emits
-  `NodeParagraph` and has no place for a level; the only writer that emits `# ` (`treeToKramdown`) sits in
-  `saveNodes`, which is documented "create/full-rebuild only" and **has no callers**.
-  The options are structural: **hide the buttons and the shortcut and correct both documents**, make the
-  styling explicitly view-only, or change the storage model so a node need not be a list item. The first is
-  honest and small; the third is a rewrite. `docs/pitfalls/data.md` has the measurements. **This needs a
-  decision from whoever owns the feature** — the control is the promise and the round trip is the delivery,
-  and a control that quietly does nothing is worse than a missing one.
-
 **Resolved, verified, and removed from the queue:**
 
 | Was | How it was checked |
 |---|---|
+| **Heading levels could never persist from either entry point** | Removed rather than fixed: a node is always a list item and SiYuan takes a level only from a non-list line, so the H1/H2/H3/¶ buttons, the `# ` + space shortcut and their docs are gone. `OutlineNode.heading` and the reader/writer stay, because a hand-written `# H1` really does round-trip (measured). `docs/pitfalls/data.md` |
 | **A structural edit was silently dropped when the next key arrived too soon** (reported as "tab demote does not sync", then "it works probabilistically") | `serializeTree` —— the evidence behind the write-coalescing check —— emitted a flat `id:text` list with no nesting, so `甲\|乙\|丙` and `甲(乙)\|丙` compared **equal** and the catch-up write was skipped. Parentheses around each node's children now encode the shape. Case shown red with the markers removed: back-to-back fails, paused passes —— the reported asymmetry exactly (`e2e/struct-sync.spec.ts`) |
 | **A stray `placeholder` list item could survive an indent** | The kernel forces a dummy item while the intermediate `List` is created (an empty `List` is invisible to `moveBlock`, which then answers `code: 0` and does nothing). It was registered in the store's instance field while cleanup deleted from the caller's set, so with two write-backs in flight the wrong set was cleaned. The scope is now required and caller-owned —— a missing one is a compile error. Case shown red: `Expected substring: not "placeholder"` |
 | A title containing `<` or `>` lost those characters in the map **and** the PNG | Fixed with the shared `escapeHtml`; regression case shown red (`Expected "E2E-角度<T>-测试"`, `Received "E2E-角度-测试"`) |
@@ -66,6 +46,31 @@ Neither raised anything, and in the second case the visible symptom (a stray `pl
 like the feature working as designed. `docs/pitfalls/testing.md` carries both, because the lesson is about
 criteria rather than about trees: **a check that cannot distinguish the failure from the success is worse
 than no check**, and it is what `docs/pitfalls/` exists to collect.
+
+**Tooling gaps (continued):**
+
+- **The 13 uncalled store methods need a pass —— one of them is exactly the dead code that made the heading
+  feature look implemented.** `python3 scripts/check-dead-methods.py` reports them (the gate prints, and only
+  fails on one whose comment claims a capability):
+
+  src/siyuan/api.ts:136  moveDocs
+  src/siyuan/api.ts:515  getBlockAttrs
+  src/siyuan/api.ts:520  setBlockAttrs
+  src/siyuan/api.ts:587  listNotebooks
+  src/siyuan/api.ts:591  createNotebook
+  src/siyuan/store.ts:352  listDocs
+  src/siyuan/store.ts:467  loadNodes
+  src/siyuan/store.ts:1106  saveNodes  ← comment claims a capability
+  src/siyuan/store.ts:2440  findAnchor
+  src/siyuan/store.ts:2486  resolveListItem
+  src/siyuan/store.ts:2896  setHeadingTitle
+  src/siyuan/store.ts:2921  searchNodes
+  src/siyuan/store.ts:2943  listFolders
+
+  Each needs one of three answers: delete it, keep it with a comment saying who calls it from outside the
+  repository, or wire it up —— and the last is only right if something actually needs it. `saveNodes` is the
+  one that misled: it is the only writer that emits `# ` for a heading, it has no callers, and while it
+  existed the H1 buttons looked supportable. It cannot now that the heading feature is removed.
 
 ## Known gaps in our own tooling
 
