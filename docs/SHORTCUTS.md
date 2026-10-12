@@ -41,7 +41,10 @@
 
 ## Markdown at line start + space
 
-`# / ## / ###` → H1-H3; `- ` → remove the prefix; `1. ` → numbered.
+`- ` → remove the prefix; `1. ` → numbered.
+★ `# ` + space is **not** among them: it used to set a node's level, which could never be read back
+(every node is a list item, and SiYuan takes a level only from a non-list line). It now stays literal text,
+which is what a list item can hold. Headings already present in a document are read and preserved.
 
 Inline paste supports `**b** *i* ~~s~~ `code` [t](u) $公式$ #标签` (when importing md; 公式 = formula, 标签 = tag);
 While editing, `$latex$ + space` turns into a formula block automatically.

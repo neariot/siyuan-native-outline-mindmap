@@ -107,10 +107,6 @@ export type MobileBarAction =
   | 'child'
   | 'task'
   | 'note'
-  | 'h1'
-  | 'h2'
-  | 'h3'
-  | 'body'
   | 'outdent'
   | 'indent'
   | 'moveUp'
@@ -138,18 +134,6 @@ export async function clickMobileBarAction(page: Page, action: MobileBarAction):
       break;
     case 'note':
       selector = "button[title*='添加/切换备注一'], button[aria-label*='添加/切换备注一']";
-      break;
-    case 'h1':
-      selector = "button[title*='标题1'], button[aria-label*='标题1']";
-      break;
-    case 'h2':
-      selector = "button[title*='标题2'], button[aria-label*='标题2']";
-      break;
-    case 'h3':
-      selector = "button[title*='标题3'], button[aria-label*='标题3']";
-      break;
-    case 'body':
-      selector = "button[title*='正文'], button[aria-label*='正文']";
       break;
     case 'outdent':
       selector = "button[title*='向左提升'], button[aria-label*='向左提升']";

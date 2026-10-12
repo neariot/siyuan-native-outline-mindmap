@@ -12,8 +12,11 @@
 - Collapse via the dot (with `Alt` for the whole subtree) / drag to one of three
   drop zones / multi-select (drag a rectangle in the gutter with the left button,
   `Ctrl`-click, `Shift`-range, `Ctrl+Shift+↑↓`) plus a bulk-action bar
-- H1–H6 / three-state to-dos / **attached paragraphs** / colour and highlight /
-  clear formatting
+- Three-state to-dos / **attached paragraphs** / colour and highlight / clear formatting.
+  ★ **Headings are read, not authored**: a document that already contains an `# H1`…`###### H6` keeps it
+  through a load-and-save cycle, but a node cannot *become* a heading —— every node is a list item, and
+  SiYuan takes a heading level only from a non-list line (`docs/pitfalls/data.md`). The outline used to
+  offer H1/H2/H3/¶ buttons and a `# ` + space shortcut for exactly that; both did nothing and were removed.
 - Hyperlinks / images (paste, drag in, or pick; stored in SiYuan assets) /
   tables / formulas (KaTeX) / emoji / `#tags` / `@cross-document references` /
   bidirectional links

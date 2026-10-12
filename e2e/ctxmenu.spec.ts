@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { siyuanUrl, siyuanToken } from './env';
 import {
-  openDoc, toMindmapView, openCtxMenu, clickCtxItem, ctxMenuBox, mindmapState,
+  openDoc, toMindmapView, toOutlineView, openCtxMenu, clickCtxItem, ctxMenuBox, mindmapState,
 } from './mindmap';
 import {
   kernelApi, ensureTestDoc, resolveTestNotebook, createTempDoc, removeDoc, TEMP_DOC_MD,
@@ -269,4 +269,34 @@ test('"Expand as sub-document" moves the child nodes away and does not duplicate
     if (id) await removeDoc(api, id);
     await api.dispose();
   }
+});
+
+/**
+ * ★ The per-node collapse entry must not be labelled with the global command.
+ *
+ * The entry only appears for a node that **has children** (the `node.children.length > 0` guard), and it
+ * calls `toggleCollapse(id, true)` on that one node. It used to read `cmdExpandAll` / `cmdCollapseAll` ——
+ * "Expand all" / "Collapse all" —— which describes the whole map's command in the level menu, so the label
+ * overstates what clicking it does. `tipExpandNode` / `tipCollapseNode` are the per-node strings, already
+ * used for the same action on the toolbar.
+ *
+ * Asserted on the **rendered** menu, because the defect is the text a user reads.
+ */
+test('★ the outline\'s per-node collapse entry uses the per-node label, not the global command', async ({ page }) => {
+  // ★ This is the **outline's** menu (`Outliner.tsx` renders its own `.mm-ctx-menu`), not the mind map's.
+  //   They are two separate menus with the same class names: the mind map's (`Mindmap.tsx`) has no collapse
+  //   entry at all, so opening it here found eight items on every node and the case proved nothing.
+  await toOutlineView(page);
+
+  // `分支一` is the first node and has children, so the guard that renders this entry is satisfied.
+  await page.locator('.om-outline-wrap .node-row').first().click({ button: 'right' });
+  await page.waitForTimeout(400);
+  const items = await page.evaluate(() =>
+    [...document.querySelectorAll('.mm-ctx-menu .mm-ctx-item')].map((x) => (x.textContent || '').replace(/\s+/g, ' ').trim()),
+  );
+  const joined = items.join(' / ');
+
+  expect(joined, `expected a per-node label, outline menu was: ${joined}`).toMatch(/折叠主题|展开主题/);
+  expect(joined, `the global command label must not be used for a single node, outline menu was: ${joined}`)
+    .not.toMatch(/全部折叠|全部展开|Collapse all|Expand all/);
 });

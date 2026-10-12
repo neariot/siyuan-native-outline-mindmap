@@ -86,7 +86,7 @@ The top of the panel has two toggle buttons: **Outline** and **Mindmap**.
 
 An outline editor similar to Mubu / Workflowy:
 
-- Top toolbar: to-do, date, H1–H3, body text, bold, italic, strikethrough, inline code,
+- Top toolbar: to-do, date, bold, italic, strikethrough, inline code,
   underline, highlight, quote, link, formula, image, table, emoji, tag, bidirectional link…
 - A collapse arrow on the right of each node row
 - Drag the dot on the left to move a node (three drop zones: above / middle / below)

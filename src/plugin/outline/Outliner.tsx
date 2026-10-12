@@ -1352,18 +1352,6 @@ export default function Outliner(props: OutlinerProps) {
     });
   };
 
-  const setHeadingMany = (ids: string[], h: 0 | 1 | 2 | 3): void => {
-    mutate((draft) => {
-      for (const id of ids) {
-        const n = findNode(draft, id);
-        if (n) {
-          n.heading = h;
-          touch(n);
-        }
-      }
-    });
-  };
-
   const toggleNumberedMany = (ids: string[]): void => {
     mutate((draft) => {
       // if all numbered -> unnumber, else number all
@@ -1920,15 +1908,10 @@ export default function Outliner(props: OutlinerProps) {
     const div = document.createElement('div');
     div.innerHTML = t.text;
     const plain = (div.textContent || '').replace(/\u00a0/g, ' ');
-    let m: RegExpMatchArray | null;
-    if ((m = /^(#{1,3})\s+(.*)\s$/.exec(plain))) {
-      const level = m[1].length as 1 | 2 | 3;
-      t.heading = level;
-      t.text = `<span>${escapeHtml(m[2])}</span>`;
-      pendingFocus.current = { id: t.id, offset: 'end' };
-      corrected.current.add(t.id);
-      return;
-    }
+    // ★ `# ` + space used to be handled here by setting `t.heading`, which could never be read back —— a
+    //   node is always a list item and SiYuan takes a level only from a non-list line. Removed with the
+    //   toolbar buttons; see `docs/pitfalls/data.md`. A literal `# ` now stays in the text, which is what a
+    //   list item can actually hold.
     if (/^\[\]\s+/.test(plain) || plain === '[] ') {
       t.taskStatus = TASK_TODO;
       t.text = `<span>${escapeHtml(plain.replace(/^\[\]\s*/, ''))}</span>`;
@@ -3531,10 +3514,11 @@ export default function Outliner(props: OutlinerProps) {
       {/* toolbar */}
       <div className={`om-toolbar${barOpen ? '' : ' om-toolbar--collapsed'}`} onMouseDown={(e) => e.preventDefault()}>
         <button title={t('tipTaskToggle')} onClick={() => setTaskMany(activeIds, TASK_TODO)}>☐</button>
-        <button title={t('tipHeading1Hash')} onClick={() => setHeadingMany(activeIds, 1)} className={nodeById.get(activeIds[0])?.heading === 1 ? 'on' : ''}>H1</button>
-        <button title={t('tipHeading2')} onClick={() => setHeadingMany(activeIds, 2)}>H2</button>
-        <button title={t('tipHeading3')} onClick={() => setHeadingMany(activeIds, 3)}>H3</button>
-        <button title={t('lblBodyText')} onClick={() => setHeadingMany(activeIds, 0)}>¶</button>
+        {/* ★ The H1 / H2 / H3 / ¶ buttons are gone on purpose —— see `docs/pitfalls/data.md`.
+            A node in this plugin is always a list item, and SiYuan's own reader takes a heading level only
+            from a **non-list** line (`const isHeading = !isList && !!headingMatch`), so a level set here
+            could never come back. They changed the row's `om-hN` class and nothing else, which looked like a
+            working feature until the document was re-read. */}
         <span className="sep" />
         <button title={t('tipBold')} onClick={() => fmt('bold')}><b>B</b></button>
         <button title={t('tipItalic')} onClick={() => fmt('italic')}><i>I</i></button>
@@ -4021,58 +4005,8 @@ export default function Outliner(props: OutlinerProps) {
                 <span style={{ width: '13px', height: '2px', background: 'var(--accent, #3da8f5)', borderRadius: '1px' }} />
               </span>
             </button>
-            <span className="m-sep" />
-            <button
-              type="button"
-              className={`m-btn ${currentActiveIds.length > 0 && nodeById.get(currentActiveIds[0])?.heading === 1 ? 'active' : ''}`}
-              title={t('tipHeading1')}
-              onClick={() => {
-                if (currentActiveIds.length > 0) {
-                  const curH = nodeById.get(currentActiveIds[0])?.heading || 0;
-                  setHeadingMany(currentActiveIds, curH === 1 ? 0 : 1);
-                }
-              }}
-            >
-              H1
-            </button>
-            <button
-              type="button"
-              className={`m-btn ${currentActiveIds.length > 0 && nodeById.get(currentActiveIds[0])?.heading === 2 ? 'active' : ''}`}
-              title={t('tipHeading2')}
-              onClick={() => {
-                if (currentActiveIds.length > 0) {
-                  const curH = nodeById.get(currentActiveIds[0])?.heading || 0;
-                  setHeadingMany(currentActiveIds, curH === 2 ? 0 : 2);
-                }
-              }}
-            >
-              H2
-            </button>
-            <button
-              type="button"
-              className={`m-btn ${currentActiveIds.length > 0 && nodeById.get(currentActiveIds[0])?.heading === 3 ? 'active' : ''}`}
-              title={t('tipHeading3')}
-              onClick={() => {
-                if (currentActiveIds.length > 0) {
-                  const curH = nodeById.get(currentActiveIds[0])?.heading || 0;
-                  setHeadingMany(currentActiveIds, curH === 3 ? 0 : 3);
-                }
-              }}
-            >
-              H3
-            </button>
-            <button
-              type="button"
-              className={`m-btn ${currentActiveIds.length > 0 && (nodeById.get(currentActiveIds[0])?.heading || 0) === 0 ? 'active' : ''}`}
-              title={t('lblBodyText')}
-              onClick={() => {
-                if (currentActiveIds.length > 0) {
-                  setHeadingMany(currentActiveIds, 0);
-                }
-              }}
-            >
-              ¶
-            </button>
+            {/* ★ The H1 / H2 / H3 / ¶ buttons are gone here too —— a node is always a list item and a
+                heading level could never be read back. See `docs/pitfalls/data.md`. */}
             <span className="m-sep" />
             <button
               type="button"
@@ -4583,7 +4517,11 @@ export default function Outliner(props: OutlinerProps) {
                             toggleCollapse(id, true);
                           }}
                         >
-                          {node.collapsed ? t('cmdExpandAll') : t('cmdCollapseAll')}
+                          {/* ★ The per-node keys, not the global ones: this entry calls
+                              `toggleCollapse(id, true)` on this node alone, so 'Expand all' / 'Collapse all'
+                              overstates what it does —— and `tipExpandNode` / `tipCollapseNode` are the
+                              strings used for the same action on the toolbar (aria-label above). */}
+                          {node.collapsed ? t('tipExpandNode') : t('tipCollapseNode')}
                         </div>
                       );
                     }

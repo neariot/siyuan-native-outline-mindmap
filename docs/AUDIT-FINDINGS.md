@@ -380,8 +380,15 @@ conclusion to draw from a complete-looking list of findings.
   Three keys whose English is the same word ('Untitled' twice, '(untitled)' once) carry two different Chinese words (无标题 vs 未命名), so a Chinese user sees two names for one state while the English catalogue cannot tell the keys apart.
 - **low · language** `src/plugin/i18n/zh_CN.json:73`  
   lblEmptyNode is the short half of a short/long pair whose long half is exactly '(empty node)'/'(空节点)', but its Chinese value IS the long form (with full-width parentheses), so English shows '(empty)' and Chinese '（空节点）' in the same slot and the two zh entries differ only in parenthesis width.
-- **low · ux** `src/plugin/outline/Outliner.tsx:4633`  
-  A per-node context-menu entry that toggles ONE node's subtree is labelled with the global strings cmdExpandAll/cmdCollapseAll ('Expand all'/'Collapse all', zh 全部展开/全部折叠), while the per-node keys tipExpandNode/tipCollapseNode exist and are used for the same action elsewhere - so the label overstates the scope.
+- ~~**low · ux** `src/plugin/outline/Outliner.tsx:4524`~~ **fixed**
+  A per-node context-menu entry that toggles ONE node's subtree was labelled with the global strings
+  cmdExpandAll/cmdCollapseAll ('Expand all'/'Collapse all'), while tipExpandNode/tipCollapseNode exist and
+  were already used for the same action on the toolbar. Now uses the per-node keys; case in
+  `e2e/ctxmenu.spec.ts` shown red against the old label.
+  ★ Two things had to be measured before the fix could be trusted: the entry renders only for a node with
+  children, and it belongs to the **outline's** menu —— `Mindmap.tsx` renders a menu with the same class
+  names and no collapse entry, so a case written against the mind map found eight items on every node and
+  would have proved nothing. The first attempt at the case did exactly that.
 - **low · test-quality** `src/plugin/paragraphs-ui.test.ts:52`  
   The test that claims to lock down the attached-paragraph tooltip does not exercise the shipped renderer: it re-implements it and hardcodes catalogue text, and that copy has already drifted from the catalogue, so the check can stay green while the user-visible text is wrong.
 

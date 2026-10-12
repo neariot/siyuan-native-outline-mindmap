@@ -116,13 +116,23 @@ def main() -> int:
             or f".i18n.{key}" in source_text
         ):
             return True
-        # `t('<key>')` in a spec, or a spec/doc that asserts (part of) the value. A test usually matches a
-        # short **fragment** of a longer sentence, so a run of two or more CJK characters counts.
-        # Deliberately loose: the cost of the two mistakes is not symmetric —— a too-loose rule leaves
-        # dead text in a catalogue (mild), a too-strict one deletes a key a spec asserts and the UI shows
-        # the raw key id (broken). The E2E suite is the authority either way.
+        # A spec that asserts (part of) the value, or a doc that quotes it.
+        #
+        # ★ This used to be `any(2+ CJK run from the zh_CN value in consumer_text)`, where `consumer_text`
+        #   is **every** e2e/ and docs/ file concatenated. That is satisfied by coincidence for any common
+        #   word: measured, removing the H1/H2/H3/¶ buttons left `lblBodyText` ("正文") and
+        #   `tipHeading1Hash` ("标题1 (# + 空格)") named **nowhere** in the source, and the check still
+        #   reported "every entry is used" —— because 正文 appears in `GETTING-STARTED.zh-CN.md` and 标题 in
+        #   several specs, as ordinary prose about the product rather than as a reference to this key.
+        #
+        #   A key counts as referenced when the **whole value** appears, or when the spec/doc names the key
+        #   itself. A fragment is no longer enough: the cost of the two mistakes is asymmetric, but the
+        #   loose direction is not the safe one —— it silently keeps dead text, which is how these five keys
+        #   survived their own UI being deleted. The E2E suite is still the authority.
         value = catalogues["zh_CN"].get(key, "")
-        return any(run in consumer_text for run in CJK_RUN.findall(value))
+        if value and len(value) >= 2 and value in consumer_text:
+            return True
+        return f"'{key}'" in consumer_text or f'"{key}"' in consumer_text
 
     for key in sorted(used):
         for name, catalogue in catalogues.items():

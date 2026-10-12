@@ -63,6 +63,25 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-unsaved-fields.py").is_file(),
     },
     {
+        # ★ Dead code is not neutral: `SiYuanStore.saveNodes` writes documents as kramdown, and kramdown is
+        #   the only path that can carry a heading level — while the live path writes DOM and cannot. So a
+        #   reader that refuses list lines, a live writer that cannot carry a level, and a **dead** writer
+        #   that can, added up to a toolbar (H1/H2/H3) and a documented shortcut (`# ` + space) that
+        #   silently do nothing. Nothing failed; the dead method made the feature look implemented.
+        #   The whole list is printed for a reader.
+        #
+        # ★ Not --strict yet, and the reason is the rule that a gate must be able to pass. Exactly one method
+        #   currently trips it (`saveNodes`), and that method **stays** until the heading feature is decided
+        #   (`docs/TODO.md`: hide it, make it view-only, or change the storage model). A gate that is red on
+        #   the day it lands is a gate everyone learns to ignore, so it reports now and fails once that
+        #   decision is made and the claim is gone —— the same path `check-vacuous-tests.py` took while its
+        #   sixteen citations were being worked through.
+        "name": "dead-methods",
+        "command": "python3 scripts/check-dead-methods.py",
+        "why": "every uncalled store method is accounted for, and none still claims a capability",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-dead-methods.py").is_file(),
+    },
+    {
         # ★ A doc citing a test that no longer exists advertises coverage nothing provides (three entries
         #   pointed at a deleted file), and a test that imports nothing cannot go red. The first fails, the
         #   second prints -- see the module docstring for why it is a lower bound.
