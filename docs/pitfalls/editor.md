@@ -463,6 +463,20 @@ panel that renders nothing are both invisible to that assertion.
 (group count, entry count), and keep the measured numbers with their date -- the number in the case is a
 **measurement, not a constant**.
 
+**Implemented** (`src/plugin/shortcut-table.test.ts`, and `SHORTCUTS` is exported from `Outliner.tsx` for it):
+measured 2026-10-12 it is 5 groups / 26 entries, and the case asserts both numbers, that no group is empty
+(a heading with nothing under it is the same defect one level up), that every entry has a non-empty `keys` and
+`desc`, and that no key repeats inside a group. Removing one entry was shown to fail it with a message naming
+the expected count and saying to update `docs/SHORTCUTS.md` too —— so the next person is not left deciding
+whether the test or the table is wrong.
+
+★ Writing it surfaced two things worth keeping: a hand-count of the table was **wrong by one** (27 vs 26 ——
+`awk` matched a `keys:` in a comment), which is the argument for the count living in a test rather than in
+someone's head; and an assertion that the labels are "real text, not i18n keys" was **testing the wrong
+layer** —— outside SiYuan `t()` returns the key itself (measured: every label came back `skGroupEdit`,
+`skNewSibling`, …), so looking like a key is the correct outcome here. What this layer proves is the shape
+(`sk…`), and whether the key exists in both catalogues is `scripts/check-i18n-keys.py`'s question.
+
 **Tests**: this claim needs focus inside the panel container, so it is asserted with the focus cases:
 `src/plugin/panel-focus.test.ts` checks that every one of the five panel containers carries `tabIndex` and
 wires the key handler (a container that cannot take focus never receives Escape), that the handler closes the

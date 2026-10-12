@@ -311,7 +311,16 @@ function insertHtml(range: Range | null, el: HTMLElement, html: string): void {
  * ★ Entries must match the keys actually implemented in the code; do not copy the official docs verbatim ——
  *   a help text that "looks right but cannot be pressed" is worse than no help text at all.
  */
-const SHORTCUTS: { group: string; items: { keys: string; desc: string }[] }[] = [
+/**
+ * ★ Exported so the table's **shape** can be asserted, not just its key names.
+ *
+ * `docs/pitfalls/editor.md` 6.9bb records why: the panel renders this table group by group, and the only
+ * check that existed compared "every key in the help text" against "every key the code implements" ——
+ * one list against one list. Neither a count that drifts (entries were added later and nothing went red)
+ * nor a panel that renders nothing is visible to that. `shortcut-table.test.ts` pins the group and entry
+ * counts and the shape of every entry, so a change to this table has to be a deliberate one.
+ */
+export const SHORTCUTS: { group: string; items: { keys: string; desc: string }[] }[] = [
   {
     group: t('skGroupEdit'),
     items: [
