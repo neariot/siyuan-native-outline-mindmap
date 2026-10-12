@@ -79,6 +79,21 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-dead-methods.py").is_file(),
     },
     {
+        # ★ Two dead assertions were found by reading, one per round: a `check(..., true, '')` in
+        #   `core/map.test.ts` whose name described a measured kernel behaviour while the condition asserted
+        #   nothing, and a "reverse check" in `core/empty-span.test.ts` that asserted a locally built strawman
+        #   rather than the shipped function. This catches the first class mechanically.
+        #   Five of the six literal conditions in the tree are **correct** —— a hard failure inside a `catch`,
+        #   or in a precondition guard ("if there is no fixture, fail loudly instead of passing silently"),
+        #   where the condition *can* vary because the branch may not run. The tool tells them apart by
+        #   position and prints which shape it classified, so a misclassification is visible rather than
+        #   silent; only an unexplained literal fails.
+        "name": "literal-conditions",
+        "command": "python3 scripts/check-literal-conditions.py",
+        "why": "no check() asserts on a literal condition it can never vary from",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-literal-conditions.py").is_file(),
+    },
+    {
         # ★ `listFolders` had `const t = Date.now()` in a module that imports the i18n function as `t` and
         #   calls it in 20-odd places. Harmless there by luck —— that one method translates nothing —— and a
         #   confusing compile error the moment it does ("Type 'number' has no call signatures", pointing at
