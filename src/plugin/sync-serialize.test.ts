@@ -107,13 +107,13 @@ const N = (id: string, text = id, children: OutlineNode[] = []): OutlineNode =>
 
   // The same ids in the same shape, but a different body text —— that IS a change, and the write must happen.
   const t1 = [N('甲', '正文')];
-  const t2 = [N('甲', '改过的正文')];
+  const t2 = [N('甲', '文本')];
   check('★ a changed body text differs (a text edit must still write)', serializeTree(t1) !== serializeTree(t2));
 
   // Attached paragraphs change block structure, so they must be in the serialization —— the measured
   // "truncated note" bug: only the first character was stored because the later ones compared equal.
   const p0 = [{ ...N('甲', '正文'), paragraphs: [] } as OutlineNode];
-  const p2 = [{ ...N('甲', '正文'), paragraphs: ['一段', '两段'] } as OutlineNode];
+  const p2 = [{ ...N('甲', '正文'), paragraphs: ['正文', '文字'] } as OutlineNode];
   check(
     '★★ attached paragraphs are part of the serialization (the truncated-note bug)',
     serializeTree(p0) !== serializeTree(p2),
