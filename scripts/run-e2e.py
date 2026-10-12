@@ -129,10 +129,63 @@ def main():
     print(f"  E2E target: {env['SIYUAN_URL']}  (isolated test instance)")
     print(f"  notebook: {env['SIYUAN_TEST_NOTEBOOK']}  (from .env; an id, verified against the instance)")
     print(f"  $ {' '.join(cmd)}")
-    _sweep_stale_traces()
-    code = subprocess.run(cmd, cwd=ROOT, env=env).returncode
+    _refuse_if_another_run_is_active()
+    _sweep_stale_traces()   # note: this also removes any stale lock, so write ours after it
+    _write_run_lock()
+    try:
+        code = subprocess.run(cmd, cwd=ROOT, env=env).returncode
+    finally:
+        # The lock goes with the artifacts: a run that leaves it behind would block the next one forever.
+        try:
+            os.remove(os.path.join(ROOT, "test-results", ".run-e2e.lock"))
+        except OSError:
+            pass
     _sweep_traces(code)
     return code
+
+
+def _refuse_if_another_run_is_active():
+    """Refuse to start when another suite is already running against this checkout.
+
+    ★ Two suites cannot share `test-results/`. `_sweep_stale_traces` deletes it at the start and
+    `_sweep_traces` deletes it at the end, so a second run wipes the first run's artifact directory while
+    Playwright is still writing into it. What that produces is not a crash but a **false failure**: the
+    case really passes, and the report says
+
+        Error: browserContext.close: ENOENT: no such file or directory, open
+        'test-results/.playwright-artifacts-0/traces/<id>-recording2.network'
+
+    Measured: a full run reported `1 failed, 114 passed`, and both "failures" passed in isolation in 10~17 s
+    on the identical build. Playwright then prints a trace `Usage:` line for a zip that was deleted under
+    it, which reads like a tooling error and is really a collision. The two runs also compete for the same
+    browser and the same test documents, so the machine-load failures pile on top.
+
+    Costs nothing and prevents a whole class of misleading output, which is the point: the alternative is
+    remembering not to start a second run, and that is exactly the kind of rule section 8 says to encode.
+    """
+    lock = os.path.join(ROOT, "test-results", ".run-e2e.lock")
+    if not os.path.exists(lock):
+        return
+    try:
+        with open(lock, encoding="utf-8") as fh:
+            pid = int((fh.read() or "0").strip() or 0)
+    except (OSError, ValueError):
+        return  # unreadable lock: do not block a run over a stale file
+    if pid and pid != os.getpid() and os.path.exists(f"/proc/{pid}"):
+        raise SystemExit(
+            f"  another E2E run is already going (pid {pid}) and owns test-results/.\n"
+            "  Two suites cannot share it: the second wipes the first's artifact directory, and the\n"
+            "  first then reports ENOENT on its own trace file as a test failure. Wait for it, or stop\n"
+            f"  it with: kill {pid}"
+        )
+
+
+def _write_run_lock():
+    """Claim `test-results/` for this run (see `_refuse_if_another_run_is_active`)."""
+    target = os.path.join(ROOT, "test-results")
+    os.makedirs(target, exist_ok=True)
+    with open(os.path.join(target, ".run-e2e.lock"), "w", encoding="utf-8") as fh:
+        fh.write(str(os.getpid()))
 
 
 def _sweep_stale_traces():

@@ -276,3 +276,30 @@ correct, still stable after 18 s.
 **Test**: `e2e/outline.spec.ts` (the absence check —— no link control is offered, no `.mm-link` renders)
 
 ---
+
+## A heading cannot live inside a list item, and the kernel will not tell you
+
+**Symptom**: making a node an H1 wrote `<div data-subtype="h1" data-type="NodeHeading">` through
+`updateBlock(dataType='dom')`. The call returned `code: 0`, `getBlockDOM` showed a real `NodeHeading`, and
+the document was wrong: it held `- # 甲` —— a heading rendered as literal `#` **text inside a list item**.
+
+**Cause**: this plugin's documents are lists —— every node is a listItem, and the node's own text is that
+listItem's first paragraph block. A heading is a **different block type** and cannot be that child, so the
+kernel is handed a shape it cannot represent there. It accepts the write and stores something that
+serializes back as text.
+
+**Practice**:
+- **A heading is always a sibling of the list, never a child of a listItem.** Measured: writing markdown
+  `- 甲\n  # 乙` does **not** nest the heading —— SiYuan lifts it out, and the structure is
+  `NodeList → NodeListItem → NodeParagraph(甲)` followed by `NodeHeading(h1)` at the same level as the list.
+- **`code: 0` is not evidence the structure is legal.** The kernel answers success for a block type it
+  cannot place, so read `getBlockDOM` (or the markdown export) and check the **shape**, not the status.
+- **The markdown export can look right while the structure is wrong.** `- 甲\n\n  # 乙` round-trips with its
+  indentation intact and reads like a nested heading; only the parsed tree shows the heading escaped. Do not
+  accept re-indented text as proof of nesting (the same lesson as "a flat text list cannot see nesting").
+- **Before adding a block type to the write path, check the container can hold it.** The measured answer for
+  `NodeHeading` under a listItem is no.
+
+★ This was written after a fix that looked right, passed a case, went red when reverted —— and was still
+wrong. The case asserted on `data-subtype="h1"` and the kernel really had one, so the criterion matched the
+mistake instead of catching it. A red proof shows a check is *sensitive*, not that it is *correct*.
