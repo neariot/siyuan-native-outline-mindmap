@@ -168,6 +168,14 @@ Without the user's explicit consent, do not:
 
 A local `git commit` during development is fine.
 
+★★ **Use `python3 scripts/release.py --suite-log <log> --yes` rather than doing this by hand.** The steps are
+not hard, but every one of them fails silently when skipped —— a version bumped in one file but not the other
+ships a plugin reporting a number different from the one it was released as; a zip built before the last
+source change carries the new number and none of the fix; a tag can point at a commit nobody tested. The
+script checks all of it first, prints the plan, and refuses without `--yes`. Without `--suite-log` it refuses
+outright, because ~16 minutes of suite belongs in the background (section 1) and a release on a suite that was
+never run is not something it will do quietly.
+
 **The source is published.** `main` is pushed to `neariot/siyuan-native-outline-mindmap`, and the
 plugin is also distributed as a packaged build attached to a Release —— the bazaar reads the latest
 Release, so a version is not released until its `package.zip` is attached.
@@ -392,6 +400,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 | `python3 scripts/check-unsaved-fields.py` | a node model field no reader restores —— the defect behind summary, link lines, the mask and the due date; fold state is printed, not failed |
 | `python3 scripts/check-audit-findings.py` | which findings in `docs/AUDIT-FINDINGS.md` still point at code that exists —— `stale-file` / `stale-line` / `drifted`, and the `cannot-judge` ones a reader must open first. It cannot tell whether a defect is *fixed*, and says so instead of guessing. `--selftest` pins its three decisions, including the prose-vs-identifier criterion its first version got wrong (60 false `drifted`) |
 | `python3 scripts/check-documented-commands.py` | a command a document names that does not exist, and a script no document names —— a command in prose is never executed by anything. It cannot see whether a command does what the prose claims (an invented **flag** in front of a real script passes), and says so |
+| `python3 scripts/release.py --suite-log <log>` | the release procedure, enforced instead of remembered: clean tree, versions agreeing, `check` green, the zip byte-identical to its build and reporting the right version, `--live` privacy clean, the tag absent both locally and on the remote, and an E2E log that really shows a green run (a run killed by `timeout` leaves ✘ markers and no summary line, so it is refused rather than read as "no failures"). It publishes nothing without `--yes` (section 4), and verifies the Release it created rather than trusting the command that made it |
 | `python3 scripts/check-versions.py` | the versioned sources agreeing (`package.json` and `src/plugin/plugin.json`) and a `docs/RELEASE-<version>.md` existing. The release procedure used to be a rule held in someone's head, and a half-bumped version ships a plugin that reports a version different from the one it was released as. It says plainly that it does **not** verify the tag or the Release —— those are outside the repository and need consent |
 | `python3 scripts/check-literal-conditions.py` | a `check()` whose condition is a literal, so it can never go red. Tells a dead assertion apart from the five **correct** hard failures in this tree (a `catch`, a precondition guard's `else`, a guard's `if` body) by position, prints which shape it classified so a misclassification is visible, and says plainly that a condition built only from locals needs a reader |
 | `python3 scripts/check-i18n-shadow.py` | a local binding that shadows the i18n `t` in a module that translates —— there is no ESLint here, so `no-shadow` cannot be switched on, and this is the rule instead. Textual, and says so: shadowing is legal TypeScript with no diagnostic |
