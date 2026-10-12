@@ -278,7 +278,22 @@ def main():
 
     print()
     print("released: https://github.com/neariot/siyuan-native-outline-mindmap/releases/tag/%s" % tag)
-    print("The bazaar reads the latest Release, so no pull request is needed.")
+
+    # ★★ The release is not finished when the tag is pushed —— the bazaar is a **separate** pipeline, and it
+    #    is what users install from. Measured: `v0.1.7` appeared in the bazaar 26 seconds after its tag, while
+    #    `v0.1.8` was still absent 1.7 hours later, because the staging job runs on its own irregular schedule
+    #    (gaps over one day: 6, 76, 242, 254, 357, 402, 489, 609 minutes). So this reports and does not wait:
+    #    waiting would mean sitting on a job nobody here controls, and silence would mean claiming a release
+    #    users cannot install yet.
+    print()
+    print("checking whether the bazaar has picked it up…")
+    code, out = sh("python3", "scripts/bazaar-status.py", check=False)
+    print(out.rstrip())
+    if code != 0:
+        print()
+        print("★ The Release itself is done and correct. The bazaar mirrors it on the staging job's own")
+        print("  schedule, so no action is needed —— re-run `python3 scripts/bazaar-status.py` to watch it.")
+        print("  No pull request is involved: the bazaar reads Releases, not PRs.")
     return 0
 
 
