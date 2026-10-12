@@ -1,0 +1,30 @@
+{
+  // ★ The E2E layer is typechecked separately, because it is a different program.
+  //
+  //   `tsconfig.json` includes `src` only, so `npm run typecheck` never looked at `e2e/` —— and Playwright
+  //   transpiles with esbuild, which **strips types without checking them**. Measured: 42 real type errors
+  //   were sitting in the suite, including `window.siyuan` (a property that does not exist on `Window`),
+  //   `Property 'kramdown' does not exist on type '{}'` (a kernel response read through the wrong shape), and
+  //   `NodeListOf<Element> is not an array type` (a for-of over a NodeList). None of them could ever go red,
+  //   because nothing typechecked the file.
+  //
+  //   A separate file rather than adding `e2e` to the main `include`, for two reasons:
+  //     · the two programs want different `lib`s and different globals (browser DOM in `src`, Node +
+  //       Playwright in `e2e`), and merging them would let a Node global leak into shipped plugin code;
+  //     · `src` is what ships to users, so its build stays minimal and this one stays free to be loose.
+  //
+  //   Run with: `npm run typecheck:e2e` (part of `npm run check`).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "moduleResolution": "bundler",
+    "allowJs": false,
+    // The helpers read kernel JSON through `page.evaluate`, and the shapes there are necessarily loose —
+    // `unknown` rather than `any` would be more honest but is a larger change than this file should force.
+    // What this config is for is catching the *mistakes*: a property that does not exist on `Window`, a
+    // NodeList iterated as an array, a response read through the wrong type.
+    "noUnusedLocals": false
+  },
+  "include": ["e2e"]
+}

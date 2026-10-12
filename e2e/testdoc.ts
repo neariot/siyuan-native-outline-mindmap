@@ -293,6 +293,28 @@ export async function createTempDocTitled(
 }
 
 /** Delete a document (using removeDocByID; the old removeDoc makes the kernel panic). */
+/**
+ * Read one field off a kernel response, without assuming what `data` is.
+ *
+ * ★ Why this exists. `KernelApi.call` returns `data: unknown`, which is honest —— the kernel has no stable
+ * schema, and the field a given endpoint returns differs per endpoint. The suite nonetheless read
+ * `res.data?.content` and `kd.data?.kramdown` in a dozen places, and **nothing noticed**: `tsconfig.json`
+ * includes `src` only and Playwright transpiles with esbuild, which strips types without checking them. Adding
+ * `tsconfig.e2e.json` turned those into 13 type errors in one pass.
+ *
+ * Returning `''` for a missing field (rather than throwing) matches what those call sites already did with
+ * `?? ''` —— the assertions downstream are what catch a genuinely empty response, and a helper that threw here
+ * would turn "the document has no content yet" into a stack trace.
+ */
+export function field(res: { data: unknown }, name: string): string {
+  const data = res.data;
+  if (data && typeof data === 'object' && name in data) {
+    const v = (data as Record<string, unknown>)[name];
+    return v === null || v === undefined ? '' : String(v);
+  }
+  return '';
+}
+
 export async function removeDoc(api: KernelApi, id: string): Promise<void> {
   await api.call('/api/filetree/removeDocByID', { id });
 }

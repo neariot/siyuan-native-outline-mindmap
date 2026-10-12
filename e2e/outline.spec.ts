@@ -5,6 +5,7 @@ import { siyuanUrl, siyuanToken } from './env';
 import {
   kernelApi, ensureTestDoc, createTempDoc, removeDoc,
   resolveTestNotebook, TOP_BRANCHES, TEMP_DOC_MD,
+  field,
 } from './testdoc';
 
 /**
@@ -707,7 +708,7 @@ test.describe('multi-select and batch operations', () => {
       await expect
         .poll(async () => {
           const res = await api.call('/api/export/exportMdContent', { id: docId });
-          md = String(res.data?.content ?? '');
+          md = field(res, 'content');
           return md;
         }, { message: 'the document should hold a task marker', timeout: 10000 })
         .toMatch(/\[[ xX]\]/);
@@ -747,7 +748,7 @@ test.describe('multi-select and batch operations', () => {
 
       const line = async (): Promise<string> => {
         const res = await api.call('/api/export/exportMdContent', { id: docId });
-        return String(res.data?.content ?? '')
+        return field(res, 'content')
           .split('\n')
           .map((l) => l.trim())
           .find((l) => l.includes('待办节点')) ?? '';
@@ -872,7 +873,7 @@ test.describe('multi-select and batch operations', () => {
       await expect
         .poll(async () => {
           const res = await api.call('/api/export/exportMdContent', { id: docId });
-          return String(res.data?.content ?? '');
+          return field(res, 'content');
         }, { message: 'a to-do completed in the mind map should reach the document', timeout: 10000 })
         .toMatch(/\[[xX]\]/);
     } finally {
@@ -1005,7 +1006,7 @@ test('★ Backspace at the start of a to-do turns it into a plain node', async (
 
     const lines = async (): Promise<string[]> => {
       const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String(res.data?.content ?? '')
+      return field(res, 'content')
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l.includes('待办'));
@@ -1086,7 +1087,7 @@ test('★ dragging a row above, onto, and below another gives three different re
           .poll(
             async () => {
               const res = await api.call('/api/export/exportMdContent', { id: docId });
-              return String(res.data?.content ?? '');
+              return field(res, 'content');
             },
             { message: `drop at ${c.fraction} (zone ${c.zone}): ${c.why}`, timeout: 15_000 },
           )
@@ -1121,7 +1122,7 @@ test('★ moving a parent takes its whole subtree', async ({ page }) => {
 
     const markdown = async (): Promise<string> => {
       const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String(res.data?.content ?? '');
+      return field(res, 'content');
     };
     const rows = page.locator('.om-outline-wrap .node-row');
     expect(await rows.count(), 'the fixture should show four rows').toBe(4);

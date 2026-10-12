@@ -7,6 +7,7 @@ import {
 import {
   kernelApi, ensureTestDoc, resolveTestNotebook, TOP_BRANCHES,
   createTempDoc, createTempDocTitled, removeDoc,
+  field,
 } from './testdoc';
 import { PNG } from 'pngjs';
 import { siyuanUrl, siyuanToken } from './env';
@@ -277,10 +278,16 @@ test('fit button fits under every document shape', async ({ page }) => {
         );
       }
 
-      // Precondition check: nodes really were measured, otherwise "no overflow" is fake
+      // Precondition check: nodes really were measured, otherwise "no overflow" is fake.
+      //
+      // ★ Kept, but no longer the only thing standing between this case and a vacuous pass: `contentBox`
+      //   itself now throws when it measured nothing (it used to return `Infinity` sentinels, which every
+      //   `>=` / `<=` assertion below is satisfied by). This assertion is a second, local statement of the
+      //   same precondition —— it reads naturally where the overflow comparison is, and it would still catch
+      //   a caller that opted out of the throw.
       expect(
-        Number.isFinite(content.l) && content.l !== Infinity,
-        `${sh.name}: should be able to measure node content (contentBox returns Infinity when it measured nothing)`,
+        Number.isFinite(content.l),
+        `${sh.name}: contentBox must have measured real nodes (it throws when it measured none)`,
       ).toBe(true);
     } finally {
       await removeDoc(api, id);
@@ -1076,7 +1083,7 @@ test('★ dragging a node onto another nests it — and BOTH views must agree wi
 
     const markdown = async (): Promise<string> => {
       const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String(res.data?.content ?? '')
+      return field(res, 'content')
         .split('\n')
         .filter((l) => l.trim() && !l.startsWith('---') && !l.includes(': ') && !l.startsWith('# '))
         .join('\n');
@@ -1182,7 +1189,7 @@ test('dragging a DEEP node onto a shallow one re-levels it in both views', async
 
     const markdown = async (): Promise<string> => {
       const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String(res.data?.content ?? '');
+      return field(res, 'content');
     };
     const geometry = () => page.evaluate(() =>
       [...document.querySelectorAll('.mm-node')].map((n) => {
@@ -1275,7 +1282,7 @@ test('★ dropping a node into its own subtree is refused (no cycle, nothing los
 
     const markdown = async (): Promise<string> => {
       const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String(res.data?.content ?? '');
+      return field(res, 'content');
     };
     const before = await markdown();
 

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { openDoc, toOutlineView } from './mindmap';
-import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook, type KernelApi } from './testdoc';
+import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook, field, type KernelApi } from './testdoc';
 import { siyuanUrl, siyuanToken } from './env';
 
 /**
@@ -103,7 +103,7 @@ test('pressing Enter repeatedly at the end of a level-2 node: every press create
 
   // Cross-check the **real block tree** inside SiYuan —— correct UI indentation does not mean it was persisted correctly
   const kd = await api.call('/api/block/getBlockKramdown', { id: docId });
-  const lines = ((kd.data?.kramdown as string) || '')
+  const lines = field(kd, 'kramdown')
     .split('\n')
     .filter((l) => l.trim() && !l.trim().startsWith('{:'));
   const rootItems = lines.filter((l) => !l.startsWith(' '));

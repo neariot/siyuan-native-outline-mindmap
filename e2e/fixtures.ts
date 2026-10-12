@@ -1,4 +1,10 @@
 import { test as base, expect, type Page } from '@playwright/test';
+
+// ★ Re-exported because the specs import it from here (`import { test, expect, type Page } from './fixtures'`).
+//   They did that already, and it worked only because nothing typechecked `e2e/` —— Playwright transpiles with
+//   esbuild, which strips types without checking them. `tsconfig.e2e.json` now checks this layer, and this line
+//   is what makes those imports true rather than lucky.
+export type { Page };
 import { PNG } from 'pngjs';
 
 /**

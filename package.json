@@ -6,7 +6,8 @@
   "scripts": {
     "build": "rsbuild build && python3 scripts/verify-css-scope.py",
     "test": "python3 scripts/run-tests.py",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "verify": "python3 scripts/verify-live.py",
     "verify:android": "python3 scripts/verify-android.py",
     "record": "python3 scripts/record-demo.py",

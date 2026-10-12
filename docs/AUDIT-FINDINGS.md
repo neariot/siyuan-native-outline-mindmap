@@ -120,8 +120,19 @@ conclusion to draw from a complete-looking list of findings.
 
 ### e2e-helpers
 
-- **medium · type-escape** `e2e/fixtures.ts:2`  
-  No e2e file is typechecked at all, so real type errors sit in the helpers: tsconfig's include is `src` only, and compiling the eight helper files with the project's own strict settings yields two errors - `pngjs` has no declaration (the whole frameStats implementation is `any`) and e2e/mindmap.ts:104 reads `window.siyuan`, which does not exist on Window.
+- ~~**medium · type-escape** `e2e/fixtures.ts:2`~~ **fixed**
+  No `e2e/` file was typechecked: `tsconfig.json` includes `src` only, and Playwright transpiles with esbuild
+  —— **types stripped, never checked**. Compiling the suite revealed **42** errors, not the two the finding
+  estimated, and they were real: `window.siyuan` (undeclared host global), `res.data?.content` read off
+  `unknown` in ten places (the kernel response shape), `NodeListOf<Element>` iterated as an array, a `Set`
+  iterated without `downlevelIteration`, and `Page` imported from `./fixtures` which never exported it.
+  `tsconfig.e2e.json` now typechecks the layer (`npm run typecheck` runs both programs, and
+  `npm run typecheck:e2e` runs this one alone). Everything is fixed rather than suppressed: `field()` reads a
+  kernel response without assuming its shape, `e2e/siyuan-global.d.ts` declares the host global, and
+  `e2e/pngjs.d.ts` declares the surface of `pngjs` that is used —— **ambient**, because a `declare module`
+  inside a module file is an augmentation and TypeScript refuses to augment an untyped package.
+  ★ Two config details cost a cycle each and are recorded in the comments: `declare global` needs `export {}`
+  to be a module, while `declare module` must be in a file that has neither.
 - ~~**medium · test-quality** `e2e/mindmap.ts:359`~~ **fixed**
   `contentBox` returned `{ l: Infinity, t: Infinity, r: -Infinity, b: -Infinity }` when it measured nothing,
   and the "fit fits all the nodes" case compares those with `>=` / `<=` —— **all four comparisons are
