@@ -18,7 +18,7 @@ import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { treeToKramdown, kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, taskStateOfKramdownLine } from '../core/map';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, taskStateOfKramdownLine } from '../core/map';
 import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
@@ -1093,23 +1093,7 @@ export class SiYuanStore {
     for (const it of items) this.lastListItems.set(it.nodeId, it.liId);
   }
 
-  /**
-   * Save the node tree back to SiYuan.
-   *
-   * Save the node tree (⚠️ wholesale replacement, which **rebuilds block IDs**).
-   *
-   * For **create/full-rebuild** scenarios only. For day-to-day editing use saveNodesIncremental ——
-   * wholesale replacement invalidates every `((reference))`, bookmark and backlink (measured and confirmed).
-   *
-   * SiYuan re-assigns the block IDs on rebuild, and node identity follows to the new block IDs.
-   */
-  async saveNodes(docId: string, nodes: OutlineNode[], title?: string, titleParagraphs?: string[]): Promise<void> {
-    const md = treeToKramdown(nodes, { docTitle: title ?? '', titleParagraphs });
-    // when updateBlock is given markdown, the document title line is treated as a body heading block,
-    // so the leading H1 is dropped here (the title is carried by the document itself).
-    const body = md.replace(/^#\s+.*\n+/, '');
-    await this.client.updateBlock(docId, body);
-  }
+
 
   /**
    * Incremental save: update only the blocks whose **content changed**, keeping block IDs.

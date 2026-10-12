@@ -68,16 +68,13 @@ GATES = [
         #   reader that refuses list lines, a live writer that cannot carry a level, and a **dead** writer
         #   that can, added up to a toolbar (H1/H2/H3) and a documented shortcut (`# ` + space) that
         #   silently do nothing. Nothing failed; the dead method made the feature look implemented.
-        #   The whole list is printed for a reader.
-        #
-        # ★ Not --strict yet, and the reason is the rule that a gate must be able to pass. Exactly one method
-        #   currently trips it (`saveNodes`), and that method **stays** until the heading feature is decided
-        #   (`docs/TODO.md`: hide it, make it view-only, or change the storage model). A gate that is red on
-        #   the day it lands is a gate everyone learns to ignore, so it reports now and fails once that
-        #   decision is made and the claim is gone —— the same path `check-vacuous-tests.py` took while its
-        #   sixteen citations were being worked through.
+        #   The whole list is printed for a reader. Strict, with no advisory flag: the heading decision is
+        #   made and `saveNodes` —— the one method that claimed a capability while nothing called it —— is
+        #   deleted, so a new claim fails the build immediately rather than being queued. (While it was being
+        #   worked through this ran advisory and printed loudly instead: a gate that cannot fail is a gate
+        #   that is not there.)
         "name": "dead-methods",
-        "command": "python3 scripts/check-dead-methods.py",
+        "command": "python3 scripts/check-dead-methods.py --strict",
         "why": "every uncalled store method is accounted for, and none still claims a capability",
         "requires": lambda: (REPO_ROOT / "scripts" / "check-dead-methods.py").is_file(),
     },

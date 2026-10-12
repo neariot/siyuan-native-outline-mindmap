@@ -864,7 +864,8 @@ function OmTabApp({
    *   so once the document is gone they are **lost for good** —— measured, a whole typed string left not one character on the SiYuan side.
    *
    *   This entry point turns "lost" into "recoverable": it uses `store.createDoc` to write the current tree
-   *   as-is into a new document (`treeToKramdown`; node identity is carried by SiYuan block IDs),
+   *   as-is into a new document (native block DOM, not markdown —— see the note in `createDoc`; node identity
+   *   is carried by SiYuan block IDs),
    *   then switches docId over and the plugin works normally again.
    */
   const saveAsNewDoc = React.useCallback(async (): Promise<void> => {

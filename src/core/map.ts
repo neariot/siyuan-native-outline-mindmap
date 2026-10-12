@@ -763,6 +763,22 @@ export function nodeSubtreeToKramdown(n: OutlineNode): string {
  *   · task state          → a native task list `- [ ]` / `- [x]` (subtype=t)
  *   · heading             → native h1~h6 blocks
  */
+/**
+ * ★ No caller in `src/` today —— kept on purpose, and this note is why.
+ *
+ * `SiYuanStore.saveNodes` was its only shipping caller and was removed as dead code (17 lines wrapping
+ * `updateBlock(docId, markdown)`, called from nowhere). The **document paths do not use markdown at all**:
+ * `createDoc` and `saveNodesIncremental` both go through native block DOM, because the markdown route runs
+ * Lua/Lute parsing that cannot express rich text (see the long note in `createDoc`).
+ *
+ * It stays because it is the writer half of a **tested contract** with `kramdownToTree`:
+ *   · `core/map.test.ts` round-trips a tree through it and checks the tree comes back;
+ *   · `plugin/paragraphs-ui.test.ts` uses it to assert it produces **no `custom-*` attributes** —— the
+ *     guarantee that a document stays an ordinary SiYuan document after this plugin is uninstalled.
+ * Deleting it would delete those checks' subject, and with it the only defence of the portability rule.
+ *
+ * If a future export feature needs "the whole tree as a SiYuan document", this is it.
+ */
 export function treeToKramdown(
   nodes: OutlineNode[],
   opts: {

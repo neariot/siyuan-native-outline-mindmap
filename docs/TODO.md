@@ -49,9 +49,9 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
 
 **Tooling gaps (continued):**
 
-- **The 13 uncalled store methods need a pass —— one of them is exactly the dead code that made the heading
-  feature look implemented.** `python3 scripts/check-dead-methods.py` reports them (the gate prints, and only
-  fails on one whose comment claims a capability):
+- **The 12 uncalled store methods still need a pass.** `python3 scripts/check-dead-methods.py`
+  reports them on every `npm run check` (the gate is now **strict**: it fails when one of them claims a
+  capability, which `saveNodes` did):
 
   src/siyuan/api.ts:136  moveDocs
   src/siyuan/api.ts:515  getBlockAttrs
@@ -60,17 +60,18 @@ than no check**, and it is what `docs/pitfalls/` exists to collect.
   src/siyuan/api.ts:591  createNotebook
   src/siyuan/store.ts:352  listDocs
   src/siyuan/store.ts:467  loadNodes
-  src/siyuan/store.ts:1106  saveNodes  ← comment claims a capability
-  src/siyuan/store.ts:2440  findAnchor
-  src/siyuan/store.ts:2486  resolveListItem
-  src/siyuan/store.ts:2896  setHeadingTitle
-  src/siyuan/store.ts:2921  searchNodes
-  src/siyuan/store.ts:2943  listFolders
+  src/siyuan/store.ts:2424  findAnchor
+  src/siyuan/store.ts:2470  resolveListItem
+  src/siyuan/store.ts:2880  setHeadingTitle
+  src/siyuan/store.ts:2905  searchNodes
+  src/siyuan/store.ts:2927  listFolders
 
   Each needs one of three answers: delete it, keep it with a comment saying who calls it from outside the
-  repository, or wire it up —— and the last is only right if something actually needs it. `saveNodes` is the
-  one that misled: it is the only writer that emits `# ` for a heading, it has no callers, and while it
-  existed the H1 buttons looked supportable. It cannot now that the heading feature is removed.
+  repository, or wire it up —— and the last is only right if something actually needs it.
+  (`saveNodes` was the one that misled: the only writer emitting `# ` for a heading, called from nowhere,
+  and while it existed the H1 buttons looked supportable. Deleted. `treeToKramdown` was its companion and
+  **stays** on purpose —— documented at the function, because it is the writer half of a tested round-trip
+  and of the "no `custom-*` attributes" portability guarantee.)
 
 ## Known gaps in our own tooling
 
