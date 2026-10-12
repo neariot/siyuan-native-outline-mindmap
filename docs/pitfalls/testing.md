@@ -1067,3 +1067,43 @@ returned, which is the only question that matters.
 - **When a source-text test fails on your fix, that is information about the test.** Ask which of the two it
   is before touching the product: if the fix added something correct, delete the count and replace it with a
   case that drives the behaviour.
+
+## A serialization that ignores shape says "unchanged" about a re-parented tree
+
+**Symptom**: `Shift+Tab` then `Tab` pressed back to back left SiYuan unchanged while the outline showed the
+indent. With a pause between the keys it worked —— reported as "it works probabilistically". No error, and the
+screen was right, so nothing looked broken until the document was re-read.
+
+**Cause**: `serializeTree` is the evidence for the write-coalescing decision *"did the tree change again after
+the previous write-back?"*. It emitted a flat `id:text` sequence for every node, with **no nesting and no
+child order**, so:
+
+```
+甲 | 乙 | 丙        (flat)
+甲(乙) | 丙         (乙 indented)
+```
+
+produced **byte-identical** strings. The catch-up write was skipped. Traced on the running build:
+
+```
+[A] onChange kind=struct shape= 98uu | t7vl | uxa6        ← Shift+Tab changed no tree
+[C] write callback read shape= 98uu | t7vl | uxa6         ← so W1 wrote the flat tree
+[mv] → SKIP (already in place)  ×3                        ← W1 correctly had nothing to move
+[A] onChange kind=struct shape= 98uu | ␣t7vl | uxa6       ← Tab indented 乙
+[B] catch-up: nodesRef shape= 98uu | ␣t7vl | uxa6         ← the indent IS in nodesRef
+→ no second write callback, no second moveNodes pass      ← the check said "unchanged"
+```
+
+**Practice**:
+- **A "did it change?" fingerprint must encode every way the thing can change.** This was the *third*
+  appearance of the same pitfall in one function, and the first two were fixed the wrong way —— by adding
+  fields (the note, then `paragraphs`) rather than by encoding the tree's **shape**. Adding a field cannot
+  catch a change that moves a node without altering it, so the bug replayed on the next field that mattered.
+  Parentheses around each node's children close the class.
+- **Keep the coalescing win.** The fix must not make every write look like a change: a genuinely identical
+  tree still compares equal, which is what the existing cases confirm.
+- **A race with a window is not "probabilistic".** Two variants of the same gesture differ only by *when* the
+  second key arrives; writing both as cases converts the report into a deterministic failure, and the pair
+  also documents the workaround users had found for themselves.
+- **Assert on the document, not the screen, when the screen is what lies.** The outline was correct
+  throughout; only `exportMdContent` showed the truth.

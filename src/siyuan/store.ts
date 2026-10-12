@@ -899,35 +899,27 @@ export class SiYuanStore {
   private lastByBlock = new Map<string, string>();
 
   /**
-   * Placeholder list-item IDs pending cleanup (see `ensureChildList`).
+   * Open one placeholder "collection window": the caller owns the returned set for the whole write-back and
+   * passes it down to `syncStructure` → `moveNodes`, which fills it and deletes from it at the end.
    *
-   * ★ Why they are accumulated and deleted together instead of right after creation:
-   *   an empty List has **no node** in the kernel's in-memory block tree, so `moveBlock(parentID=<empty List>)`
-   *   fails silently forever. The placeholder must therefore stay until "the real node has been moved into it".
-   *   Accumulating them and handling them at the end of `moveNodes` both preserves order and avoids move and delete interfering with each other.
-   */
-  private pendingPlaceholders = new Set<string>();
-
-  /**
-   * Open one placeholder "collection window" and return this call's own set.
+   * ★★ Why the set is owned by the caller rather than by the store:
+   *   placeholders are produced while a `List` container is created and must survive until the real node has
+   *   been moved into it —— deleting one earlier leaves an empty List, which has **no node in the kernel's
+   *   in-memory block tree**, so the move fails silently forever afterwards.
+   *   They used to live in one instance field, and with two write-backs in flight, a placeholder that A had
+   *   just added was wiped by B's `clear()`; A then moved nodes into an already-deleted empty shell and the
+   *   structural change was **silently lost**.
    *
-   * ★★ Why an explicit window is needed (fix):
-   *   placeholders are produced by `syncStructure` and cleaned up by `syncDeletions`, and originally they shared one
-   *   instance field. With two write-backs in flight, a placeholder that A just added is wiped by B's `clear()`,
-   *   and A then moves nodes into an **already deleted empty-shell container** → the structural change is silently lost.
-   *   Now the write-back entry point owns the set and passes it to consumers explicitly; the instance field is only a compatibility fallback.
+   * ★ There is deliberately no instance field any more. It existed as a "compatibility fallback" for a caller
+   *   that forgot to pass the set, and a fallback here can only reintroduce the shared-window bug it was
+   *   introduced to remove: the wrong set is a set nobody deletes from, so the document keeps a stray
+   *   `placeholder` list item. `syncStructure` and `moveNodes` now require the argument, so forgetting it is
+   *   a compile error instead of a silent leak.
    */
   beginPlaceholderScope(): Set<string> {
-    this.pendingPlaceholders = new Set<string>();
-    return this.pendingPlaceholders;
+    return new Set<string>();
   }
 
-  /** Take the current collection window's placeholders and drop the reference (single consumption) */
-  takePlaceholders(): Set<string> {
-    const taken = this.pendingPlaceholders;
-    this.pendingPlaceholders = new Set<string>();
-    return taken;
-  }
 
   /** Reverse lookup of a node ID by "paragraph block ID" (for reverse sync) */
   byBlock(blockId: string): string {
@@ -1627,7 +1619,7 @@ export class SiYuanStore {
   async syncStructure(
     docId: string,
     nodes: OutlineNode[],
-    placeholders?: Set<string>,
+    placeholders: Set<string>,
   ): Promise<{ inserted: number; map: Map<string, string>; pending: OutlineNode[] }> {
 
     // re-read the mapping every time so the decision is based on the latest state
@@ -2011,8 +2003,14 @@ export class SiYuanStore {
   private async moveNodes(
     docId: string,
     nodes: OutlineNode[],
-    placeholders?: Set<string>,
+    placeholders: Set<string>,
   ): Promise<number> {
+    // ★ The cleanup target, captured once: every placeholder created during THIS call goes into this set
+    //   and is deleted from it at the end. It must not be reached through the instance field, because a
+    //   concurrent write-back calls `beginPlaceholderScope()` and rebinds that field to a **different** set
+    //   —— the first call would then add its placeholder to the second call's set and delete its own (empty)
+    //   one, leaving a stray `placeholder` list item in the document and the intended move unbacked.
+    const cleanup = placeholders;
     let count = 0;
     // ★ Collection **preserves traversal order** (an array, not a Map —— a Map's iteration order is stable,
     //   but what is needed here is "process one by one in UI order", and an array is more direct and easier for locating predecessors).
@@ -2066,8 +2064,9 @@ export class SiYuanStore {
         return '';
       }
       const ensured = await this.ensureChildList(pBlockId);
-      // hang the placeholder on the global pending-cleanup list; the caller deletes them together at the end (avoiding move/delete interleaving)
-      if (ensured.placeholderId) this.pendingPlaceholders.add(ensured.placeholderId);
+      // Register the placeholder for cleanup by THIS call (see `cleanup`); the moves happen first and the
+      // deletion runs at the end, so a move and a delete cannot interleave.
+      if (ensured.placeholderId) cleanup.add(ensured.placeholderId);
       // ★ Also remember this result: the same parent's child List does not change again within this moveNodes
       listCache.set(wantPid, ensured.listId);
       return ensured.listId;
@@ -2286,9 +2285,16 @@ export class SiYuanStore {
       if (ok) count++;
     }
 
-    // clean up the placeholders together (all moves are done by now and the List holds real nodes)
-    // ★ Use the set passed in by the caller; if none was passed, take the current collection window (for older call sites).
-    const phs = placeholders ?? this.takePlaceholders();
+    // Clean up the placeholders together (all moves are done by now, so the List holds real nodes).
+    //
+    // ★ The scope is **required**, not optional. It used to default to the store's own
+    //   `takePlaceholders()` "for older call sites", which meant a caller that forgot it would silently
+    //   share the instance-level window with any concurrent write-back —— and a placeholder added by one
+    //   write could be deleted by another, leaving the first to move nodes into an already-deleted container
+    //   and lose the structural change with no error (the failure this scope was introduced to fix).
+    //   There is exactly one caller and it always passes its own set, so the fallback was dead code that
+    //   could only ever hide a future mistake. A missing scope is now a compile error.
+    const phs = cleanup;
     for (const ph of phs) {
       try {
         await this.client.deleteBlock(ph);
