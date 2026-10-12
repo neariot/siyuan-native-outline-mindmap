@@ -22,6 +22,13 @@ export interface BlockTreeState {
   topListId: string;
   /** listItem block ID -> task state (1: not done, 2: done) */
   itemTaskStatus: Map<string, number>;
+  /** block ID -> heading level (1~6) for `NodeHeading` blocks, absent for anything else.
+   *
+   *  Measured on `getBlockDOM`: a heading carries the level in `data-subtype="h1"` (and `class="h1"`),
+   *  so this map is the only place the level is visible from the DOM. `blocks.type` in SQL cannot tell
+   *  levels apart, and the block's text is identical whether it is a heading or a paragraph —— which is
+   *  why a text-only comparison silently kept a paragraph when a node was made an H1. */
+  headingLevelOf: Map<string, number>;
   /** when the document has no list at all, the ID of SiYuan's default empty paragraph block under the document root (cleaned up when the first node is inserted) */
   emptyRootParagraphs: string[];
 }
@@ -39,6 +46,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
   const childrenOf = new Map<string, string[]>();
   const aliveIds = new Set<string>();
   const itemTaskStatus = new Map<string, number>();
+  const headingLevelOf = new Map<string, number>();
   let topListId = '';
 
   if (!domHtml) {
@@ -50,6 +58,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
       aliveIds,
       topListId,
       itemTaskStatus,
+      headingLevelOf,
       emptyRootParagraphs: [],
     };
   }
@@ -73,6 +82,11 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
         const id = idMatch[1];
         const type = typeMatch[1];
         aliveIds.add(id);
+
+        if (type === 'NodeHeading' && attrs) {
+          const sub = /data-subtype="h([1-6])"/.exec(attrs);
+          if (sub) headingLevelOf.set(id, Number(sub[1]));
+        }
 
         if (type === 'NodeListItem' && attrs) {
           const taskMatch = /data-task="([^"]*)"/.exec(attrs);
@@ -143,6 +157,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
     aliveIds,
     topListId,
     itemTaskStatus,
+    headingLevelOf,
     emptyRootParagraphs,
   };
 }

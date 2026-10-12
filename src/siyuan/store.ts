@@ -535,6 +535,11 @@ export class SiYuanStore {
       this.lastDomTree = parsedDom;
       this.lastAliveBlockIds = parsedDom.aliveIds;
       this.childListByItem = parsedDom.itemToChildList;
+      // ★ Refresh the heading levels from what the kernel actually has, so `saveNodesIncremental` can tell
+      //   "this node is now an H1 and the block is not" from "nothing changed". Rebuilt rather than merged:
+      //   a block that stopped being a heading must disappear from the map, or the comparison would keep
+      //   reporting a change and rewrite it on every save.
+      this.lastHeads = new Map(parsedDom.headingLevelOf);
       for (const [key, child] of parsedDom.itemToParagraph) {
         map.set(key, child);
         this.lastListItems.set(key, key);
@@ -899,6 +904,18 @@ export class SiYuanStore {
   private lastByBlock = new Map<string, string>();
 
   /**
+   * "paragraph block ID → heading level" from the most recent `loadBlockMap`, 1~6 for a `NodeHeading` and
+   * absent for anything else.
+   *
+   * ★ It exists because a block's **text** cannot say whether it is a heading. A level change alters no text
+   * at all, so a text-only comparison decides "nothing to write" and the document keeps its old block type
+   * —— the outline shows `om-h1` and the button looks pressed while SiYuan stores a paragraph. Measured on
+   * `getBlockDOM`, only `data-subtype="hN"` carries the level, and `blocks.type` in SQL does not
+   * distinguish levels, so the parsed DOM is the only source for it.
+   */
+  private lastHeads = new Map<string, number>();
+
+  /**
    * Open one placeholder "collection window": the caller owns the returned set for the whole write-back and
    * passes it down to `syncStructure` → `moveNodes`, which fills it and deletes from it at the end.
    *
@@ -1249,8 +1266,26 @@ export class SiYuanStore {
         continue;
       }
       // note: structural changes are syncStructure's job; this loop only syncs text
+      //
+      // ★★ The criterion must see **every change this branch can write**, not just the text.
+      //
+      //   It used to be `oldText !== newText` on the text alone, and the branch below writes a **block type**
+      //   as well: a heading is a `NodeHeading` with a level, not a paragraph. So pressing H1 changed the
+      //   tree and the outline's own CSS class, the criterion compared two identical strings and skipped the
+      //   block, and the document kept a plain paragraph. Re-reading brought the paragraph back —— the level
+      //   was lost on every save, with nothing raised and the button still looking pressed.
+      //
+      //   Measured: `current.get(blockId)` is the block's text from SQL, which cannot express a block type,
+      //   so the level has to be compared separately. `lastHeads` (block ID → level) is recorded on every
+      //   write and refreshed by `loadBlockMap`, so it answers "what level does SiYuan have now?".
+      //
+      //   This is the same pitfall as the write-coalescing serialization: a check that cannot distinguish
+      //   the failure from the success is worse than no check, because it stays quiet.
       const newText = htmlToKramdown(n.text ?? '');
       const oldText = current.get(blockId);
+      const newLevel = n.heading && n.heading >= 1 && n.heading <= 6 ? n.heading : 0;
+      const oldLevel = this.lastHeads.get(blockId) ?? 0;
+      const levelChanged = newLevel !== oldLevel;
       // ★★★ oldText === undefined must not simply be skipped (a measured **text does not get written** bug).
       //
       //   The original criterion implied "not found in SQL → the block does not exist yet → leave it to syncStructure to create".
@@ -1267,7 +1302,7 @@ export class SiYuanStore {
       //
       //   The criterion becomes: as long as blockId exists (the mapping table recognizes this block), it must be written.
       //   A genuinely "missing block" is syncStructure's insert logic to handle, not this line's fallback.
-      if (oldText === undefined || oldText !== newText) {
+      if (oldText === undefined || oldText !== newText || levelChanged) {
         // ★★★ Route everything through the **DOM path** (settled from the kernel source).
         //
         //   Kernel source `kernel/api/block_op.go:679`:
@@ -1283,8 +1318,34 @@ export class SiYuanStore {
         //   **escaped into literal source**; the two paths also store different shapes, which makes a comparison always report "there is a difference".
         //   Now it is uniform: the body is always DOM (`htmlToSiyuanDom` already converts bare tags into
         //   SiYuan-native forms such as `<span data-type="strong">`).
-        const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(n.text ?? '') || '\u200b'}</div>`;
+        //
+        // ★ A heading is a **different block type**, and this used to write `NodeParagraph` unconditionally.
+        //   So `heading` was applied to the in-memory tree (the outline adds `om-hN` and the buttons look
+        //   pressed), the write-back stored a plain paragraph, and re-reading brought back a plain
+        //   paragraph —— the level was lost on every save, silently, with no error anywhere.
+        //   It is the shape `model/types.ts` warns about: a declared field with a writer and no reader looks
+        //   exactly like a working feature until the document is re-read.
+        //
+        //   Measured against the running kernel, a heading is:
+        //     <div data-subtype="h1" data-type="NodeHeading" class="h1">
+        //       <div contenteditable="true" spellcheck="false">甲</div>
+        //       <div class="protyle-attr" contenteditable="false">\u200b</div>
+        //     </div>
+        //   `data-subtype` and `class` carry the level, and the body is a nested editable div rather than
+        //   bare text, so the paragraph form cannot serve as a substitute.
+        const level = n.heading && n.heading >= 1 && n.heading <= 6 ? n.heading : 0;
+        const body = htmlToSiyuanDom(n.text ?? '') || '\u200b';
+        const dom = level
+          ? `<div data-subtype="h${level}" data-type="NodeHeading" class="h${level}">` +
+            `<div contenteditable="true" spellcheck="false">${body}</div>` +
+            `<div class="protyle-attr" contenteditable="false">\u200b</div></div>`
+          : `<div data-type="NodeParagraph">${body}</div>`;
         await this.client.updateBlockDom(blockId, dom);
+        // Record what the kernel now holds, so the next pass compares against reality rather than against
+        // the previous tree: without this the level would look "changed" on every subsequent save and the
+        // block would be rewritten forever.
+        if (newLevel) this.lastHeads.set(blockId, newLevel);
+        else this.lastHeads.delete(blockId);
         updated++;
       } else {
         skipped++;
