@@ -552,9 +552,23 @@ conclusion to draw from a complete-looking list of findings.
   "so the next round re-reads". The state that actually matters is `nodesWithParas` (a `Set<string>` keyed
   by node ID, updated a few lines above), which the next `loadBlockMap` reads. Comment corrected; the same
   shape as `saveNodes`, where a comment made dead code look load-bearing.
-- **low · bug** `src/siyuan/store.ts:2814`  
-  `listFolders` shadows the module-level i18n function with `const t = Date.now();` — the exact pitfall the project documents, and the exact thing this same file forbids elsewhere.
-- **low · dead-code** `src/siyuan/store.ts:2339`  
-  Several store methods have no call site at all, and two of them (resolveListItem, findAnchor) are stale duplicates of anchor logic that now lives inline in syncStructure, with comments that state measurements no longer true.
-- **low · docs** `src/siyuan/store.ts:2742`  
-  `setHeadingTitle`'s doc comment justifies the method with a state of loadDoc that no longer exists: it presents the `# heading` lookup as how loadDoc reads the title, quoting the code that is now only a fallback.
+- ~~**low · bug** `src/siyuan/store.ts:2845`~~ **fixed**
+  `listFolders` shadowed the module-level i18n function with `const t = Date.now();` —— the exact pitfall the
+  project documents. Renamed to `stamp`. ★ Fixing it exposed **two more** of the same shape
+  (`store.ts`'s `norm` helper, `Outliner.tsx`'s marquee rectangle), and there is no ESLint here, so
+  `no-shadow` cannot be switched on: the rule is now a gate, `scripts/check-i18n-shadow.py`.
+- ~~**low · dead-code** `src/siyuan/store.ts:2339`~~ **fixed**
+  Several store methods had no call site at all. `resolveListItem` (61 lines) and `findAnchor` (25 lines) were
+  `private` and called from nowhere, so they were deleted outright —— but **their doc comments were absorbed
+  first**: `resolveListItem` recorded a measured silent-data-loss incident (after an insert the SQL index had
+  not caught up, so a single query answered `self: null` ten times, the fallback found no child `listItem`,
+  the resolver returned `''`, the node's "node ID → block ID" mapping was never registered, and the next
+  write-back re-inserted the batch —— the UI showed 7 nodes and **0 landed in SiYuan**, with no error). It now
+  lives in `docs/kernel-api.md` §7.3, next to the rule it justifies. The rest of the list is tracked by
+  `scripts/check-dead-methods.py`, which is a **strict** gate.
+- ~~**low · docs** `src/siyuan/store.ts:2742`~~ **fixed**
+  `setHeadingTitle`'s doc comment justified the method with a state of `loadDoc` that no longer exists,
+  presenting the `# heading` lookup as how `loadDoc` reads the title when that lookup is now only a fallback.
+  Comment corrected. ★ The method itself is **live** —— `mount.ts` calls it on every zoom-title sync. It had
+  been reported as dead code because the call is written `store?.setHeadingTitle(...)` and the checker's
+  pattern did not allow optional chaining (fixed, with the gap recorded in `docs/TODO.md`).

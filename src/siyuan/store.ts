@@ -2779,10 +2779,13 @@ export class SiYuanStore {
    *     · the document's own name (`renameDocByID` is what changes it)
    *     · the `# heading` **heading block** on the body's first line
    *
-   *   And `loadDoc` takes the **body heading block** when parsing the title:
-   *   ```ts
-   *   const titleMatch = /^#\s+(.+)$/m.exec(kramdown);
-   *   ```
+   *   And `loadDoc` **can** take the body heading block: its read order is ① the document block's own
+   *   `content` (authoritative), ② a `# title` heading block on the first body line, ③ `''`. So the
+   *   heading block is what a document with a hand-written `# title` is read back from —— and what the
+   *   title box therefore has to keep in step. (Before the document block's `content` was read at all, the
+   *   `# ` lookup *was* the whole mechanism; it is fallback ② now, which is why step ③ used to be hit for
+   *   nearly every document and the title showed "untitled".)
+   *
    *   Changing the title in the plugin goes through `renameDoc` (it only changes the document name) and **never touches the heading block**.
    *   So the two diverge permanently:
    *   ```
@@ -2793,7 +2796,8 @@ export class SiYuanStore {
    *   What the user sees is **"it looked fine right after the edit, and was gone on reopening"**, with no error anywhere.
    *
    *   The fix: when changing the title, write the heading block **as well**, keeping the two consistent.
-   *   The heading block is the one `loadDoc` trusts, so it must carry the new value.
+   *   For a document that has such a block, it is what the title box reads back, so it must carry the new
+   *   value —— otherwise step ② hands the old one to a title that step ① would have got right.
    */
   async setHeadingTitle(docId: string, title: string): Promise<void> {
     // find the H1 heading block in the body (type='h' and a direct child of the document)
