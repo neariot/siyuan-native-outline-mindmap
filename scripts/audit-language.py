@@ -1325,7 +1325,17 @@ def audit():
         )
 
     if errors:
+        # ★ Name the files. The message used to be the count alone, so finding out *which* file failed
+        #   meant re-implementing this script's own loop by hand to reproduce the exception —— done once,
+        #   for a `tsconfig.e2e.json` whose comments a strict JSON parser rejected. The path and the reason
+        #   were already collected here; they were simply never printed.
         print("audit-language: FAIL %d file(s) could not be audited (exit 2)" % len(errors))
+        for line in errors:
+            print("  %s" % line)
+        print(
+            "  A file here was read but not understood: the audit cannot say whether its text follows "
+            "section 2, so it fails rather than passing quietly."
+        )
         return EXIT_ERROR
     if reported or stale:
         print(
