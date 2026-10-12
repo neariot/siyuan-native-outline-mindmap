@@ -137,7 +137,7 @@ def main():
     finally:
         # The lock goes with the artifacts: a run that leaves it behind would block the next one forever.
         try:
-            os.remove(os.path.join(ROOT, "test-results", ".run-e2e.lock"))
+            os.remove(_lock_path())
         except OSError:
             pass
     _sweep_traces(code)
@@ -163,7 +163,7 @@ def _refuse_if_another_run_is_active():
     Costs nothing and prevents a whole class of misleading output, which is the point: the alternative is
     remembering not to start a second run, and that is exactly the kind of rule section 8 says to encode.
     """
-    lock = os.path.join(ROOT, "test-results", ".run-e2e.lock")
+    lock = _lock_path()
     if not os.path.exists(lock):
         return
     try:
@@ -180,11 +180,20 @@ def _refuse_if_another_run_is_active():
         )
 
 
+def _lock_path():
+    """Where the single-run lock lives.
+
+    ★ **Not** inside `test-results/`: Playwright owns that directory by default and clears it when it starts,
+    so a lock written there is deleted moments after it is created —— measured, a run in progress had no
+    lock at all, which is how this was found. `.logs/` is ours and nothing else writes to it.
+    """
+    return os.path.join(ROOT, ".logs", ".run-e2e.lock")
+
+
 def _write_run_lock():
-    """Claim `test-results/` for this run (see `_refuse_if_another_run_is_active`)."""
-    target = os.path.join(ROOT, "test-results")
-    os.makedirs(target, exist_ok=True)
-    with open(os.path.join(target, ".run-e2e.lock"), "w", encoding="utf-8") as fh:
+    """Claim the suite for this run (see `_refuse_if_another_run_is_active`)."""
+    os.makedirs(os.path.join(ROOT, ".logs"), exist_ok=True)
+    with open(_lock_path(), "w", encoding="utf-8") as fh:
         fh.write(str(os.getpid()))
 
 
