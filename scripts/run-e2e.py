@@ -17,6 +17,7 @@ and the target is pinned to the isolated test instance —— E2E really creates
 
 import argparse
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -141,7 +142,97 @@ def main():
         except OSError:
             pass
     _sweep_traces(code)
+    _report_leftover_documents()
     return code
+
+
+
+def _temp_doc_prefix():
+    """`TEMP_DOC_TITLE_PREFIX` from `e2e/testdoc.ts`, or None when it cannot be read.
+
+    Returning None rather than a default is deliberate (section 5.1): a guessed prefix would make the
+    leftover check report "nothing left behind" for the wrong reason, which is worse than saying it could
+    not check.
+    """
+    path = os.path.join(ROOT, "e2e", "testdoc.ts")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = re.search(r"export const TEMP_DOC_TITLE_PREFIX\s*=\s*'([^']*)'", text)
+    return m.group(1) if m else None
+
+
+def _report_leftover_documents():
+    """Warn about temp documents a run left behind on the isolated instance.
+
+    ★ Why this exists. `e2e/testdoc.ts` says every test that writes runs against its own temp document and
+    deletes it in `afterEach` —— a rule enforced by remembering. A probe that opened the plugin's **tab**
+    entry point (`openTab`) made SiYuan create a temporary document of its own, which nothing deleted: two
+    leftovers stayed on the instance, and later probes wrote into one of them, so every "delete then write"
+    probe looked successful **for the wrong reason** —— the panel was writing to a live document that was not
+    the one under test. That cost most of a round, and is exactly the "a rule with no tool is a rule that
+    gets forgotten" shape (section 8).
+
+    It **reports** rather than failing: a leftover is not by itself a product defect, and a run that ends red
+    for an unrelated reason should not also be blamed for this. The point is that nobody has to wonder.
+
+    ★ It can **under-report** right after a creation, because the SQL index lags by 1~3 s (`docs/kernel-api.md`
+    7.3) —— measured: a document created and queried immediately was absent from the 80 rows the query
+    returned. Being quiet here is the safe direction (a false "you left a document behind" would be worse than
+    a missed one), and at the end of a suite the creations are seconds old anyway.
+
+    It asks the isolated instance only, never the workspace the user works in (section 5.1 #4).
+    """
+    try:
+        import env as env_mod
+        cfg = env_mod.Config()
+        base, token = cfg.siyuan_test, cfg.test_token()
+        notebook = cfg.test_notebook
+    except Exception as e:  # noqa: BLE001 —— a missing instance is not this check's problem
+        print(f"  · leftover-document check skipped: {e}")
+        return
+    import json
+    import urllib.request
+
+    def call(endpoint, body):
+        req = urllib.request.Request(
+            base + endpoint,
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Token " + token},
+        )
+        return json.load(urllib.request.urlopen(req, timeout=10))
+
+    try:
+        rows = call(
+            "/api/query/sql",
+            {"stmt": "SELECT id, content FROM blocks WHERE box='%s' AND type='d' LIMIT 200" % notebook},
+        ).get("data", [])
+    except Exception as e:  # noqa: BLE001
+        print(f"  · leftover-document check skipped: {e}")
+        return
+
+    # ★ The prefix is **read from the test helper**, not spelled again here.
+    #
+    #   It was duplicated, and two copies of one string drift: a leftover check looking for a prefix the
+    #   tests no longer use reports nothing and stays quiet —— the failure mode this whole script is about.
+    #   `TEMP_DOC_TITLE_PREFIX` is exported by `e2e/testdoc.ts` for exactly this.
+    prefix = _temp_doc_prefix()
+    if prefix is None:
+        print("  · leftover-document check skipped: could not read TEMP_DOC_TITLE_PREFIX from e2e/testdoc.ts")
+        return
+    leftovers = [r for r in rows if str(r.get("content", "")).startswith(prefix)]
+    if not leftovers:
+        print("  ✓ no temp documents left behind on the test instance")
+        return
+    print(f"  ⚠ {len(leftovers)} temp document(s) left on the test instance —— a case or probe did not clean up:")
+    for r in leftovers[:5]:
+        print(f"      {r.get('id')}  {r.get('content')!r}")
+    if len(leftovers) > 5:
+        print(f"      … and {len(leftovers) - 5} more")
+    print("    A leftover is not a product defect, but later runs may write into it and pass for the wrong")
+    print("    reason. Delete it, and make the case that created it clean up after itself.")
 
 
 def _refuse_if_another_run_is_active():

@@ -245,8 +245,18 @@ export async function resolveTestNotebook(api: KernelApi): Promise<string> {
  * Testing against the shared test document pollutes it on every run and breaks the next assertion.
  * So every test that writes runs against its own temp document and deletes it in `afterEach`.
  */
+/**
+ * The title prefix every temp document carries.
+ *
+ * ★ Exported, and read by `scripts/run-e2e.py`, which reports temp documents left on the test instance
+ * after a run. It used to be spelled inline here **and** again in that script: two copies of one string,
+ * which is the drift §2 forbids ("a copy of the string at the call site is a second version of it"). A
+ * leftover check that looks for a prefix the tests no longer use would report nothing and stay quiet.
+ */
+export const TEMP_DOC_TITLE_PREFIX = 'E2E-临时-';
+
 export async function createTempDoc(api: KernelApi, notebook: string, markdown: string): Promise<string> {
-  const title = `E2E-临时-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const title = `${TEMP_DOC_TITLE_PREFIX}${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   return createTempDocTitled(api, notebook, markdown, title);
 }
 

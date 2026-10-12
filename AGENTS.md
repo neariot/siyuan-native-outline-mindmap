@@ -382,7 +382,7 @@ The tools live in `scripts/` (committed, reusable) and every one of them is expe
 | `python3 scripts/audit-language.py` | the section 2 language policy, over every file type at once |
 | `python3 scripts/audit-privacy.py` | a real notebook's identity or a credential in the repository; `--live` cross-checks the values the configured instances report |
 | `python3 scripts/check.py` | every fast gate in one command, with a time budget |
-| `python3 scripts/run-e2e.py <substring>` | one suite instead of all of them; durations reported per case |
+| `python3 scripts/run-e2e.py <substring>` | one suite instead of all of them; durations reported per case. At the end it also **reports temp documents left on the test instance** —— a case or probe that did not clean up lets a later run write into the leftover and pass for the wrong reason, which is what a tab-opening probe did (it made SiYuan create a document nothing deleted) |
 | `python3 scripts/script_log.py --report` | how long every script actually takes —— the evidence behind "fast enough for the foreground" |
 | `python3 scripts/check-vacuous-tests.py` | a test a doc cites that no longer exists, and the test files that import nothing —— they cannot go red, so they cannot defend anything |
 | `node scripts/check-dead-css.mjs` | a class in `src/styles.css` that no element can wear —— legal CSS, applies to nothing, fails nothing; the reverse of the scoping gate, and how `.om-outline` was found to be dead twice over |
