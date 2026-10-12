@@ -11,26 +11,21 @@ being done, by being refuted in writing (with the reasoning, below), or by being
 ## Now
 
 Ordered by what a user would notice. These are verified against the code as it stands, not copied from a
-report.
+report. **Nothing is queued here right now** —— the five defects that stood here are all resolved (below),
+and the next work is the tooling gaps and the modularity list, which are the honest "what is left".
 
-1. **The mind map's keyboard goes dead after a context-menu command.**
-   Delete / focus-this-node / back-to-full-map all close the menu without returning focus to `.mm-canvas`,
-   so Tab, Enter, Delete, F2 and Ctrl+Z do nothing until the user clicks a node again.
-   (Audit: `medium · bug`, `mindmap/Mindmap.tsx` — the citation is past the end of the file; re-locate it
-   before starting.)
+The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
+section is a fact worth stating rather than a section to delete and re-invent.
 
-**Done this round** (kept here briefly because each was verified, then removed once committed):
+**Resolved, verified, and removed from the queue:**
 
-- **A title containing `<` or `>` lost those characters** —— the root node interpolated the title straight
-  into markup. Fixed with the shared `escapeHtml`; `htmlToRuns` already decodes entities, so the two
-  compose. Regression case: `e2e/mindmap.spec.ts` "a title containing < and > keeps those characters in the
-  root node", shown red with the escaping removed (`Expected "E2E-角度<T>-测试"`, `Received "E2E-角度-测试"`).
-- **`record-demo.py`'s document guard was wrong in both directions** —— `if "none" in url` accepted
-  `--doc None` (lowercase-only comparison) and refused a real id containing n-o-n-e (substring test on the
-  built URL). It now tests the precondition: no `--doc` and no `--url`.
-- **The two i18n entries in item 5 no longer exist.** `msgSummaryHint` / `msgSummaryTopLevel` appear in
-  neither catalogue, and `npm run i18n` (which fails on a dead entry) is green —— the finding is stale.
-- **Item 4** (`TARGET=plugin npm run build` in `README.zh-CN.md`) was fixed earlier.
+| Was | How it was checked |
+|---|---|
+| A title containing `<` or `>` lost those characters in the map **and** the PNG | Fixed with the shared `escapeHtml`; regression case shown red (`Expected "E2E-角度<T>-测试"`, `Received "E2E-角度-测试"`) |
+| The keyboard went dead after a context-menu command | `focusCanvas()` on the five affected items; case shown red twice (`activeElement` was `BODY`) |
+| `record-demo.py`'s document guard was wrong in both directions | It accepted `--doc None` and refused a real id containing n-o-n-e; now tests the precondition |
+| `TARGET=plugin npm run build` in `README.zh-CN.md` | The flag no longer exists in any README |
+| Two i18n entries rendered wrong | **Refuted** —— the keys are in neither catalogue and `npm run i18n` is green |
 
 ## Known gaps in our own tooling
 
