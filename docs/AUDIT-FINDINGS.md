@@ -148,8 +148,21 @@ conclusion to draw from a complete-looking list of findings.
   (so it cannot be satisfied by an unrelated TypeError), shown red by removing the guard —— and the 28-case
   mind-map suite still passes, which is the evidence that the callers were really measuring nodes rather than
   sailing through on `Infinity`.
-- **medium · test-quality** `e2e/testdoc.ts:62`  
+- ~~**medium · test-quality** `e2e/testdoc.ts:62`~~ **fixed**  
   The kernel's result code is dropped on three paths, so a kernel refusal becomes 'nothing found' or 'nothing to do': `sql()` returns `j?.data ?? []` whatever the code says, the removeDocByID calls ignore their response, and lsNotebooks' failure becomes an empty notebook list.
+
+  **One change closes all three**, because all three go through the same helper: `api.call` now throws when the
+  kernel answers a non-zero `code` (`kernel refused <path>: code=… msg=…`). `sql()` was calling its own
+  `post`/`json` pair and so bypassed it —— it now calls `call` too, and the `?? []` that remains is only for
+  the legitimate null/undefined case, with a comment saying so. Both `removeDocByID` sites already went through
+  `call`, and `lsNotebooks` does as well, so a refusal there can no longer become "an empty notebook list".
+
+  ★ This is §5.1 inside the test layer, and it mattered more than a product bug would: a dropped code let a
+  spec **pass while the thing it measured never happened**. It also explains a failure mode this repository has
+  paid for before —— a `removeDocByID` that ignored its response made a **failed delete look like a clean
+  teardown**, and the leftover document then makes a later case pass for the wrong reason, which is why the
+  suite reports leftovers at the end. Verified: `e2e/theme.spec.ts` (3 passed) and `e2e/outline.spec.ts`
+  (26 passed, 3.4 m) with the stricter helper, and the leftover check reports clean on both.
 
 ### e2e-specs-a
 
@@ -584,8 +597,16 @@ conclusion to draw from a complete-looking list of findings.
   `src/siyuan/upload-asset.test.ts` covering it: 13 assertions over the endpoint, the error path, and the
   multipart body (including that the path sits under `data/assets/` —— `assets/...` is accepted with
   `code: 0` but lands where SiYuan never looks). Shown red by restoring the global `fetch`.
-- **low · dead-code** `src/siyuan/api.ts:602`  
+- ~~**low · dead-code** `src/siyuan/api.ts:602`~~ **read and answered**  
   Six exported members of the kernel client have no caller anywhere in src/, scripts/, e2e/ or docs/: resolveTokenFromConfig, listNotebooks, createNotebook, moveDocs, getBlockAttrs, setBlockAttrs.
+  Verified again as accurate (0 call sites each, checked with `.name(`), and then read individually rather
+  than deleted as a batch. **None is the `saveNodes` shape**, whose test is "does a user-visible surface
+  promise the capability?" —— checked across `src/plugin/i18n/*.json`, `docs/FEATURES.md` and both
+  `GETTING-STARTED` files, and no for all six. Five of them (`listNotebooks`, `createNotebook`, `moveDocs`,
+  `getBlockAttrs`, `setBlockAttrs`) are one-line pass-throughs to real kernel endpoints whose comments
+  describe the **endpoint**, not a plugin promise —— a client reference, which is what a dead method cannot
+  be mistaken for. They stay, and the reasoning is recorded in `docs/TODO.md`. `resolveTokenFromConfig` is a
+  different case and is covered by its own note below, since it reads a file rather than calling an endpoint.
 - **low · bug** `src/siyuan/store.ts:1929`  
   `resolveWantList` registers cleanup placeholders on the instance field `this.pendingPlaceholders` while the cleanup at the end of moveNodes deletes only the set the caller passed, so the documented 'one call owns the set' contract is not implemented and a caller that passes any other Set leaves `- placeholder` list items in the user's document forever.
 - ~~**low · dead-code** `src/siyuan/store.ts:1513`~~ **fixed**

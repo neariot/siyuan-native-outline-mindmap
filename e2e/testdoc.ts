@@ -50,16 +50,32 @@ export async function kernelApi(baseURL: string, token: string): Promise<KernelA
     baseURL,
     extraHTTPHeaders: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
   });
+  // ★★ A kernel refusal must not read as success (§5.1, in the test layer).
+  //
+  //   The kernel answers `{code: -1, msg: '…'}` for a rejected statement or a missing block. Returning that
+  //   envelope let every downstream `j?.data ?? …` turn "the kernel refused" into "there was nothing there"
+  //   —— so a spec could **pass** while the thing it measured never happened, and the two `removeDocByID`
+  //   helpers ignored their response entirely, making a failed delete look like a clean teardown while the
+  //   document stayed on the instance. That leftover is exactly how a later case passes for the wrong reason,
+  //   which is why the suite reports leftovers at the end.
+  const call = async (path: string, payload: Record<string, unknown> = {}) => {
+    const r = await ctx.post(path, { data: payload });
+    const j = await r.json();
+    if (j && typeof j.code === 'number' && j.code !== 0) {
+      throw new Error(`kernel refused ${path}: code=${j.code} msg=${j.msg ?? ''}`);
+    }
+    return j;
+  };
+
   return {
     dispose: () => ctx.dispose(),
-    async call(path, payload = {}) {
-      const r = await ctx.post(path, { data: payload });
-      return r.json();
-    },
-    async sql(stmt) {
-      const r = await ctx.post('/api/query/sql', { data: { stmt } });
-      const j = await r.json();
-      return (j?.data ?? []) as unknown[];
+    call,
+    async sql(stmt: string) {
+      const j = await call('/api/query/sql', { stmt });
+      // A refused statement throws above. The legitimate shapes here are a row array or nothing at all, and
+      // "nothing" is spelled out rather than defaulted into an empty array.
+      if (j?.data === undefined || j?.data === null) return [];
+      return j.data as unknown[];
     },
   };
 }
@@ -316,6 +332,8 @@ export function field(res: { data: unknown }, name: string): string {
 }
 
 export async function removeDoc(api: KernelApi, id: string): Promise<void> {
+  // ★ A failed delete must fail —— through `call` a refusal throws. It used to ignore the response, so the
+  //   document could stay on the instance while the teardown reported success.
   await api.call('/api/filetree/removeDocByID', { id });
 }
 
