@@ -17,6 +17,18 @@ and the next work is the tooling gaps and the modularity list, which are the hon
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
 
+**Waiting on a decision, not on work:**
+
+- **The H1 / H2 / H3 / ¶ buttons cannot persist.** Verified, not suspected: the reader takes a level only
+  from a non-list line (`const isHeading = !isList && !!headingMatch` — its own comment says SiYuan exports a
+  heading *without* a list bullet), while every node in this plugin's documents **is** a list item. So a node
+  cannot be a heading, and writing a heading block into one produces `- # 甲` — a heading as literal text
+  inside a list item (measured, and reverted). The options are structural: **hide the four buttons**, make the
+  styling explicitly view-only, or change the storage model so a node need not be a list item. The first is
+  honest and small; the third is a rewrite. `docs/pitfalls/data.md` has the measurements. **This needs a
+  decision from whoever owns the feature** — the buttons are the promise and the round trip is the delivery,
+  and a control that quietly does nothing is worse than a missing one.
+
 **Resolved, verified, and removed from the queue:**
 
 | Was | How it was checked |

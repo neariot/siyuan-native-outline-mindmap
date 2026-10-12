@@ -303,3 +303,35 @@ serializes back as text.
 ★ This was written after a fix that looked right, passed a case, went red when reverted —— and was still
 wrong. The case asserted on `data-subtype="h1"` and the kernel really had one, so the criterion matched the
 mistake instead of catching it. A red proof shows a check is *sensitive*, not that it is *correct*.
+
+## This plugin's nodes can never be headings, and the buttons still offer it
+
+**Symptom**: the outline's H1 / H2 / H3 / ¶ buttons change the row (`om-hN` appears, the button looks
+pressed) and the level is gone the moment the document is re-read. Nothing raises.
+
+**Why it cannot be fixed in the writer**: the two halves of the round trip disagree about where a level lives,
+and the read half is right.
+
+- **Writer** (`saveNodesIncremental`) writes each node's block through the DOM path as
+  `<div data-type="NodeParagraph">`. There is no place in it for a level.
+- **Reader** (`kramdownToTree`) takes a level from `^(#{1,6})\s+` and sets `node.heading`, but only when the
+  line is **not** a list item: `const isHeading = !isList && !!headingMatch;`. Its own comment states the
+  rule: *"SiYuan exports `## text` plus an attribute line for a heading block, **without** a list bullet."*
+
+Every node in this plugin's documents **is** a list item (that is how the outline, the hierarchy and the
+per-node block IDs work). So a node cannot be a heading, and `!isList` is not a bug to relax.
+
+Writing a heading block into a node's paragraph does not fix it either: the kernel answers `code: 0` and
+`getBlockDOM` really shows a `NodeHeading`, while the document ends up holding `- # 甲` —— a heading as
+literal `#` text inside a list item. Measured; that was tried and reverted.
+
+**Practice**:
+- **The write half and the read half must agree about where a value lives.** Both halves here were
+  self-consistent, which is why neither looked wrong, and the disagreement was invisible until a reload.
+  When adding a field that is written back, check the reader's precondition as well as its parser —— this
+  reader has one (`!isList`) that no other part of the code mentions.
+- **A control that cannot reach the document is worse than a missing control.** The button is the promise;
+  the round trip is the delivery. Until the model can carry a level, the honest states are "hide the
+  buttons" or "make the styling explicitly view-only", not "leave a control that quietly does nothing".
+- **`code: 0` and a plausible `getBlockDOM` are not proof the structure is legal.** Read the document back
+  and look at the shape (see the list-item heading entry above).
