@@ -158,8 +158,8 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · language** `src/plugin/i18n/zh_CN.json:127`  
   Three catalogue entries double the escape: the raw JSON contains a backslash-backslash-n (and one backslash-backslash-u2019), which decodes to a literal backslash plus letter instead of a line break / a curly apostrophe, so the user is shown '\n' and '\u2019' as text.
-- **medium · bug** `src/plugin/mount.ts:2177`  
-  The two mind-map write paths fire `void writeLatest()` with no echo-guard window and no .catch, so a failed write-back becomes an unhandled rejection whose message never reaches the error bar.
+- ~~**medium · bug** `src/plugin/mount.ts:2311`~~ **fixed**
+  The mind-map write path fires `writeLatest()` with no echo-guard window and no `.catch`, so a failed write-back became an unhandled rejection whose message never reached the error bar. Every other write path surfaces failures through `setErr(describeWriteError(e))`; this call site is fired from a callback with no `await`, so the rejection had to be handled there. Now `.catch`es into the same path, which renders into `.om-mm-err`. ★ The entry said "two write paths" —— there is one such call site (`void ... | rg` over the file); the other must have been removed earlier, and the citation was re-pointed after an edit moved it.
 - **medium · dead-code** `src/plugin/mount.ts:2061`  
   The '@ reference document' panel is a dead end in the plugin: mount passes an empty document list, so its only list is always empty while the toolbar still offers the button.
 

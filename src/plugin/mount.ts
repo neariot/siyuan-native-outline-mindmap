@@ -2303,7 +2303,14 @@ function OmTabApp({
         });
         nodesRef.current = draft;
         setNodes(draft);
-        void writeLatest();
+        // ★ `.catch`, not a bare `void`: `writeLatest` lets a failure propagate, so an unhandled rejection
+        //   here means a failed write-back reaches nobody —— the mind map shows the drop, SiYuan does not
+        //   have it, and the error bar stays empty. Every other write path surfaces the failure through
+        //   `setErr(describeWriteError(e))`; this call site is fired from a callback with no await, so the
+        //   rejection has to be handled here or it is lost.
+        void writeLatest().catch((e: unknown) => {
+          setErr(describeWriteError(e));
+        });
       },
       onFocusNode: (id: string) => {
         // For a later "mind map → SiYuan block" jump link
