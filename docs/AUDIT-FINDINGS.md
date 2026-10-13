@@ -300,8 +300,13 @@ conclusion to draw from a complete-looking list of findings.
   SQL. Index flush lag measured at 200ms~2.8s on the isolated instance; pinned by
   `src/siyuan/prune-fresh.test.ts` (red-proofed — the assertion is on the probe SQL, since the
   retention would revive a cleared fresh mapping and hide the defect from a mapping assertion).
-- **medium · bug** `src/siyuan/store.ts:443`  
-  The two branches of loadBlockMap disagree about preserving the previous mapping: the DOM branch keeps an old entry only when its value is in `freshlyInserted`, while the SQL branch keeps every entry the query did not return — so the node-id→block-id alignment that `refreshMapsAfterCreate` builds after createDoc is dropped by the very next loadBlockMap, and every node in a freshly created document then looks new to syncStructure.
+- ~~**medium · bug** `src/siyuan/store.ts:443`~~ **fixed**
+  The two branches of loadBlockMap disagreed about preserving the previous mapping. Fixed in two
+  places, both measured live on the isolated instance: (1) `refreshMapsAfterCreate` registers its
+  blocks as freshly-inserted so the DOM branch retains (not drops) the alignment; (2) its top-list
+  SQL now picks the list whose parent is the document/heading (the unqualified `LIMIT 1` returned
+  the *child* list, aligning n1 to the child item and dropping n2/n3). Pinned by
+  `src/siyuan/refresh-align.test.ts` (both halves red-proofed).
 
 ### config
 

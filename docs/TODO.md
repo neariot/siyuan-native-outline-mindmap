@@ -42,6 +42,11 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **A just-inserted block is not rewritten by the same pass's text sync.** `saveNodesIncremental`
   rewrote index-unknown blocks via the DOM path, downgrading `<span>乙</span>` to
   `<span data-type="text">乙</span>` on every reuse-insert (`no-rewrite-fresh.test.ts`, red-proofed).
+- **Fresh-document alignment survived only half the path.** `refreshMapsAfterCreate` built the
+  node-id→block-id alignment but (1) never registered its blocks as freshly-inserted, so the next
+  `loadBlockMap`'s DOM branch dropped every entry, and (2) its top-list SQL picked whichever list
+  flushed first — measured, the *child* list — misaligning n1 and dropping n2/n3, so every later
+  write-back duplicated them. Fixed both; `refresh-align.test.ts` pins each half (both red-proofed).
 
 **Resolved, verified, and removed from the queue:**
 

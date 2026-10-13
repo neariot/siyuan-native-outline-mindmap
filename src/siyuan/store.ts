@@ -1150,7 +1150,15 @@ export class SiYuanStore {
    * and the block tree uses the same order, so a one-to-one match by index is enough.
    */
   private async refreshMapsAfterCreate(docId: string, nodes: OutlineNode[]): Promise<void> {
-    // the index lags by 1~3s, so poll first to get the top-level list
+    // the index lags by 1~3s, so poll first to get the top-level list.
+    //
+    // ★ The top-level list is the one whose parent is NOT a list item. An unqualified
+    //   `type='l' LIMIT 1` returns whichever list the index flushed first — measured live, that
+    //   was the *child* list (parent = a listItem), so the walk aligned n1 to the child item,
+    //   dropped n2/n3, and every later write-back duplicated them.
+    //   (The top list hangs under the title heading block, not directly under the document —
+    //   measured: parent type 'h' — so the filter is "parent is not an item", the same rule
+    //   `moveNodes` uses for its topList, not "parent is the document".)
     let listId = '';
     for (let i = 0; i < POLL_ROUNDS; i++) {
       // ★ Query first, then wait: it used to be "wait 200ms, then query",
@@ -1160,7 +1168,9 @@ export class SiYuanStore {
       if (i > 0) await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       try {
         const rows = await this.client.sql<{ id: string }>(
-          `SELECT id FROM blocks WHERE root_id='${sqlStr(docId)}' AND type='l' LIMIT 1`,
+          `SELECT id FROM blocks WHERE root_id='${sqlStr(docId)}' AND type='l'
+             AND parent_id IN (SELECT id FROM blocks WHERE root_id='${sqlStr(docId)}' AND type IN ('d','h'))
+             LIMIT 1`,
           1,
         );
         if (rows?.[0]?.id) {
@@ -1176,6 +1186,11 @@ export class SiYuanStore {
     const para: Array<{ nodeId: string; blockId: string }> = [];
     const items: Array<{ nodeId: string; liId: string }> = [];
     const walk = async (parentListId: string, list: OutlineNode[]): Promise<void> => {
+      // ★ No retry here: getChildBlocks reads the live in-memory tree, which is complete on first
+      //   read once the list itself exists (measured: every level resolved with 1 read after the
+      //   top-list query was fixed to pick the document/heading-level list — the earlier "async
+      //   assembly" reads were the *child* list, which genuinely holds 1 item). The top-list SQL
+      //   poll above already covers the index lag; retrying a complete answer only burns seconds.
       const kids = await this.client.getChildBlocks(parentListId);
       const li = kids.filter((k) => k.type === 'i');
       for (let i = 0; i < list.length && i < li.length; i++) {
@@ -1192,6 +1207,13 @@ export class SiYuanStore {
 
     for (const p of para) this.lastBlockMap.set(p.nodeId, p.blockId);
     for (const it of items) this.lastListItems.set(it.nodeId, it.liId);
+    // ★ These blocks are freshly created by us: the next loadBlockMap must keep (not drop) this
+    //   alignment while the SQL index catches up (measured 200ms~2.8s). Without this, the DOM
+    //   branch — which only retains previous entries whose block is freshly-inserted — drops every
+    //   entry built above, and the next write-back treats all nodes as new and inserts duplicates
+    //   (measured live: all 3 node alignments dropped by the very next loadBlockMap).
+    for (const p of para) this.freshlyInserted.add(p.blockId);
+    for (const it of items) this.freshlyInserted.add(it.liId);
   }
 
 
