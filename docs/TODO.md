@@ -85,6 +85,8 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Dead-end UI batch.** The @-mention button hides when its doc list is empty; the unused mirror
   title derivation is gone; the unreachable signal-chaining branch is removed; test-instance writes
   its PID only when the kernel is up and warns loudly on skipped digest verification.
+- **Deploy visibility.** Real runs print the target list and count before copying; both stale
+  tsconfig "e2e never typechecked" citations struck (dual gates verified in package.json).
 - **Live-hygiene batch.** verify-live: icon check fails on zero targets, both style empty/restores
   in try/finally, theme state captured and restored (stylesheet + attribute + modeOS); keymap
   snapshot prefers built-in defaults; deleted the uninvoked verify-host-style duplicate; five more
