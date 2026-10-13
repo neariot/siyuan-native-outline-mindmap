@@ -96,6 +96,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Gate-port batch.** CSS scope gate ported to postcss (brace-in-string divergence demonstrated;
   same 305/305 on the real build); interactions fit case fails on empty measurement; stale-mapping
   entry verified already gone.
+- **E2E criterion batch.** Sibling/child inserts assert document level, not just count; focus-restore
+  unconditional on the menu item; mobile drops the silent visibility skip; smoke uses the entry
+  button; @container widths verified self-controlled.
 - **Hygiene sweep.** verify-android help names `.env` keys, screenshot example passes a directory,
   dead adb input methods deleted; privacy scan counts oversized artifacts; auto-select refuted with
   constructor evidence; docs-index suffix ranges expand and the over-advertised range fixed; TESTING
