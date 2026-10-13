@@ -96,6 +96,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Gate-port batch.** CSS scope gate ported to postcss (brace-in-string divergence demonstrated;
   same 305/305 on the real build); interactions fit case fails on empty measurement; stale-mapping
   entry verified already gone.
+- **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
+  attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
+  to `model/tree.ts` with all sites calling them.
 - **E2E criterion batch.** Sibling/child inserts assert document level, not just count; focus-restore
   unconditional on the menu item; mobile drops the silent visibility skip; smoke uses the entry
   button; @container widths verified self-controlled.
