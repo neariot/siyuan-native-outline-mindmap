@@ -398,11 +398,28 @@ def main():
 
     r.ev(NUDGE_ON)      # ★ turn repaints on → then there are frames
     time.sleep(0.6)
-    r.start()
-    default_story(r)
-    frames = r.stop()
-    r.ev(NUDGE_OFF)     # ★ turn the repaint side effect off
-    r.close()
+    try:
+        r.start()
+        default_story(r)
+        frames = r.stop()
+    finally:
+        # ★ Release on every path, not just success: an exception inside the story used to leave
+        #   the 12fps repaint-nudge setInterval mutating the user's open SiYuan page (and the tab
+        #   open) after the script died. Stop the screencast if still running, turn the nudge off,
+        #   and close the tab — each step guarded so one failure cannot block the rest.
+        #   (An exception still propagates after cleanup: a failed story must not build a video.)
+        try:
+            r.send("Page.stopScreencast")
+        except Exception:
+            pass
+        try:
+            r.ev(NUDGE_OFF)     # ★ turn the repaint side effect off
+        except Exception:
+            pass
+        try:
+            r.close()
+        except Exception:
+            pass
     build_video(frames, webm, mp4)
     return 0
 

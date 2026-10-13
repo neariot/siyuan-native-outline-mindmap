@@ -291,8 +291,11 @@ conclusion to draw from a complete-looking list of findings.
   The script assembles the SiYuan build URL itself and exposes --port, so the probe can be pointed at another instance by hand although env.py is the one place that computes that URL.
 - **medium · bug** `scripts/record-demo.py:355`  
   The 'a document id is required' guard is case-sensitive, so a missing --doc still builds '.../?id=None' and the recording starts against a page with no document instead of failing fast.
-- **medium · bug** `scripts/record-demo.py:375`  
-  The repaint nudge timer and the screencast tab are released only on the success path: any exception inside the story leaves a 12fps setInterval mutating the user's open SiYuan page (and the tab open) after the script dies.
+- ~~**medium · bug** `scripts/record-demo.py:375`~~ **fixed**
+  The repaint nudge timer and the screencast tab are now released in a `finally` (stop screencast,
+  `NUDGE_OFF`, close — each guarded), so an exception inside the story cleans up instead of leaving
+  a 12fps setInterval mutating the user's page after the script dies. The exception still propagates
+  (a failed story must not build a video).
 - **medium · test-quality** `scripts/verify-live.py:389`  
   An unrecognised selector argument runs no check at all and still reports a green run ('0/0 passed ✅', exit 0) - a typo in `npm run verify -- <name>` silently verifies nothing.
 - **medium · bug** `scripts/verify-live.py:307`  
@@ -624,8 +627,10 @@ conclusion to draw from a complete-looking list of findings.
   describe the **endpoint**, not a plugin promise —— a client reference, which is what a dead method cannot
   be mistaken for. They stay, and the reasoning is recorded in `docs/TODO.md`. `resolveTokenFromConfig` is a
   different case and is covered by its own note below, since it reads a file rather than calling an endpoint.
-- **low · bug** `src/siyuan/store.ts:1929`  
-  `resolveWantList` registers cleanup placeholders on the instance field `this.pendingPlaceholders` while the cleanup at the end of moveNodes deletes only the set the caller passed, so the documented 'one call owns the set' contract is not implemented and a caller that passes any other Set leaves `- placeholder` list items in the user's document forever.
+- ~~**low · bug** `src/siyuan/store.ts:1929`~~ **already fixed before this pass**
+  `this.pendingPlaceholders` no longer exists: `beginPlaceholderScope()` returns a caller-owned set
+  and both `syncStructure`/`moveNodes` require it (compile error if forgotten). Verified by grep —
+  zero hits for the field, both call sites in `mount.ts` pass caller-owned sets.
 - ~~**low · dead-code** `src/siyuan/store.ts:1513`~~ **fixed**
   `syncParagraphs` ended with `this.lastListItems.delete(`paras:${liId}`)`, and **nothing ever wrote a
   `paras:`-prefixed key** —— all seven `lastListItems.set` sites use a node ID (or `ownerNode`), and every

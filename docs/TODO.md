@@ -54,6 +54,10 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **CDP errors dissolved into empty data.** `send()` dropped the CDP `error` member and `ev()`
   dropped `exceptionDetails` (in `cdp.py` and the `record-demo.py` copy), so broken probes passed
   caller sentinel checks as None. Both now raise; pinned by `cdp.py --selftest`.
+- **Demo recording leaked its side effects on failure.** The repaint-nudge timer and screencast tab
+  released only on success; now a `finally` stops the screencast, sends `NUDGE_OFF`, and closes the
+  tab on every path. The placeholder-ownership finding (`store.ts:1929`) was already fixed — the
+  instance field is gone, verified by grep.
 
 **Resolved, verified, and removed from the queue:**
 
