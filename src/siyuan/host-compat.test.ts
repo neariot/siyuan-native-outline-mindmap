@@ -7,8 +7,19 @@ import {
   getKernelVersion,
   clearKernelVersionCache,
   updateTaskMarkerWithFallback,
+  supportsTaskMarkerApi,
+  compareVersions,
+  TASK_MARKER_API_MIN_VERSION,
 } from './host-compat';
 import type { SiYuanClient } from './api';
+
+/**
+ * ★ Every case below must start from a **known** cached version. `getKernelVersion` caches its first
+ *   success in module scope, so without the reset the answer depends on whichever case ran first ——
+ *   and the version is what now decides whether the marker API is attempted at all.
+ */
+const clientWithVersion = (version: string, overrides: Record<string, unknown> = {}): SiYuanClient =>
+  ({ getKernelVersion: async () => version, ...overrides } as unknown as SiYuanClient);
 
 test('getHostApp resolves official app instance from plugin before window global', () => {
   const pluginAppObj = { id: 'app-from-plugin' };
@@ -76,10 +87,11 @@ test('getKernelVersion falls back to globalThis when client call fails', async (
 });
 
 test('updateTaskMarkerWithFallback uses primary updateTaskListItemMarker on success', async () => {
+  clearKernelVersionCache();
   let markerCalled = false;
   let updateBlockCalled = false;
 
-  const mockClient = {
+  const mockClient = clientWithVersion('3.8.7', {
     updateTaskListItemMarker: async (id: string, marker: string) => {
       markerCalled = true;
       assert.equal(id, 'block-task-1');
@@ -90,11 +102,68 @@ test('updateTaskMarkerWithFallback uses primary updateTaskListItemMarker on succ
       updateBlockCalled = true;
       return null;
     },
-  } as unknown as SiYuanClient;
+  });
 
   await updateTaskMarkerWithFallback(mockClient, 'block-task-1', true, '- [ ] Task text\n');
   assert.equal(markerCalled, true);
   assert.equal(updateBlockCalled, false);
+  clearKernelVersionCache();
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Version negotiation: the detection decides, not a failed request.
+console.log('\n★ version negotiation decides the task-marker path');
+
+test('compareVersions is numeric, not lexicographic', () => {
+  // The case a string compare gets wrong: '3.9.0' >= '3.10.0' is TRUE lexicographically.
+  assert.equal(compareVersions('3.9.0', '3.10.0'), -1);
+  assert.equal(compareVersions('3.10.0', '3.1.0'), 1);
+  assert.equal(compareVersions('3.1.0', '3.1.0'), 0);
+  assert.equal(compareVersions('3.1', '3.1.0'), 0, 'a missing component is zero');
+  assert.equal(compareVersions('4.0.0', '3.1.0'), 1);
+  assert.equal(compareVersions('v3.1.0', '3.1.0'), null, 'unparseable -> null, not a guess');
+  assert.equal(compareVersions('', '3.1.0'), null);
+});
+
+test('supportsTaskMarkerApi reads the version, and an unknown one answers "attempt it"', async () => {
+  clearKernelVersionCache();
+  assert.equal(await supportsTaskMarkerApi(clientWithVersion('3.8.7')), true);
+  clearKernelVersionCache();
+  assert.equal(
+    await supportsTaskMarkerApi(clientWithVersion(TASK_MARKER_API_MIN_VERSION)),
+    true,
+    'the threshold itself counts as supported (>=, not >)',
+  );
+  clearKernelVersionCache();
+  assert.equal(await supportsTaskMarkerApi(clientWithVersion('3.0.9')), false, 'older than the threshold');
+  clearKernelVersionCache();
+  // ★ The dangerous direction: an unreadable version must NOT be read as "the feature is absent",
+  //   or every unidentified kernel takes the expensive markdown path.
+  assert.equal(await supportsTaskMarkerApi(clientWithVersion('')), true);
+  clearKernelVersionCache();
+  assert.equal(await supportsTaskMarkerApi(clientWithVersion('v3.8.7')), true, 'unparseable -> attempt it');
+  clearKernelVersionCache();
+});
+
+test('★ a kernel known to predate the marker API goes straight to markdown (no failed request)', async () => {
+  clearKernelVersionCache();
+  let markerCalled = false;
+  let written = '';
+  const mockClient = clientWithVersion('3.0.9', {
+    updateTaskListItemMarker: async () => {
+      markerCalled = true;
+      throw new Error('404 page not found');
+    },
+    updateBlock: async (_id: string, data: string) => {
+      written = data;
+      return null;
+    },
+  });
+
+  await updateTaskMarkerWithFallback(mockClient, 'block-old', true, '- [ ] 旧内核任务\n');
+  assert.equal(markerCalled, false, 'the version said the endpoint is absent, so it must not be called');
+  assert.equal(written, '- [x] 旧内核任务\n');
+  clearKernelVersionCache();
 });
 
 test('updateTaskMarkerWithFallback degrades to markdown updateBlock when primary marker call fails', async () => {

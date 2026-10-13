@@ -7,7 +7,7 @@ import type { IEventBus } from 'siyuan';
 import type { TreePatch } from '../core/reconciler';
 import { applyTreePatches } from '../core/reconciler';
 import type { SiYuanClient } from './api';
-import { getHostApp, getKernelVersion } from './host-compat';
+import { getHostApp, getKernelVersion, compareVersions, TASK_MARKER_API_MIN_VERSION } from './host-compat';
 import type { DocumentSnapshot, HostCapabilities, IHostDriver, SyncResult } from './host-driver';
 import type { SiYuanStore } from './store';
 import { getActiveDocId as resolveActiveDocId } from '../plugin/active-doc';
@@ -43,9 +43,13 @@ export class NativeHostDriver implements IHostDriver {
 
   async getCapabilities(): Promise<HostCapabilities> {
     const version = await getKernelVersion(this.client);
+    // ★ The shared numeric comparison, not `version >= '3.1.0'`: a string compare answers the wrong
+    //   question as soon as the threshold gains a two-digit component ('3.9.0' >= '3.10.0' is true
+    //   lexicographically). An unreadable version answers `true` — attempt the call — never "absent".
+    const cmp = version ? compareVersions(version, TASK_MARKER_API_MIN_VERSION) : null;
     return {
       kernelVersion: version,
-      hasTaskMarkerApi: !version || version >= '3.1.0',
+      hasTaskMarkerApi: cmp === null ? true : cmp >= 0,
       supportsDomBlockUpdate: true,
     };
   }

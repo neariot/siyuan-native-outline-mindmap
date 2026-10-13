@@ -60,14 +60,55 @@ export function clearKernelVersionCache(): void {
   cachedKernelVersion = null;
 }
 
+/** The kernel release that introduced `/api/block/updateTaskListItemMarker`. */
+export const TASK_MARKER_API_MIN_VERSION = '3.1.0';
+
+/**
+ * Numeric version comparison: -1 / 0 / 1, or `null` when either side is not a dotted number.
+ *
+ * ★ Not a string compare. `'3.9.0' >= '3.10.0'` is **true** lexicographically and false numerically,
+ *   so a string comparison silently answers the wrong question the moment the threshold gains a
+ *   two-digit component. `null` for anything unparseable is deliberate: an unknown version must fall
+ *   through to "attempt the call", never to "the feature is absent".
+ */
+export function compareVersions(a: string, b: string): number | null {
+  const pa = a.trim().split('.');
+  const pb = b.trim().split('.');
+  if (pa.length === 0 || pb.length === 0) return null;
+  const na = pa.map((x) => (/^\d+$/.test(x) ? Number(x) : NaN));
+  const nb = pb.map((x) => (/^\d+$/.test(x) ? Number(x) : NaN));
+  if (na.some(Number.isNaN) || nb.some(Number.isNaN)) return null;
+  for (let i = 0; i < Math.max(na.length, nb.length); i++) {
+    const d = (na[i] ?? 0) - (nb[i] ?? 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
+ * Whether this kernel has the native task-marker endpoint.
+ *
+ * ★ An **unknown** version answers `true` (attempt the call, and the `catch` still degrades) rather
+ *   than `false`: guessing "the feature is absent" would take the markdown path on every kernel we
+ *   cannot identify, which is the expensive one. Only a version we can read *and* compare below the
+ *   threshold answers `false`.
+ */
+export async function supportsTaskMarkerApi(client: SiYuanClient): Promise<boolean> {
+  const v = await getKernelVersion(client);
+  if (!v) return true;
+  const cmp = compareVersions(v, TASK_MARKER_API_MIN_VERSION);
+  return cmp === null ? true : cmp >= 0;
+}
+
 /**
  * Update a task list item's checked marker with automatic fallback.
  *
- * Tries the native `/api/block/updateTaskListItemMarker` endpoint first (SiYuan 3.1+). If the
- * endpoint is unavailable on an older kernel, degrades to a markdown write of the same block.
+ * The native `/api/block/updateTaskListItemMarker` endpoint (SiYuan 3.1+) is tried first. A kernel
+ * **known** to predate it goes straight to the markdown write, so the version detection is what
+ * decides, not a failed request; any other failure still degrades through the same path.
  *
- * ★★ The fallback must carry the node's **whole subtree**, not just its own line. Writing one line
- *    drops the node's children — measured on the isolated instance, on `- [ ] 父任务 / - 子节点`:
+ * ★★ The markdown fallback must carry the node's **whole subtree**, not just its own line. Writing
+ *    one line drops the node's children — measured on the isolated instance, on `- [ ] 父任务 / - 子节点`:
  *
  *      updateTaskListItemMarker   children 1 → 1   (the primary call; safe)
  *      updateBlock(subtree)       children 1 → 1   (block ids preserved too)
@@ -84,24 +125,28 @@ export async function updateTaskMarkerWithFallback(
   subtreeKramdown = '',
 ): Promise<void> {
   const marker = isDone ? 'X' : ' ';
-  try {
-    await client.updateTaskListItemMarker(id, marker);
-  } catch {
-    // Fallback: rewrite the marker on the subtree's **first line** and write the subtree back.
-    // ★ Lower-case `x` here, matching `nodeToLine`'s own emission (`[x] `) rather than the marker
-    //   API's `X` —— one spelling for what the document holds, so a read-back cannot disagree.
-    const lineMarker = isDone ? 'x' : ' ';
-    const lines = subtreeKramdown.split('\n');
-    if (lines.length && /^\s*-\s*\[[ xX]\]/.test(lines[0])) {
-      lines[0] = lines[0].replace(/^(\s*-\s*)\[[ xX]\]/, `$1[${lineMarker}]`);
-    } else {
-      // No usable subtree (an unmapped or already-broken node): say so rather than writing a
-      // line that would silently drop whatever is under it.
-      throw new Error(
-        `updateTaskMarkerWithFallback: cannot rewrite the marker for ${id} without its subtree — ` +
-          'the caller must pass the node\'s kramdown, or children are lost',
-      );
+  if (await supportsTaskMarkerApi(client)) {
+    try {
+      await client.updateTaskListItemMarker(id, marker);
+      return;
+    } catch {
+      // Fall through to the markdown write: a kernel that reports the capability can still refuse.
     }
-    await client.updateBlock(id, lines.join('\n'));
   }
+  // Markdown path: rewrite the marker on the subtree's **first line** and write the subtree back.
+  // ★ Lower-case `x` here, matching `nodeToLine`'s own emission (`[x] `) rather than the marker
+  //   API's `X` —— one spelling for what the document holds, so a read-back cannot disagree.
+  const lineMarker = isDone ? 'x' : ' ';
+  const lines = subtreeKramdown.split('\n');
+  if (lines.length && /^\s*-\s*\[[ xX]\]/.test(lines[0])) {
+    lines[0] = lines[0].replace(/^(\s*-\s*)\[[ xX]\]/, `$1[${lineMarker}]`);
+  } else {
+    // No usable subtree (an unmapped or already-broken node): say so rather than writing a
+    // line that would silently drop whatever is under it.
+    throw new Error(
+      `updateTaskMarkerWithFallback: cannot rewrite the marker for ${id} without its subtree — ` +
+        'the caller must pass the node\'s kramdown, or children are lost',
+    );
+  }
+  await client.updateBlock(id, lines.join('\n'));
 }
