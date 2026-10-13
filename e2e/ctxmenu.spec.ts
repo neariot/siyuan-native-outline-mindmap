@@ -168,16 +168,36 @@ test('"Edit node" opens the input box and gives it focus', async ({ page }) => {
 });
 
 test('"Add sibling node" inserts a node at the same level', async ({ page }) => {
-  const before = await mindmapState(page);
-  await openCtxMenu(page, 1);
-  await clickCtxItem(page, '新增兄弟节点');
-  await page.waitForTimeout(1200);
+  // ★ Own temp doc (not the shared DOC): the insert persists, and later cases address nodes by
+  //   index — a leftover sibling would shift every index after it.
+  // ★ Level is asserted against the DOCUMENT markdown, not just the node count: a child insert
+  //   also grows the count by one, so count-only passes for a child/sibling swap.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let id = '';
+  try {
+    id = await createTempDoc(api, notebook, '- 分支一\n- 分支二\n');
+    await openDoc(page, id);
+    await toMindmapView(page);
+    const before = await mindmapState(page);
+    await openCtxMenu(page, 0);
+    await clickCtxItem(page, '新增兄弟节点');
+    await page.waitForTimeout(1200);
 
-  const after = await mindmapState(page);
-  expect(
-    after.nodes,
-    `the node count should grow after adding a sibling (${before.nodes} → ${after.nodes})`,
-  ).toBe(before.nodes + 1);
+    const after = await mindmapState(page);
+    expect(
+      after.nodes,
+      `the node count should grow after adding a sibling (${before.nodes} → ${after.nodes})`,
+    ).toBe(before.nodes + 1);
+    await expect
+      .poll(async () => {
+        const res = await api.call('/api/export/exportMdContent', { id });
+        return String((res.data as { content?: string })?.content ?? '');
+      }, { message: 'the new node must be a top-level sibling, not a nested child', timeout: 15_000 })
+      .toMatch(/^-\s+[^\n]+\n-\s+[^\n]+\n-\s+[^\n]+/m);
+  } finally {
+    if (id) await removeDoc(api, id);
+    await api.dispose();
+  }
 });
 
 test('"Expand as sub-document" moves the child nodes away and does not duplicate the node text', async ({ page }) => {

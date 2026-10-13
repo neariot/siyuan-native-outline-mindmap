@@ -173,24 +173,30 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · test-quality** `e2e/mindmap.spec.ts:322`~~ **fixed by deletion**
   The scroll-reachability case tested removed behavior (`.mm-bar` now wraps): deleted, with the
   no-horizontal-scroll case carrying the coverage.
-- **medium · test-quality** `e2e/mindmap.spec.ts:481`  
-  Two of the three @container cases depend on the environment's current right-dock width being narrow; a dock that the user dragged wider turns them red at the precondition, which this same file documents as worthless.
+- ~~**medium · test-quality** `e2e/mindmap.spec.ts:481`~~ **stale — controls its own widths**
+  The case sets the dock to 300px/900px itself and asserts the real widths (verified by read at
+  508+ and 555+); no environmental precondition remains.
 - ~~**medium · test-quality** `e2e/outline.spec.ts:680`~~ **fixed**
   The batch-indent case now asserts the x-shift plus document nesting, not just the row count —
   a no-op indent fails instead of passing.
 
 ### e2e-specs-b
 
-- **medium · test-quality** `e2e/ctxmenu.spec.ts:170`  
-  The case named `"Add sibling node" inserts a node at the same level` asserts only the node count, so an implementation that inserted a CHILD (or a node anywhere else) passes — the level half of the claim has no assertion.
-- **medium · test-quality** `e2e/keyboard.spec.ts:106`  
-  Both mind-map insertion cases are named for the level they create ("Tab adds one child node", "context menu: adding child node really adds a node") but assert only `before.nodes + 1`, so a child/sibling swap stays green. Line 106 is the Tab case, line 162 the context-menu case.
-- **medium · test-quality** `e2e/keyboard.spec.ts:197`  
-  The only assertion for "returning to the full map restores it" — the regression test docs/pitfalls/wiring.md names for the unpassed-prop defect — sits inside `if (await back.count())`, so if the menu item is ever absent the case silently drops half of its claim and still passes.
-- **medium · test-quality** `e2e/mobile.spec.ts:231`  
-  The mind-map half of "both the mobile outline and mindmap containers set data-prevent-swipe" is wrapped in a visibility `if` with a swallowed error, so when the view switch is not visible the canvas assertion never runs and the case still passes.
-- **medium · test-quality** `e2e/smoke.spec.ts:79`  
-  The "plugin is mounted" smoke case asserts `.om-dock` — the exact signal this repository documents as invalid (it exists only while the panel is open AND the outline view is the mounted one) — and takes `.first()`, the selector form the same note forbids.
+- ~~**medium · test-quality** `e2e/ctxmenu.spec.ts:170`~~ **fixed**
+  The case uses its own temp doc (no shared-doc pollution) and asserts three top-level items in
+  the document markdown — a child insert fails instead of passing on count.
+- ~~**medium · test-quality** `e2e/keyboard.spec.ts:106`~~ **fixed**
+  Tab/Enter/menu-child cases now assert document nesting (child) / top-level count (sibling) on
+  top of the node count — a child/sibling swap fails.
+- ~~**medium · test-quality** `e2e/keyboard.spec.ts:197`~~ **fixed**
+  The restore assertion is unconditional now: the menu item must exist (`toHaveCount(1)`), so an
+  absent item fails instead of silently dropping half the claim.
+- ~~**medium · test-quality** `e2e/mobile.spec.ts:231`~~ **fixed**
+  The view switch must be visible (`toBeVisible`, no swallowed error) before the canvas assertion
+  runs — an invisible switch fails instead of skipping silently.
+- ~~**medium · test-quality** `e2e/smoke.spec.ts:79`~~ **fixed**
+  The mount signal is the sidebar entry button (`[data-type*="native-outline-mindmap"]`), never
+  `.om-dock` — exactly what `waitPluginReady`'s note forbids, now followed.
 - ~~**medium · type-escape** `tsconfig.json:15`~~ **stale — already fixed before this pass**
   Same file, second citation of the same stale claim: e2e has its own tsconfig and gate
   (see above). No uncompiled scope remains.

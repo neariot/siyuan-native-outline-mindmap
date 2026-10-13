@@ -226,14 +226,16 @@ test.describe('Mobile E2E tests', () => {
       const swipeAttr = await verifyPreventSwipe(page);
       expect(swipeAttr.outlinePreventSwipe).toBe('true');
 
-      // Switching to the mindmap view should likewise have data-prevent-swipe="true"
+      // Switching to the mindmap view should likewise have data-prevent-swipe="true".
+      // ★ No silent skip: the old shape wrapped this in a visibility `if` with a swallowed error,
+      //   so an invisible view-switch left the canvas assertion unrunned and still passed. The switch
+      //   must be visible — its absence is itself a defect in this flow.
       const viewSwitch = page.locator('.om-mm-viewswitch button', { hasText: '导图' }).last();
-      if (await viewSwitch.isVisible().catch(() => false)) {
-        await viewSwitch.click();
-        await page.waitForTimeout(500);
-        const swipeAttrAfter = await verifyPreventSwipe(page);
-        expect(swipeAttrAfter.canvasPreventSwipe).toBe('true');
-      }
+      await expect(viewSwitch, 'the view switch must be visible').toBeVisible({ timeout: 10_000 });
+      await viewSwitch.click();
+      await page.waitForTimeout(500);
+      const swipeAttrAfter = await verifyPreventSwipe(page);
+      expect(swipeAttrAfter.canvasPreventSwipe).toBe('true');
     } finally {
       await ctx.close();
     }

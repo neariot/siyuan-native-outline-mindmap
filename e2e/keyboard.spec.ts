@@ -94,7 +94,7 @@ test('editing the text in the editor and saving really changes the node content'
   expect(texts.join('|'), 'the new text should appear on the node').toContain(marker);
 });
 
-/** ★ Tab adds a child node: the node count should go +1. */
+/** ★ Tab adds a child node: the node count should go +1 — and it must nest, not sibling. */
 test('Tab adds one child node to the selected node', async ({ page }) => {
   await focusNode(page);
   const before = await mindmapState(page);
@@ -104,9 +104,17 @@ test('Tab adds one child node to the selected node', async ({ page }) => {
 
   const after = await mindmapState(page);
   expect(after.nodes, `the node count should go +1 after Tab (${before.nodes} → ${after.nodes})`).toBe(before.nodes + 1);
+  // ★ A sibling insert also grows the count: only document nesting tells child from sibling.
+  //   TEMP_DOC_MD is `- 甲/节点一 - 乙/节点八`; Tab on 节点一 must indent the new node under 甲.
+  await expect
+    .poll(async () => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String((res.data as { content?: string })?.content ?? '');
+    }, { message: 'Tab must nest the new node as a child, not a sibling', timeout: 15_000 })
+    .toMatch(/- 甲\s*\n(?:\s*\n)?\s+- 节点一\s*\n(?:\s*\n)?\s+- [^\n]+/);
 });
 
-/** ★ Enter adds a sibling node: the node count should go +1. */
+/** ★ Enter adds a sibling node: the node count should go +1 — and it must stay level. */
 test('Enter adds one sibling node to the selected node', async ({ page }) => {
   await focusNode(page);
   const before = await mindmapState(page);
@@ -116,6 +124,15 @@ test('Enter adds one sibling node to the selected node', async ({ page }) => {
 
   const after = await mindmapState(page);
   expect(after.nodes, `the node count should go +1 after Enter (${before.nodes} → ${after.nodes})`).toBe(before.nodes + 1);
+  // ★ A child insert also grows the count: the new node must appear as a flush-left sibling,
+  //   i.e. the document gains a third top-level item (was 甲/乙).
+  await expect
+    .poll(async () => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      const body = String((res.data as { content?: string })?.content ?? '');
+      return body.split('\n').filter((l) => /^- \S/.test(l)).length;
+    }, { message: 'Enter must add a same-level sibling, not a nested child', timeout: 15_000 })
+    .toBe(3);
 });
 
 /** With no node selected, the shortcuts must not add nodes by mistake. */
@@ -150,7 +167,7 @@ test('right-clicking a node opens the menu', async ({ page }) => {
   }
 });
 
-/** Clicking "add child node" in the context menu really adds a node, the node count should go +1. */
+/** Clicking "add child node" in the context menu really adds a node — nested, not level. */
 test('context menu: adding child node really adds a node', async ({ page }) => {
   const before = await mindmapState(page);
 
@@ -160,6 +177,13 @@ test('context menu: adding child node really adds a node', async ({ page }) => {
   await page.waitForTimeout(900);
 
   expect(await mindmapState(page).then((s) => s.nodes), 'there should be one more node').toBe(before.nodes + 1);
+  // ★ Same child/sibling ambiguity as the Tab case: only nesting proves it is a child.
+  await expect
+    .poll(async () => {
+      const res = await api.call('/api/export/exportMdContent', { id: docId });
+      return String((res.data as { content?: string })?.content ?? '');
+    }, { message: 'menu child-add must nest the new node, not add a sibling', timeout: 15_000 })
+    .toMatch(/- 甲\s*\n(?:\s*\n)?\s+- 节点一\s*\n(?:\s*\n)?\s+- [^\n]+/);
 });
 
 /** Escape closes the context menu. */
@@ -190,15 +214,17 @@ test('focusing a node shows only the subtree, and returning to the full map rest
   const focused = await mindmapState(page);
   expect(focused.nodes, 'after focusing, only that node\'s subtree should be shown, so the node count drops').toBeLessThan(full.nodes);
 
-  // Return to the full map (possibly through the context menu or a button)
+  // Return to the full map (possibly through the context menu or a button).
+  // ★ No silent skip: the old shape wrapped the restore assertion in `if (await back.count())`,
+  //   so an absent menu item dropped half the claim and still passed. The item must exist —
+  //   its absence is itself the defect (the unpassed-prop regression this case guards).
   await page.locator('.mm-node').first().click({ button: 'right' });
   await page.waitForTimeout(600);
   const back = page.locator('.mm-ctx-menu .mm-ctx-item', { hasText: '返回全图' });
-  if (await back.count()) {
-    await back.click();
-    await page.waitForTimeout(900);
-    expect(await mindmapState(page).then((s) => s.nodes), 'the node count should be restored after returning to the full map').toBe(full.nodes);
-  }
+  await expect(back, 'the "return to full map" menu item must exist').toHaveCount(1);
+  await back.click();
+  await page.waitForTimeout(900);
+  expect(await mindmapState(page).then((s) => s.nodes), 'the node count should be restored after returning to the full map').toBe(full.nodes);
 });
 
 /**

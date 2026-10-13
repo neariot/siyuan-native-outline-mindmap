@@ -74,7 +74,8 @@ test('the readiness gate distinguishes a splash frame from the real UI', async (
 });
 
 test('the plugin is mounted into SiYuan', async ({ app }) => {
-  // The evidence of mounting is the DOM it injects, not some object on siyuan
-  // (`window.siyuan.plugins` does not exist, confirmed by measurement)
-  await expect(app.locator('.om-dock').first()).toBeVisible();
+  // The evidence of mounting is the sidebar entry button, not `.om-dock` — the dock toolbar renders
+  // only while the panel is open AND the outline view is mounted (see waitPluginReady's note:
+  // using `.om-dock` burns 60s when the panel is closed). Never `.first()` a lingering hidden node.
+  await expect(app.locator('[data-type*="native-outline-mindmap"]').first()).toBeVisible({ timeout: 60_000 });
 });
