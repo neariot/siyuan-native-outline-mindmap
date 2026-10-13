@@ -90,7 +90,14 @@ console.log('\n=== the handler carries out the decision, and never lets the key 
 {
   const src = fs.readFileSync(path.join(__dirname, 'outline', 'Outliner.tsx'), 'utf8');
   const calls = callSites(src, /^deleteKeyAction$/);
-  check('★★ the Delete branch decides with deleteKeyAction()', calls.length === 1, calls.join(', '));
+  // ★ The criterion is "the Delete key decides through this function, and at least one call site exists",
+  //   not "there is exactly one". A pinned count cannot tell a new *correct* site from an unexpected one:
+  //   adding a second handler that also routes through `deleteKeyAction` failed the old assertion, which is
+  //   the same shape as the `focusCanvas` count this repository deleted and the `openTab` count next door.
+  //   The behavioural half below is what actually defends the defect (preventDefault before acting), so this
+  //   one only has to establish that the decision function is used at all.
+  check('★★ the Delete key decides with deleteKeyAction() (at least one call site in this component)',
+    calls.length >= 1, calls.join(', '));
 
   // ★ The defect reached the browser because the handler did not preventDefault on the falling-through path.
   // Read through `enclosingBody`, which strips comments: the block carries a long explanation of the defect,

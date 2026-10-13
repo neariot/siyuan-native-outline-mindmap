@@ -459,7 +459,18 @@ duplication rather than moving lines.
   cannot tell "unexpected new caller" from "more callers are now correct", and it never looked at whether
   focus actually returned. **Resolved by deletion**: `e2e/keyboard.spec.ts` drives the real menu, asserts on
   `document.activeElement`, and then presses Tab to prove the keyboard works rather than merely that focus is
-  set. Two remaining uses of the same shape (a pinned call-site count) are worth auditing.
+  set.
+- **Done: the two remaining pinned call-site counts.** Both went red for a correct change, measured by
+  adding a second legitimate call site:
+  - `ref-nav.test.ts` required `openTab` to have **exactly one** `app` argument. A second jump that also
+    passes `app: appRef` failed three checks. The property is "nothing is substituted for the application
+    instance", so every call site must pass `appRef` and at least one must exist —— a substitute
+    (`appRef ?? plugin`) still fails, which is the defect the case was written for.
+  - `delete-key.test.ts` required exactly one `deleteKeyAction` call. The behavioural half (preventDefault
+    before acting, both branches carried out, focus handed to a neighbour) is what defends the defect, so
+    the count only has to establish that the decision function is used at all. Removing the decision
+    entirely still fails five cases.
+  A count of call sites is now used nowhere as a criterion of correctness in this tree.
 
 ## Refuted / already resolved
 

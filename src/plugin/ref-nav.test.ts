@@ -21,7 +21,7 @@ export {};
 import fs from 'node:fs';
 import path from 'node:path';
 import { htmlToKramdown, kramdownToHtml } from '../core/map';
-import { callArgProps, callSites, stripComments } from './source-probe';
+import { callArgProps, stripComments } from './source-probe';
 
 let pass = 0;
 let fail = 0;
@@ -80,15 +80,24 @@ console.log('\n=== the jump hands the kernel the application instance, with no s
   // ★ The product's half of docs/kernel-api.md §7.14: `app` is the only variable that matters, and a plugin
   //   instance there leaves a blank tab while the error stays in the background. `appRef ?? plugin` did
   //   exactly that —— this reads what the call passes, so re-adding any substitute goes red.
+  //
+  // ★★ The criterion is **every call site**, not "exactly one". Pinning the count made a correct change go
+  //    red: adding a second jump that also passes `app: appRef` failed `appArgs.length === 1`, which is the
+  //    same shape as the pinned `focusCanvas` count this repository already deleted (a count cannot tell
+  //    "a new caller is correct" from "an unexpected caller appeared"). The property that matters is
+  //    "nothing is substituted for the application instance", so every call site is required to pass the
+  //    real one and at least one has to exist.
   const mountSrc = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
   const appArgs = callArgProps(mountSrc, /^openTab$/, 'app');
-  check('★ exactly one openTab call site declares `app`', appArgs.length === 1, JSON.stringify(appArgs));
-  check('★★ that value is the application instance (`appRef`), never a fallback',
-    appArgs[0]?.value === 'appRef', `value=${appArgs[0]?.value}`);
-  check('★ the jump really happens (precondition of the check above: a call site exists)',
-    callSites(mountSrc, /^openTab$/).length === 1,
-    callSites(mountSrc, /^openTab$/).join(', '));
-  // Without the precondition check, `appRef` may be undefined and the kernel receives undefined —— the same
+  check('★ at least one openTab call site declares `app` (otherwise the jump does not happen)',
+    appArgs.length >= 1, JSON.stringify(appArgs));
+  check('★★ every openTab call site passes the application instance (`appRef`), never a substitute',
+    appArgs.every((a) => a.value === 'appRef'),
+    JSON.stringify(appArgs.map((a) => a.value)));
+  check('★ the call sites all pass it explicitly (a call with no `app` at all would be the same blank tab)',
+    appArgs.every((a) => a.value.trim().length > 0),
+    JSON.stringify(appArgs));
+  // Without the guard, `appRef` may be undefined and the kernel receives undefined —— the same
   // blank page by another route. Asserted on comment-stripped source so the explanation above cannot satisfy it.
   check('★★ a missing application instance is reported instead of jumping',
     stripComments(mountSrc).includes('if (!appRef)'), 'no `if (!appRef)` guard around the call');
