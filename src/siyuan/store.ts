@@ -320,7 +320,21 @@ export class SiYuanStore {
     child: string,
     blockMap: Map<string, string>,
   ): Promise<void> {
-    const probeIds = siblingsBefore.filter((id) => id !== child);
+    // ★ Skip blocks this session inserted (measured audit finding).
+    //
+    //   The SQL index flushes asynchronously (measured 200ms~2.8s after insertBlock), while the
+    //   double-confirm below waits only 200ms — so a sibling inserted by the previous write-back
+    //   misses both rounds while perfectly alive, its live mapping is cleared, and the next pass
+    //   re-inserts it as a duplicate. A block this session created is exempt: it cannot be "an older
+    //   sibling destroyed by this insert" in the defect-#53 sense the double-confirm hunts.
+    //
+    //   ★ Deliberate asymmetry, recorded honestly: if the kernel really destroyed a *fresh* block
+    //   (never measured — defect #53 destroyed older blocks), this skip keeps a dead mapping and the
+    //   node goes ghost until a reload rebuilds the mapping and reinserts it. That corner is accepted
+    //   because the alternative (no skip) misfires on every index lag over 200ms, which measured 4/6.
+    const probeIds = siblingsBefore.filter(
+      (id) => id !== child && !this.freshlyInserted.has(id),
+    );
     if (probeIds.length) {
       try {
         // ★★★ A **second confirmation** is mandatory (measured defect #54).

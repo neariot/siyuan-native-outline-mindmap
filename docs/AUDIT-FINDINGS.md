@@ -294,8 +294,12 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · dead-code** `src/siyuan/store.ts:2130`  
   The post-move verification poll is unreachable — `ok = true` is set before the loop, so `if (ok) break` fires on iteration 0 and the `SELECT parent_id` confirmation never runs; every moveBlock is then counted as a successful move even though api.ts itself documents that a refused move returns `code:0` and does nothing.
-- **medium · bug** `src/siyuan/store.ts:190`  
-  `pruneDestroyedSiblings` declares an existing sibling block 'destroyed' after two SQL misses only 200 ms apart and never consults `freshlyInserted`, so a sibling inserted by the previous write-back whose row the kernel has not flushed yet loses its listItem mapping (its position is then never corrected) and, when that was the node's only mapping, is deleted from the block map and re-inserted as a duplicate.
+- ~~**medium · bug** `src/siyuan/store.ts:190`~~ **fixed**
+  `pruneDestroyedSiblings` declared an existing sibling block 'destroyed' after two SQL misses only
+  200 ms apart and never consulted `freshlyInserted`. Fixed: fresh blocks are skipped before any probe
+  SQL. Index flush lag measured at 200ms~2.8s on the isolated instance; pinned by
+  `src/siyuan/prune-fresh.test.ts` (red-proofed — the assertion is on the probe SQL, since the
+  retention would revive a cleared fresh mapping and hide the defect from a mapping assertion).
 - **medium · bug** `src/siyuan/store.ts:443`  
   The two branches of loadBlockMap disagree about preserving the previous mapping: the DOM branch keeps an old entry only when its value is in `freshlyInserted`, while the SQL branch keeps every entry the query did not return — so the node-id→block-id alignment that `refreshMapsAfterCreate` builds after createDoc is dropped by the very next loadBlockMap, and every node in a freshly created document then looks new to syncStructure.
 

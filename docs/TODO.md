@@ -17,7 +17,14 @@ and the next work is the tooling gaps and the modularity list, which are the hon
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
 
-**Resolved, verified, and removed from the queue (numbering pass):**
+**Resolved, verified, and removed from the queue (numbering pass + audit finding, measured):**
+
+- **`pruneDestroyedSiblings` probed freshly-inserted siblings.** The SQL index flushes 200ms~2.8s
+  after insertBlock (measured), while the prune's double-confirm waits only 200ms — a sibling from
+  the previous write-back missed both rounds while alive, losing its mapping and duplicating next
+  pass. Fixed by skipping `freshlyInserted` blocks before any probe SQL (`prune-fresh.test.ts`,
+  red-proofed; the assertion is on the probe SQL itself, since the retention would revive a cleared
+  fresh mapping and hide the defect from a mapping assertion).
 
 - **Numbering a node never reached SiYuan.** The toolbar `1.` button and the `1. ` shortcut set
   `numbered` with no text change, yet every write path emitted `- `. Fixed: `1. ` emission
