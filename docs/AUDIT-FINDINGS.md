@@ -568,8 +568,9 @@ conclusion to draw from a complete-looking list of findings.
   every run. Now maps each run through the source (with escape fallback); pinned by selftest case
   36, which discriminates old vs new logic. The fix surfaced 2 real second-runs, both resolved
   (ledger wording reworded, unverifiable kernel quote removed).
-- **low · dead-code** `scripts/audit-privacy.py:171`  
-  check_patterns(paths, label) never reads `label` - the body has no reference to it - yet all four call sites pass a scope name, which suggests the summary distinguishes scopes when it does not.
+- ~~**low · dead-code** `scripts/audit-privacy.py:171`~~ **fixed**
+  The unused `label` parameter is removed from `check_patterns` and all four call sites
+  (verified: privacy selftest green).
 - **low · docs** `scripts/audit-privacy.py:156`  
   MAX_BYTES silently drops artifacts from the --live scan and nothing prints how many were dropped, so 'the rules found nothing' does not say how much of the local artifact tree was actually read - while the tracked-file scope does print its skipped count.
 - **low · dead-code** `scripts/check.py:155`  
@@ -616,10 +617,13 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-live
 
-- **low · dead-code** `scripts/clean-test-instance.py:1`  
-  The leftover-document cleaner is reachable from nothing: there is no npm script, no reference in docs/TESTING.md's command cheat sheet and no call from any other script, so the problem it exists to solve is only discoverable by reading the file.
-- **low · fallback** `scripts/mindmap-shot.py:33`  
-  The CDP base URL is assembled by hand although env.py already derives it (cfg.cdp_http, which the sibling script uses).
+- ~~**low · dead-code** `scripts/clean-test-instance.py:1`~~ **fixed**
+  The leftover report in `run-e2e.py` now points at the cleaner
+  (`python3 scripts/clean-test-instance.py --delete`), so the remedy is discoverable where the
+  problem surfaces.
+- ~~**low · fallback** `scripts/mindmap-shot.py:33`~~ **stale — already fixed before this pass**
+  The URL comes from `env.cfg.cdp_host/cdp_port` (verified by read); the finding predates the
+  env.py consolidation.
 - ~~**low · bug** `scripts/mindmap-shot.py:130`~~ **fixed**
   Rejected probe connections are collected and closed (winner + fallback paths).
 - ~~**low · bug** `scripts/perf-probe.py:40`~~ **fixed**

@@ -287,6 +287,7 @@ def _report_leftover_documents():
         print(f"      … and {len(leftovers) - 5} more")
     print("    A leftover is not a product defect, but later runs may write into it and pass for the wrong")
     print("    reason. Delete it, and make the case that created it clean up after itself.")
+    print("    (To clear the instance: python3 scripts/clean-test-instance.py --delete)")
 
 
 def _refuse_if_another_run_is_active():

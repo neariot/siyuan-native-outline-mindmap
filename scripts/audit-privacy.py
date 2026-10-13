@@ -189,7 +189,7 @@ def read_lines(relpath):
         return []
 
 
-def check_patterns(paths, label):
+def check_patterns(paths):
     """The unconditional rules, over whatever scope was asked for."""
     findings, scanned, skipped = [], 0, 0
     counts, excused = {}, {}
@@ -447,15 +447,15 @@ def selftest():
                   and bool(CREDENTIAL_CONTEXT.search(token_line))))
     cases.append(("a 16-character literal with no credential context is not",
                   not bool(CREDENTIAL_CONTEXT.search('const slug = "' + token_fixture + '";'))))
-    own = check_patterns(["scripts/audit-privacy.py"], "self")
+    own = check_patterns(["scripts/audit-privacy.py"])
     cases.append(("this tool's own source passes its own rules (findings: %d, ids: %d)"
                   % (len(own[0]), sum(own[3].values())), not own[0]))
-    fixture = check_patterns(["src/core/map.test.ts"], "fixture")
+    fixture = check_patterns(["src/core/map.test.ts"])
     cases.append(("an id in a fixture is excused, and counted (excused: %s)"
                   % fixture[4], not fixture[0] and fixture[4].get("test-fixture-id", 0) > 0))
-    product = check_patterns(["src/siyuan/store.ts"], "product")
+    product = check_patterns(["src/siyuan/store.ts"])
     cases.append(("the same id in product code is not excused",
-                  check_patterns(["src/siyuan/store.ts"], "product")[0] == []))
+                  check_patterns(["src/siyuan/store.ts"])[0] == []))
     # The `--live` verdict, end to end: a notebook identity found in a file must make the run exit 1.
     # Assembled from code points, like the id above, so this tool does not flag its own source.
     live_name = "".join(chr(c) for c in (0x4e2d, 0x6587, 0x6d4b, 0x8bd5))
@@ -520,7 +520,7 @@ def main():
         return 0
 
     print("audit-privacy: %d tracked file(s), %d local artifact(s)" % (len(tracked), len(artifacts)))
-    findings, scanned, skipped, counts, excused = check_patterns(tracked, "tracked")
+    findings, scanned, skipped, counts, excused = check_patterns(tracked)
 
     if args.live:
         import env  # noqa: E402  (lazily: only --live needs the configuration)
