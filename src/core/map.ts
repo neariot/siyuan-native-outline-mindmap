@@ -671,6 +671,13 @@ export function nodeToLine(n: OutlineNode): string {
     const hashes = '#'.repeat(heading);
     return `${hashes} ${prefix}${body}`;
   }
+  // An ordered list item: SiYuan creates an ordered List (`l/o`) for `1. x` and an unordered one
+  // (`l/u`) for `- x` (measured on the isolated instance —— mixed siblings are even split into
+  // separate lists), and the read side parses `1.` back into `numbered`. So the marker is the whole
+  // representation: writing `- ` here would drop the numbering on every write-back, while neither
+  // the toolbar `1.` button nor the `1. ` inline shortcut changes any other field that the write
+  // path compares.
+  if (n.numbered) return `1. ${prefix}${body}`;
   return `- ${prefix}${body}`;
 }
 
@@ -695,16 +702,22 @@ function walkNodesToLines(list: OutlineNode[], depth: number, lines: string[]): 
     // `{: a="x"}}body` (an extra `}` before the body), polluting the content.
     const attr = attrs.length ? `{: ${attrs.join(' ')}}` : '';
     const isHeading = line.startsWith('#');
+    // ★ Ordered items keep their own marker: this walk used to strip nodeToLine's `- ` and reassemble
+    //   `- …` unconditionally, so a numbered node came out as `- 1. item` —— which the read side takes
+    //   for a plain node whose text starts with "1. " (measured: the round trip lost both the numbering
+    //   and the marker text). `1. {: id="…"}body` is a form SiYuan itself writes, so it reassembles the
+    //   same way, with the ordered marker.
+    const isOrdered = /^\d+\.\s/.test(line);
     if (isHeading) {
       // A heading block does not support list-item attributes; the attribute goes on its own flush-left line
       lines.push(`${indent}${line}`);
       if (attr) lines.push(attr);
     } else {
-      // Strip nodeToLine's `- ` prefix and reassemble
-      let bodyOnly = line.replace(/^-\s?/, '');
+      // Strip nodeToLine's `- `/`1. ` prefix and reassemble
+      let bodyOnly = line.replace(/^(?:-\s?|\d+\.\s?)/, '');
       // Empty-text node: SiYuan does not keep an empty list item's body, so a zero-width placeholder keeps the node round-trippable.
       if (!bodyOnly.trim()) bodyOnly = '\u200b';
-      lines.push(`${indent}- ${attr}${bodyOnly}`);
+      lines.push(`${indent}${isOrdered ? '1. ' : '- '}${attr}${bodyOnly}`);
       // Attached paragraphs: in SiYuan a listItem can have several sibling NodeParagraph blocks.
       //
       // ★ **Every attached paragraph must be preceded by a blank line** (confirmed by ablation):
@@ -836,7 +849,10 @@ export function takeTitleParagraphs(): string[] {
  * (`- {: id="..."}[ ] x`).
  */
 export function taskStateOfKramdownLine(line: string): 0 | 1 | 2 {
-  let body = line.replace(/^\s*[-*+]\s+/, '');
+  // ★ Ordered markers count too: `1. [x] y` is a checked task in an ordered list, and the store
+  //   compares this against SQL markdown on every save —— without the `\d+\.` alternative a numbered
+  //   task would read as "no task" and be rewritten on every write-back.
+  let body = line.replace(/^\s*(?:[-*+]|\d+\.)\s+/, '');
   for (let i = 0; i < 2 && /^\{:/.test(body); i++) body = body.replace(/^\{:[^}]*\}\s*/, '');
   if (/^\[x\]\s*/i.test(body)) return 2;
   if (/^\[ \]\s*/.test(body)) return 1;

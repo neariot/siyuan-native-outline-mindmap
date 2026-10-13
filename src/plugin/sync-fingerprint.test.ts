@@ -109,6 +109,21 @@ const withParas = (n: OutlineNode, paragraphs: string[]): OutlineNode => ({ ...n
   );
 }
 
+// ---------------------------------------------------------------- numbering changes block markup, so it counts
+
+{
+  // Measured on the isolated instance: `- x` creates an unordered List (`l/u`) while `1. x` creates
+  // an ordered one (`l/o`) —— mixed siblings are even split into separate lists. A numbered toggle is
+  // therefore a structure change, and the fingerprint must see it, or the toggle takes the text-only
+  // path and never reaches SiYuan.
+  const unordered = [N('a', '正文')];
+  const ordered = [{ ...N('a', '正文'), numbered: true } as OutlineNode];
+  check(
+    '★★ a numbered toggle changes the fingerprint (or it is silently dropped)',
+    structureFingerprint(unordered) !== structureFingerprint(ordered),
+  );
+}
+
 // ---------------------------------------------------------------- and it still coalesces
 
 {

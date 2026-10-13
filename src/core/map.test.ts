@@ -3,7 +3,7 @@
 //   node --experimental-strip-types src/core/map.test.ts   (Node 22+)
 // or run it through rsbuild/tsx.
 
-import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, makeSiyuanId, SIYUAN_ID_RE, takeTitleParagraphs } from './map';
+import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, makeSiyuanId, SIYUAN_ID_RE, takeTitleParagraphs, nodeToLine, taskStateOfKramdownLine } from './map';
 import { htmlToText } from '../model/tree';
 import type { OutlineNode } from '../model/types';
 
@@ -1236,6 +1236,51 @@ console.log('=== blank-line rules ===');
   const parasOnly = takeTitleParagraphs();
   check('a pure-paragraph document has no list node', treeOnlyParas.length === 0);
   check('every paragraph of a pure-paragraph document belongs to the title node', parasOnly.length === 2 && parasOnly[0].includes('段落一') && parasOnly[1].includes('段落二'));
+}
+
+// ---------------------------------------------------------------- numbered round trip
+//
+// A numbered node is written with an ordered marker and reads back into `numbered`. Measured on the
+// isolated instance: `1. x` creates an ordered List (`l/o`) while `- x` creates an unordered one
+// (`l/u`), so the marker is the whole representation —— dropping it on write loses the numbering
+// on every write-back (the toolbar `1.` button and the `1. ` inline shortcut both set `numbered`
+// with no text change, so nothing else in the write path could carry it).
+
+{
+  const num = (over: Partial<OutlineNode> = {}): OutlineNode =>
+    ({ id: 'n', modified: 1, text: '<span>任务</span>', children: [], ...over });
+
+  // write side: the marker mirrors the read side's `/^(-\s+|\d+\.\s+)/` + `isNumbered` rules
+  check('★ a numbered node serializes with an ordered marker', /^1\.\s/.test(nodeToLine(num({ numbered: true }))), nodeToLine(num({ numbered: true })));
+  check('★ a plain node still serializes unordered', /^- /.test(nodeToLine(num())));
+  check('★ numbered + todo serializes as an ordered task', nodeToLine(num({ numbered: true, taskStatus: 1 })).startsWith('1. [ ] '), nodeToLine(num({ numbered: true, taskStatus: 1 })));
+  check('★ numbered + done serializes as an ordered checked task', nodeToLine(num({ numbered: true, taskStatus: 2 })).startsWith('1. [x] '), nodeToLine(num({ numbered: true, taskStatus: 2 })));
+
+  // the task reader sees the marker form too (the store compares SQL markdown per save)
+  check('★ task state reads through an ordered marker (todo)', taskStateOfKramdownLine('1. [ ] 待办') === 1);
+  check('★ task state reads through an ordered marker (done)', taskStateOfKramdownLine('1. [x] 待办') === 2);
+  check('★ an ordered plain line is still "no task"', taskStateOfKramdownLine('1. 待办') === 0);
+
+  // full round trip: tree -> kramdown -> tree
+  const kd = treeToKramdown([num({ numbered: true })], { docTitle: 'T' });
+  const back = kramdownToTree(kd);
+  check('★★ a numbered node survives the round trip', back[0]?.numbered === true, kd);
+
+  const kdMix = treeToKramdown([num({ id: 'a' }), num({ id: 'b', numbered: true }), num({ id: 'c' })], { docTitle: 'T' });
+  const backMix = kramdownToTree(kdMix);
+  check(
+    '★★ mixed siblings keep their own markers through the round trip',
+    backMix[0]?.numbered !== true && backMix[1]?.numbered === true && backMix[2]?.numbered !== true,
+    kdMix,
+  );
+
+  const kdTask = treeToKramdown([num({ numbered: true, taskStatus: 2 })], { docTitle: 'T' });
+  const backTask = kramdownToTree(kdTask);
+  check(
+    '★★ a numbered task keeps both halves through the round trip',
+    backTask[0]?.numbered === true && backTask[0]?.taskStatus === 2,
+    kdTask,
+  );
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

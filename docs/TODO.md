@@ -17,6 +17,17 @@ and the next work is the tooling gaps and the modularity list, which are the hon
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
 
+- **Numbering an already-synced node still does not reach SiYuan (new nodes do).** Toggling `numbered`
+  on a node whose block already exists is write-invisible: the kernel has no measured in-place `u`↔`o`
+  conversion —— `updateBlock` markdown on the item, on the parent list, and a faithful
+  getBlockDOM → flip-subtype → updateBlockDom round trip all answer `code: 0` and change nothing
+  (probed on the isolated instance; probe docs created and deleted). Fixed in this pass is the creation
+  path (`nodeToLine`/`walkNodesToLines` emit `1. `, verified live: our bytes create `l/o`), the two gates
+  that were blind to numbering (`serializeTree`, `structureFingerprint`), and the `1. [x]` task reader.
+  The remaining sketch is insert-`1.`-list + move-item + cleanup (the item id survives a move; SiYuan's
+  own frontend converts by moving items between lists, `app/src/protyle/wysiwyg/list.ts`). Needs its own
+  E2E (toggle → poll the document for `1.`) before it ships.
+
 **Resolved, verified, and removed from the queue:**
 
 | Was | How it was checked |

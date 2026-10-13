@@ -127,6 +127,17 @@ const N = (id: string, text = id, children: OutlineNode[] = []): OutlineNode =>
     '★★ taskStatus is part of the serialization (todo toggle must trigger catch-up write)',
     serializeTree(k0) !== serializeTree(k1) && serializeTree(k1) !== serializeTree(k2),
   );
+
+  // numbering toggles the list marker (`-` vs `1.`), which is a different block subtype in SiYuan
+  // (`l/u` vs `l/o`, measured), so it must be part of the serialization too —— otherwise a pure
+  // "number this node" edit compares equal and the catch-up write is skipped, the same silent-drop
+  // shape as the taskStatus bug above.
+  const u0 = [N('甲', '正文')];
+  const u1 = [{ ...N('甲', '正文'), numbered: true } as OutlineNode];
+  check(
+    '★★ numbered is part of the serialization (number toggle must trigger catch-up write)',
+    serializeTree(u0) !== serializeTree(u1),
+  );
 }
 
 // ---------------------------------------------------------------- the shape the fix depends on

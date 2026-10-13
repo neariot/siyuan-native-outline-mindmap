@@ -662,6 +662,12 @@ export function serializeTree(tree: OutlineNode[]): string {
       //     **replays unchanged** on attached paragraphs.
       parts.push(`${n.id}:paras=${JSON.stringify(n.paragraphs ?? [])}`);
       parts.push(`${n.id}:task=${n.taskStatus ?? 0}`);
+      // ★ Numbering is block markup, not text: `- x` is an unordered List (`l/u`) while `1. x` is an
+      //   ordered one (`l/o`), measured. A pure "number this node" edit changes no field above, so
+      //   without this line it compares equal and the catch-up write is skipped —— the fourth appearance
+      //   of the "added a field instead of the shape" pitfall in this one function (note, paragraphs,
+      //   taskStatus, now numbered).
+      parts.push(`${n.id}:num=${n.numbered ? 1 : 0}`);
       if (n.children?.length) walk(n.children);
       parts.push(')');
     }
@@ -699,9 +705,11 @@ export function structureFingerprint(tree: OutlineNode[]): string {
     for (const n of l) {
       // Child order is expressed with ids: order changed → fingerprint changes
       const kids = (n.children ?? []).map((c) => c.id).join(',');
-      // Attached paragraphs each produce their own block, so they are structure
+      // Attached paragraphs each produce their own block, so they are structure.
+      // Numbering too: `- x` vs `1. x` is an unordered vs ordered List (`l/u` vs `l/o`, measured),
+      // so a numbered toggle must take the full structure path rather than the text-only one.
       parts.push(
-        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}`,
+        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}n${n.numbered ? 1 : 0}`,
       );
       if (n.children?.length) walk(n.children);
     }
