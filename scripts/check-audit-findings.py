@@ -90,6 +90,54 @@ def distinguishing_words(desc: str) -> list[str]:
     return seen[:8]
 
 
+def header_counts(text: str) -> dict | None:
+    """The header's own tally, or None when the rows are absent.
+
+    ★ The header says the count is "derived from the entries themselves so it cannot drift" —— and it
+    drifted anyway (206 while the file held 193, and a `16 fixed or refuted` claim that no longer
+    matched the 147 struck entries). A claim about the file that nothing recomputes is a claim that
+    goes stale silently, so this reads the four rows back and `main` fails when they disagree.
+    """
+    rows = {}
+    for label, key in (
+        ('entries in this file', 'entries'),
+        ('severity', 'severity'),
+        ('by category', 'category'),
+    ):
+        m = re.search(r'^\| ' + re.escape(label) + r' \| (.+?) \|$', text, re.M)
+        if not m:
+            return None
+        rows[key] = m.group(1)
+    return rows
+
+
+def cat_counts(s: str) -> dict:
+    """`test-quality 52, docs 50` → counts. Order-insensitive on purpose: tying counts have no
+    canonical order, and demanding one would make the check fail on a cosmetic reshuffle."""
+    return {m[1]: int(m[2]) for m in re.finditer(r'([a-z][a-z-]*) (\d+)', s)}
+
+
+def tally(entries: list[dict], text: str) -> dict:
+    """Recount the file the way the header reports it: severity and category over **all** entries,
+    open and struck alike (`137 low, 69 medium` summed to the `206` total), while the open/struck
+    split is carried by the entries row."""
+    import collections
+    all_e = re.findall(r'^- (?:~~)?\*\*(high|medium|low) · ([a-z-]+)\*\*', text, re.M)
+    struck = len(re.findall(r'^- ~~\*\*', text, re.M))
+    sev = collections.Counter(sev for sev, _ in all_e)
+    cat = collections.Counter(cat for _, cat in all_e)
+    return {
+        'total': len(all_e),
+        'open': len(entries),
+        'struck': struck,
+        'severity': f"{sev.get('low', 0)} low, {sev.get('medium', 0)} medium"
+                    + (f", {sev['high']} high" if sev.get('high') else ''),
+        'severity_counts': dict(sev),
+        'category': ', '.join(f'{k} {v}' for k, v in sorted(cat.items(), key=lambda kv: (-kv[1], kv[0]))),
+        'category_counts': dict(cat),
+    }
+
+
 def parse_ledger(text: str) -> list[dict]:
     lines = text.split('\n')
     out: list[dict] = []
@@ -203,6 +251,33 @@ def selftest() -> int:
     check('a well-formed entry parses', len(parsed), 1)
     check('the citation is split', (parsed[0]['file'], parsed[0]['line']), ('a.ts', 1) if parsed else None)
 
+    # ★ The header tally check, both directions —— a check that cannot go red is not a check.
+    hdr = (
+        '| entries in this file | **2** (1 struck, 1 open) |\n'
+        '| severity | 1 low, 1 medium |\n'
+        '| by category | bug 1, docs 1 |\n'
+    )
+    body = '- **low · docs** `a.ts:1`  \n  d\n- ~~**medium · bug** `a.ts:2`~~ **fixed**\n  d\n'
+    good = parse_ledger(body)
+    check('the header tally matches the entries',
+          tally(good, body)['total'], 2)
+    check('the severity row is reproduced verbatim',
+          tally(good, body)['severity'], '1 low, 1 medium')
+    check('the category row is order-insensitive',
+          cat_counts('bug 1, docs 1'), {'bug': 1, 'docs': 1})
+    check('the category row is reproduced as counts',
+          cat_counts(tally(good, body)['category']), {'bug': 1, 'docs': 1})
+    check('the header rows are read back',
+          header_counts(hdr) is not None, True)
+    check('a stale header is not accepted',
+          header_counts(hdr)['severity'] == tally(good, body)['severity'], True)
+    stale = hdr.replace('| severity | 1 low, 1 medium |', '| severity | 2 low, 0 medium |')
+    check('a drifted header is detected',
+          header_counts(stale)['severity'] != tally(good, body)['severity'], True)
+    stale_cat = hdr.replace('| by category | bug 1, docs 1 |', '| by category | bug 2, docs 0 |')
+    check('a drifted category row is detected',
+          cat_counts(header_counts(stale_cat)['category']) != tally(good, body)['category_counts'], True)
+
     if failures:
         print(f'check-audit-findings --selftest: {failures} case(s) failed')
         return 1
@@ -286,6 +361,28 @@ def main() -> int:
               'the defect was fixed (remove the entry) or the code moved (correct the citation). '
               'Run with --json for the machine-readable list.')
         return 1
+
+    # The header's tally must agree with the entries. Kept last so the more actionable citation errors
+    # are reported first, and only a header that is actually present is checked.
+    counts_row = header_counts(text)
+    if counts_row:
+        now = tally(entries, text)
+        problems: list[str] = []
+        if counts_row['entries'] != f"**{now['total']}** ({now['struck']} struck, {now['open']} open)":
+            problems.append(f"entries in this file | {counts_row['entries']}")
+        if counts_row['severity'] != now['severity']:
+            problems.append(f"severity | {counts_row['severity']}")
+        if cat_counts(counts_row['category']) != now['category_counts']:
+            problems.append(f"by category | {counts_row['category']}")
+        if problems:
+            print('\n✘ the header tally disagrees with the entries:')
+            for p in problems:
+                print(f'    {p}')
+            print('  expected:')
+            print(f"    entries in this file | **{now['total']}** ({now['struck']} struck, {now['open']} open)")
+            print(f"    severity | {now['severity']}")
+            print(f"    by category | {now['category']}")
+            return 1
     return 0
 
 

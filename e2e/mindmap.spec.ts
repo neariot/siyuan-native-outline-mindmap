@@ -51,16 +51,29 @@ test.beforeEach(async ({ page }) => {
  * ★ This must be decided by node identity, never by comparing coordinate sets ——
  * "balanced" and "alternate" under equal-weight subtrees have the same left/right counts (2/2 each),
  * and the x coordinate sets may be identical too; only which branch is left and which is right differs.
+ *
+ * ★ The root is found by its **node id**, not by "the first node whose text is not a branch" ——
+ *   that rule both mis-stated the criterion and carried a `?? info[0]` fallback that silently
+ *   accepted a failed detection. The synthetic root renders as `data-node-id="__root__"`
+ *   (`Mindmap.tsx` sets the root node's id to exactly that), so the identity is available in the DOM.
  */
 async function sidesByBranch(page: Page): Promise<Record<string, 'left' | 'right' | 'none'>> {
   return page.evaluate((branches: string[]) => {
     const nodes = [...document.querySelectorAll('.mm-node')];
     const info = nodes.map((n) => {
       const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(n.getAttribute('transform') ?? '');
-      return { x: m ? parseFloat(m[1]) : NaN, text: (n.textContent ?? '').replace(/\s+/g, '') };
+      return {
+        id: n.getAttribute('data-node-id') ?? '',
+        x: m ? parseFloat(m[1]) : NaN,
+        text: (n.textContent ?? '').replace(/\s+/g, ''),
+      };
     });
-    // Root = the node with the smallest x? No —— the root is the node at the smallest depth. Here we use the one that contains the document title
-    const root = info.find((i) => i.text && !branches.some((b) => i.text.startsWith(b))) ?? info[0];
+    const root = info.find((i) => i.id === '__root__');
+    if (!root || !Number.isFinite(root.x)) {
+      throw new Error(
+        `sidesByBranch: no root node (data-node-id="__root__") on the canvas —— rendered ids: ${info.map((i) => i.id).join(', ') || '(none)'}`,
+      );
+    }
     const out: Record<string, 'left' | 'right' | 'none'> = {};
     for (const b of branches) {
       const hit = info.find((i) => i.text.startsWith(b));

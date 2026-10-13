@@ -101,6 +101,17 @@ section is a fact worth stating rather than a section to delete and re-invent.
   guards, post-expiry coverage, corrupt-vs-missing keymaps.
 - **Label-scope fix.** structure-order distinctness reads the five asserted labels, not the whole
   parsed set (eight options) or the test literal — red-proofed.
+- **E2E helper batch (ten findings).** `ensureOutlineReady` requires a real row (not the placeholder);
+  `firstParentBullet` throws instead of returning −1; the three uncalled helpers and their private
+  `focusNodeRow` deleted; `openSiYuan`'s unexercised `opts.url`, `MOBILE_VIEWPORT` and the dead
+  `view` locator deleted; `restoreTheme` writes the captured appearance (incl. `modeOS`) back, so a
+  run no longer clears "follow the system"; `sidesByBranch` finds the root by `data-node-id="__root__"`
+  and throws when absent; 19 `notebook || (await resolveTestNotebook(api))` fallbacks removed and
+  `createTempDocTitled` rejects an empty notebook; the drag write-back criterion compares the full
+  kernel list against UI-derived indentation, so data loss fails instead of comparing equal.
+- **Ledger header is now checked, not remembered.** The header claimed its tally "cannot drift" while
+  reading 206 against 193 entries; `check-audit-findings.py` recomputes the four rows and fails on a
+  mismatch, with the red proof and self-test cases in the same script.
 - **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
   attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
   to `model/tree.ts` with all sites calling them.

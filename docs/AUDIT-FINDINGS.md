@@ -13,9 +13,9 @@ table below is the original run's tally and is kept as the record of what that r
 
 | | now |
 |---|---|
-| entries in this file | **206** (16 fixed or refuted, counted by `check-audit-findings.py`) |
-| severity | 137 low, 69 medium |
-| by category | test-quality 63, docs 51, dead-code 34, bug 34, fallback 8, type-escape 7, language 5, ux 4 |
+| entries in this file | **193** (147 struck, 46 open) |
+| severity | 125 low, 68 medium |
+| by category | test-quality 52, docs 50, bug 34, dead-code 33, fallback 8, type-escape 7, language 5, ux 4 |
 
 ★ `python3 scripts/check-audit-findings.py` is the authority for whether an entry's citation still
 resolves, and it **fails** on one that does not. It cannot tell whether a defect is fixed. Entries that
@@ -445,35 +445,43 @@ conclusion to draw from a complete-looking list of findings.
 
 - ~~**low · docs** `docs/TESTING.md:32`~~ **already fixed before this pass**
   Same `/usr/bin/chromium` staleness as above, fixed by the same doc edit (verified line 191).
-- **low · dead-code** `e2e/fixtures.ts:76`  
-  openSiYuan's `opts: { url?: string }` option plus its `opts.url ?? '/'` default is never exercised: the only caller passes no argument, so the third way to decide which URL is opened is untested surface sitting in a file whose header says the target must have exactly one source.
-- **low · dead-code** `e2e/mindmap.ts:31`  
-  `const view = page.locator('.om-mm-viewswitch');` is declared at the top of ensureDockOpen and never read again; the function asks the same question through page.evaluate (the point of the surrounding comment), so this line is a leftover locator.
-- **low · dead-code** `e2e/mobile.ts:25`  
-  MOBILE_VIEWPORT is exported, documented as the viewport the mobile suite uses, and never read - the suite's real viewport comes from `devices['iPhone 12']` in mobileContext, so the constant is a second, unread copy of that fact.
-- **low · dead-code** `e2e/outline.ts:71`  
-  Three exported helpers are called by nothing (typeInNode, pressKeyInNode, clickBullet), each carrying its own selector that can rot unnoticed - the same failure this file already documents for a fourth one.
-- **low · test-quality** `e2e/outline.ts:40`  
-  ensureOutlineReady's criterion counts every `.node-row` including the empty placeholder row, while its message claims a real node row - so the precondition passes when the outline rendered no content, the family of vacuous pass the ledger records as more dangerous than a false failure.
+- ~~**low · dead-code** `e2e/fixtures.ts:76`~~ **fixed**
+  The unused `opts: { url?: string }` parameter and its `opts.url ?? '/'` default are deleted ——
+  `openSiYuan(page)` now has exactly one way to decide which URL is opened.
+- ~~**low · dead-code** `e2e/mindmap.ts:31`~~ **fixed**
+  The never-read `const view = page.locator('.om-mm-viewswitch');` is deleted.
+- ~~**low · dead-code** `e2e/mobile.ts:25`~~ **fixed**
+  `MOBILE_VIEWPORT` is deleted; the doc comment now says the viewport comes from
+  `devices['iPhone 12']`, which is the single source.
+- ~~**low · dead-code** `e2e/outline.ts:71`~~ **fixed**
+  `typeInNode`, `pressKeyInNode`, `clickBullet` and the `focusNodeRow` only they called are deleted
+  (verified: no call site in `e2e/` or `src/`).
+- ~~**low · test-quality** `e2e/outline.ts:40`~~ **fixed**
+  `ensureOutlineReady` polls `.node-row:not(.node-row-empty)`, so an empty outline no longer
+  satisfies the precondition; the message matches the criterion.
 - ~~**low · dead-code** `e2e/testdoc.ts:279`~~ **fixed**
   `SPECIAL_TOP` is now imported by `export.spec.ts` (the bare-literal and round-trip assertions
   read the fixture), so export and assertion cannot drift apart.
-- **low · bug** `e2e/themes.ts:172`  
-  restoreTheme is documented as 'Put the instance back the way it was found' but neither of its two effects restores anything: `mode` defaults to the literal 'light' rather than the mode it found, and useTheme's forced `modeOS: false` (which it needs to make the switch real) is never written back, so a run permanently clears 'follow the system' on the shared instance.
+- ~~**low · bug** `e2e/themes.ts:172`~~ **fixed**
+  `restoreTheme` writes the **captured** appearance (including `modeOS`) back verbatim, so a run no
+  longer permanently clears "follow the system" on the shared instance.
 
 ### e2e-specs-a
 
-- **low · fallback** `e2e/mindmap.spec.ts:61`  
-  sidesByBranch identifies the root by 'the first node whose text does not start with a branch name' — not the criterion its own comment states — and the `?? info[0]` fallback hides a failed detection; it is correct today only because the layout happens to emit the root first.
+- ~~**low · fallback** `e2e/mindmap.spec.ts:61`~~ **fixed**
+  The root is found by `data-node-id="__root__"` and a missing root **throws**; the
+  "first node whose text is not a branch" rule and its `?? info[0]` fallback are gone.
 - ~~**low · bug** `e2e/mindmap.spec.ts:888`~~ **fixed**
   Both download cases now `await Promise.all([waitForEvent, click])`, so a failed click rejects
   the wait with it instead of stranding an unhandled rejection 30s later.
 - ~~**low · test-quality** `e2e/outline.spec.ts:219`~~ **fixed**
   The write-back probe is scoped to the temp document (`root_id`), not the whole instance.
-- **low · test-quality** `e2e/outline.spec.ts:107`  
-  firstParentBullet returns -1 for a missing precondition and this caller does not check it; a negative index selects the last row, so the case would silently zoom an unrelated (leaf) row and could still pass.
-- **low · fallback** `e2e/outline.spec.ts:202`  
-  `notebook || (await resolveTestNotebook(api))` is an unreachable fallback of exactly the `X || <fallback>` shape AGENTS §5.1.3 forbids; if it ever ran, the temp document would be created in a notebook resolved by a name heuristic instead of failing.
+- ~~**low · test-quality** `e2e/outline.spec.ts:107`~~ **fixed**
+  `firstParentBullet` throws when no bullet has children, so the caller can no longer select
+  `nth(-1)`; the redundant caller-side guard is removed.
+- ~~**low · fallback** `e2e/outline.spec.ts:202`~~ **fixed**
+  All 19 `notebook || (await resolveTestNotebook(api))` sites now pass `notebook` directly, and
+  `createTempDocTitled` rejects an empty notebook (verified: 0 occurrences left).
 - ~~**low · test-quality** `e2e/outline.spec.ts:184`~~ **fixed**
   Marker cleanup runs in `finally` — a failing assertion no longer leaves the shared fixture dirty.
 
@@ -481,8 +489,9 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `e2e/ctxmenu.spec.ts:16`  
   The file header states the menu has 7 items while the file's own case asserts exactly 8, so the header is stale (it also disagrees with the enumerated list in the same sentence).
-- **low · test-quality** `e2e/dragdrop.spec.ts:177`  
-  The "written back to SiYuan" criterion compares `topLevelTexts` with the UI list **filtered by DB membership**, so a node that disappeared from the kernel still compares equal — the assertion is one-directional and cannot see data loss.
+- ~~**low · test-quality** `e2e/dragdrop.spec.ts:177`~~ **fixed**
+  The write-back criterion compares the full kernel list against `topLevelRowTexts` (derived from
+  UI indentation, independent of the kernel), so kernel data loss fails instead of comparing equal.
 - ~~**low · dead-code** `e2e/dragdrop.spec.ts:213`~~ **fixed**
   The kernel-order assertion compares against the kernel's own order instead of a hardcoded
   name list whose 丙/丁 entries this fixture never holds.
