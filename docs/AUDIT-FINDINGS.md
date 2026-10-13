@@ -225,8 +225,10 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-code
 
-- **medium · language** `src/plugin/i18n/zh_CN.json:127`  
-  Three catalogue entries double the escape: the raw JSON contains a backslash-backslash-n (and one backslash-backslash-u2019), which decodes to a literal backslash plus letter instead of a line break / a curly apostrophe, so the user is shown '\n' and '\u2019' as text.
+- ~~**medium · language** `src/plugin/i18n/zh_CN.json:127`~~ **refuted in writing**
+  Same removed keys as the bug entry above (`msgSummaryHint`/`msgSummaryTopLevel`, gone in
+  `9d06fda`): a whole-catalogue scan today finds zero remaining double-escapes in either file
+  (verified by script). Nothing to fix.
 - ~~**medium · bug** `src/plugin/mount.ts:2311`~~ **fixed**
   The mind-map write path fires `writeLatest()` with no echo-guard window and no `.catch`, so a failed write-back became an unhandled rejection whose message never reached the error bar. Every other write path surfaces failures through `setErr(describeWriteError(e))`; this call site is fired from a callback with no `await`, so the rejection had to be handled there. Now `.catch`es into the same path, which renders into `.om-mm-err`. ★ The entry said "two write paths" —— there is one such call site (`void ... | rg` over the file); the other must have been removed earlier, and the citation was re-pointed after an edit moved it.
 - ~~**medium · dead-code** `src/plugin/mount.ts:2061`~~ **fixed**
@@ -594,8 +596,10 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · docs** `scripts/redproof.py:253`~~ **stale — log is written**
   The log file is created at line 269 (`LOG_DIR.mkdir` + per-file path) before the printed path;
   the docstring matches. Verified by read.
-- **low · dead-code** `scripts/run-e2e.py:66`  
-  (Fixed: the key is read through `env.py` and the line is gone -- the entry point validates it and passes it explicitly.)
+- ~~**low · dead-code** `scripts/run-e2e.py:66`~~ **already fixed before this pass**
+  (The key is read through `env.py` and the line is gone — the entry point validates it and passes
+  it explicitly. Verified: lines 62-75 read token, browser, and notebook through `cfg` with
+  fail-fast validation.)
 - **low · docs** `scripts/run-e2e.py:62`  
   The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
 - ~~**low · bug** `scripts/run-tests.py:83`~~ **fixed**
