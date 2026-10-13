@@ -37,3 +37,4 @@ Candidates ordered by the risk of behavioral divergence:
 ### 2.4 Host Abstraction Layer (HAL) Convergence
 - **Current state**: The pure mathematical Tree Reconciler (`src/core/reconciler.ts`) and Host Driver SPI (`src/siyuan/host-driver.ts`, `native-driver.ts`, `virtual-driver.ts`) are built and unit-tested offline. The runtime write-back currently runs through `store.ts`'s internal mutation methods.
 - **Goal**: Progressively wire `NativeHostDriver` and `TreeReconciler` into `mount.ts` and `store.ts`, replacing procedural mutation sequences with atomic diff patches.
+- **Detailed Plan**: See [`docs/todo/hal-convergence.md`](hal-convergence.md) for the 3-phase execution roadmap.

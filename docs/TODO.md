@@ -23,7 +23,8 @@ Detailed backlogs and architectural notes are divided into topic sub-files:
 
 | Topic | Document | Contents |
 |---|---|---|
-| **Modularity & Refactoring** | [`docs/todo/modularity.md`](todo/modularity.md) | File footprints (`Outliner.tsx`, `store.ts`, `mount.ts`), safety rule unification, stateful tree walks, and Host Abstraction Layer (HAL) convergence roadmap |
+| **HAL Convergence** | [`docs/todo/hal-convergence.md`](todo/hal-convergence.md) | Phased execution plan for wiring `IHostDriver` and `TreeReconciler` into `mount.ts` and `store.ts` |
+| **Modularity & Refactoring** | [`docs/todo/modularity.md`](todo/modularity.md) | File footprints (`Outliner.tsx`, `store.ts`, `mount.ts`), safety rule unification, stateful tree walks |
 | **Deferred Features** | [`docs/todo/deferred.md`](todo/deferred.md) | Technical rationales and constraints for deliberately deferred features (free positioning, sibling ordering) |
 
 ---
