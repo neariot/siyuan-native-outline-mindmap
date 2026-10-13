@@ -9,6 +9,7 @@
 // decides whether to write can now be exercised in seconds instead of a 16-minute E2E run.
 
 import { SiYuanClient } from './api';
+import { parseDomToTree } from './dom-tree';
 import { VirtualKernel, VMSG, vnode } from './virtual-kernel';
 
 let pass = 0;
@@ -238,6 +239,86 @@ void (async () => {
       threw.includes('does not implement'),
       `got ${JSON.stringify(threw)}`,
     );
+  }
+
+  // ---------------------------------------------------------------- DOM AST generation & parseDomToTree
+
+  {
+    const kernel = new VirtualKernel({ sqlIndexDelayMs: 0 });
+    const client = new SiYuanClient({ baseUrl: '', token: '', fetchImpl: kernel.fetchImpl });
+    const docId = kernel.seedDoc('测试文档', '- 节点一\n  - 节点二\n');
+    const domRes = await client.getBlockDOM(docId);
+    check('getBlockDOM returns id and dom HTML', typeof domRes.dom === 'string' && domRes.dom.length > 0);
+    const treeState = parseDomToTree(domRes.dom, docId);
+    check('parseDomToTree finds the topListId', Boolean(treeState.topListId));
+    check('parseDomToTree tracks aliveIds for items and paragraphs', treeState.aliveIds.size >= 4);
+    check('parseDomToTree resolves itemToParagraph', treeState.itemToParagraph.size === 2);
+    check('parseDomToTree resolves itemToChildList for nested nodes', treeState.itemToChildList.size === 1);
+  }
+
+  // ---------------------------------------------------------------- task markers & subTypes
+
+  {
+    const kernel = new VirtualKernel({ sqlIndexDelayMs: 0 });
+    const client = new SiYuanClient({ baseUrl: '', token: '', fetchImpl: kernel.fetchImpl });
+    const docId = kernel.seedDoc('测试文档', '- [ ] 待办节点\n- [x] 节点二\n');
+    const domRes = await client.getBlockDOM(docId);
+    const treeState = parseDomToTree(domRes.dom, docId);
+    const items = kernel.rows().filter((b) => b.type === 'i');
+    check('todo item is marked unchecked (status 1)', treeState.itemTaskStatus.get(items[0].id) === 1);
+    check('done item is marked checked (status 2)', treeState.itemTaskStatus.get(items[1].id) === 2);
+
+    await client.updateTaskListItemMarker(items[0].id, 'X');
+    const updatedDom = await client.getBlockDOM(docId);
+    const updatedState = parseDomToTree(updatedDom.dom, docId);
+    check('updateTaskListItemMarker flips task status to checked', updatedState.itemTaskStatus.get(items[0].id) === 2);
+  }
+
+  // ---------------------------------------------------------------- ordered lists & numbering
+
+  {
+    const kernel = new VirtualKernel({ sqlIndexDelayMs: 0 });
+    const client = new SiYuanClient({ baseUrl: '', token: '', fetchImpl: kernel.fetchImpl });
+    const docId = kernel.seedDoc('测试文档', '1. 节点一\n2. 节点二\n');
+    const kids = await client.getChildBlocks(docId);
+    const listKid = kids.find((k) => k.type === 'l');
+    check('ordered list has subType o', listKid?.subType === 'o');
+    const domRes = await client.getBlockDOM(docId);
+    check('ordered list DOM carries data-subtype="o"', domRes.dom.includes('data-subtype="o"'));
+  }
+
+  // ---------------------------------------------------------------- rich SQL query engine
+
+  {
+    const kernel = new VirtualKernel({ sqlIndexDelayMs: 0 });
+    const client = new SiYuanClient({ baseUrl: '', token: '', fetchImpl: kernel.fetchImpl });
+    const docId = kernel.seedDoc('测试文档', '- 节点一\n  - 节点二\n');
+    const rows = await client.sql<{ id: string; type: string; subtype: string; sort: number }>(
+      `SELECT id, parent_id, root_id, type, subtype, content, markdown, ial, sort FROM blocks WHERE root_id = '${docId}' AND type IN ('l', 'i', 'p') ORDER BY sort ASC LIMIT 2000`,
+    );
+    check('SQL WHERE type IN (...) filters by multiple block types', rows.length >= 4);
+    check('SQL projects subtype column without undefined', rows.every((r) => typeof r.subtype === 'string'));
+
+    const items = kernel.rows().filter((b) => b.type === 'i');
+    const idIn = await client.sql<{ id: string; subtype: string }>(
+      `SELECT id, subtype FROM blocks WHERE id IN ('${items[0].id}', '${items[1].id}') LIMIT 2`,
+    );
+    check('SQL WHERE id IN (...) resolves exact block IDs', idIn.length === 2);
+
+    const countRes = await client.sql<{ count: number }>(`SELECT count(1) as count FROM blocks WHERE root_id = '${docId}'`);
+    check('SQL count(1) aggregation returns matching count', countRes.length === 1 && countRes[0].count >= 4);
+  }
+
+  // ---------------------------------------------------------------- insertBlockWithOpData
+
+  {
+    const kernel = new VirtualKernel({ sqlIndexDelayMs: 0 });
+    const client = new SiYuanClient({ baseUrl: '', token: '', fetchImpl: kernel.fetchImpl });
+    const docId = kernel.seedDoc('测试文档', '- 节点一\n');
+    const ins = await client.insertBlockWithOpData('- 节点二', docId);
+    check('insertBlockWithOpData returns listItemId from opData', Boolean(ins.listItemId));
+    check('insertBlockWithOpData returns paragraphId from opData', Boolean(ins.paragraphId));
+    check('insertBlockWithOpData returns opData with data-node-id', ins.opData.includes('data-node-id='));
   }
 
   // ---------------------------------------------------------------- report

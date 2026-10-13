@@ -107,6 +107,26 @@ async function rowTexts(page: Parameters<typeof openDoc>[0]): Promise<string[]> 
 }
 
 /**
+ * The UI's **top-level** row texts, in render order —— derived from indentation, not from the kernel.
+ *
+ * ★ Needed to compare the kernel against the UI without asking the kernel which rows to expect: the
+ *   earlier form filtered the UI list by kernel membership, so a node that had disappeared from the
+ *   kernel was simply dropped from the expected side and the two lists compared equal. Deriving the
+ *   level from the row's x offset keeps the two sides independent.
+ */
+async function topLevelRowTexts(page: Parameters<typeof openDoc>[0]): Promise<string[]> {
+  return page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.om-outline-wrap .node-row')].map((r) => ({
+      x: Math.round(r.getBoundingClientRect().left),
+      text: (r.querySelector('.node-text')?.textContent || '').trim(),
+    }));
+    if (rows.length === 0) return [];
+    const minX = Math.min(...rows.map((r) => r.x));
+    return rows.filter((r) => r.x === minX).map((r) => r.text);
+  });
+}
+
+/**
  * Read out "level + text" —— this is what a tree-structure change **must** be inspected with.
  *
  * ★ Why `rowTexts()` cannot be used: it returns flat text and **cannot see indentation**.
@@ -159,6 +179,9 @@ test('the order after dragging is written back to SiYuan', async ({ page }) => {
   const after = await rowTexts(page);
   expect(after[0], `"${target}" should have been dragged to the front`).toBe(target);
 
+  // ★ The UI's top-level rows are derived from **indentation**, independently of the kernel.
+  const uiTop = await topLevelRowTexts(page);
+
   // ★ The kernel write back is **asynchronous** (the plugin only starts the write and the kernel round trip after the drop),
   //   so reading immediately occasionally returns the old order —— the classic timing problem that passes alone and fails in a mixed run.
   //   So poll until the kernel catches up, then assert.
@@ -174,9 +197,11 @@ test('the order after dragging is written back to SiYuan', async ({ page }) => {
     .toBe(target);
 
   const dbTop = await topLevelTexts(api, docId);
-  expect(dbTop, 'the top-level order in the kernel should match the UI').toEqual(
-    after.filter((t) => dbTop.includes(t)),
-  );
+  // ★ Compare the **full** lists, both directions. The earlier form filtered the UI list by kernel
+  //   membership (`after.filter((t) => dbTop.includes(t))`), which is one-directional: a top-level
+  //   node that vanished from the kernel was simply dropped from the expected side, so data loss
+  //   compared equal. Same length **and** same order must both hold.
+  expect(dbTop, 'the kernel must hold exactly the top-level rows the UI shows (no silent data loss)').toEqual(uiTop);
 });
 
 /**

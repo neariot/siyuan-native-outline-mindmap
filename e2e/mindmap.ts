@@ -28,8 +28,6 @@ import { expect, type Page } from '@playwright/test';
  * So this explicitly clicks the plugin icon in the right dock. If it is already open, that is skipped.
  */
 export async function ensureDockOpen(page: Page): Promise<void> {
-  const view = page.locator('.om-mm-viewswitch');
-
   /**
    * Is the panel **really open** now?
    *

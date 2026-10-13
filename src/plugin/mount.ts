@@ -379,7 +379,9 @@ function OmTabApp({
       //
       //   `action` is still passed: it decides the "focus/scroll into place after opening" user experience
       //   (SiYuan itself uses this combination when a block reference is clicked), but it is unrelated to the crash.
-      const appRef = (window as { siyuan?: { ws?: { app?: unknown } } }).siyuan?.ws?.app;
+      const appRef =
+        (plugin as unknown as { app?: unknown })?.app ??
+        (window as { siyuan?: { ws?: { app?: unknown } } }).siyuan?.ws?.app;
       // ★ No fallback to the plugin instance. It was `appRef ?? plugin`, and the table above measures what a
       //   plugin instance does: the kernel throws `undefined.forEach` inside its own constructor, the tab
       //   comes up **blank**, and the error stays in the background console —— the user gets a broken click

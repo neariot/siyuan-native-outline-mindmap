@@ -77,6 +77,26 @@ SHAPE_CLAIMS: list[tuple[str, str, str]] = [
         "TransactionOperation",
         "one entry of `doOperations` / `undoOperations` -- `externalUpdate` and the move path build these",
     ),
+    (
+        "VBlockDOMData",
+        "BlockDOMData",
+        "the response shape of getBlockDOM: { id, dom }",
+    ),
+    (
+        "VBlockKramdownData",
+        "BlockKramdownData",
+        "the response shape of getBlockKramdown: { id, kramdown }",
+    ),
+    (
+        "VChildBlock",
+        "ChildBlock",
+        "one entry in the array returned by getChildBlocks",
+    ),
+    (
+        "VNotebook",
+        "Notebook",
+        "one entry in the notebooks array returned by lsNotebooks",
+    ),
 ]
 
 # ---------------------------------------------------------------------------

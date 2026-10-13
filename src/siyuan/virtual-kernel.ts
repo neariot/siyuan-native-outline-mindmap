@@ -59,10 +59,36 @@
 
 import type { OutlineNode } from '../model/types';
 
+export interface VBlockDOMData {
+  id: string;
+  dom: string;
+}
+
+export interface VBlockKramdownData {
+  id: string;
+  kramdown: string;
+}
+
+export interface VChildBlock {
+  id: string;
+  type: string;
+  subType?: string;
+  content?: string;
+  markdown?: string;
+}
+
+export interface VNotebook {
+  id: string;
+  name: string;
+  closed: boolean;
+}
+
 /** One block in the tree, as the kernel holds it. */
 export interface VBlock {
   id: string;
-  type: 'd' | 'l' | 'i' | 'p';
+  type: 'd' | 'l' | 'i' | 'p' | 'h';
+  subType?: 'u' | 'o' | 't' | '1' | '2' | '3' | '4' | '5' | '6' | '';
+  task?: number;
   parentId: string;
   /** Document root this block belongs to ('' for a document itself). */
   rootId: string;
@@ -70,6 +96,16 @@ export interface VBlock {
   sort: number;
   /** Text content: what `query/sql` reports as `content`. */
   content: string;
+  markdown?: string;
+  ial?: string;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 interface VDoc {
@@ -148,19 +184,19 @@ export class VirtualKernel {
     this.now = opts.now ?? (() => Date.now());
     this.startMs = this.now();
     this.sqlIndexDelayMs = opts.sqlIndexDelayMs ?? 2000;
-    this.notebook = opts.notebook ?? '20260101000000-virtual1';
+    this.notebook = opts.notebook ?? this.nextId();
   }
 
   // ---------------------------------------------------------------- ids & clock
 
-  /** A kernel-shaped id: `yyyyMMddHHmmss-xxxxxxx`. */
+  /** A kernel-shaped id: `yyyyMMddHHmmss-xxxxxxx` (strictly 7 characters after hyphen). */
   private nextId(): string {
     const d = new Date(this.startMs);
     const p = (n: number, w = 2) => String(n).padStart(w, '0');
     const stamp = `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(
       d.getUTCMinutes(),
     )}${p(d.getUTCSeconds())}`;
-    return `${stamp}-virtual${p(++this.seq, 4)}`;
+    return `${stamp}-v${p(++this.seq, 6)}`;
   }
 
   private elapsed(): number {
@@ -253,7 +289,9 @@ export class VirtualKernel {
       for (const b of this.childrenOf(parentId)) {
         if (b.type === 'i') {
           const para = this.childrenOf(b.id).find((c) => c.type === 'p');
-          lines.push(`${'  '.repeat(depth)}- ${para?.content ?? ''}`.trimEnd());
+          const bullet = b.subType === 'o' ? '1. ' : '- ';
+          const taskMark = b.task === 2 ? '[x] ' : b.task === 1 ? '[ ] ' : '';
+          lines.push(`${'  '.repeat(depth)}${bullet}{: id="${b.id}"}${taskMark}${para?.content ?? b.content}`.trimEnd());
           walk(b.id, depth + 1);
         } else if (b.type === 'l') {
           walk(b.id, depth);
@@ -320,7 +358,28 @@ export class VirtualKernel {
       if (!raw.trim()) continue;
       const indent = raw.length - raw.trimStart().length;
       const depth = Math.floor(indent / 2);
-      const text = raw.trim().replace(/^-\s*/, '');
+      const line = raw.trim();
+
+      let isTask = false;
+      let taskStatus = 0;
+      let isOrdered = false;
+      let text = line;
+
+      if (/^-\s+\[ \]\s*/.test(line)) {
+        isTask = true;
+        taskStatus = 1;
+        text = line.replace(/^-\s+\[ \]\s*/, '');
+      } else if (/^-\s+\[[xX]\]\s*/.test(line)) {
+        isTask = true;
+        taskStatus = 2;
+        text = line.replace(/^-\s+\[[xX]\]\s*/, '');
+      } else if (/^\d+\.\s*/.test(line)) {
+        isOrdered = true;
+        text = line.replace(/^\d+\.\s*/, '');
+      } else if (/^-\s*/.test(line)) {
+        text = line.replace(/^-\s*/, '');
+      }
+
       while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
       parentItem = stack.length ? stack[stack.length - 1].itemId : null;
 
@@ -328,18 +387,21 @@ export class VirtualKernel {
       const ownerId = parentItem ?? docId;
       let ownerChildren = this.childrenOf(ownerId);
       let list = ownerChildren.find((c) => c.type === 'l' && this.childrenOf(c.id).length > 0);
+      const listSubtype = isOrdered ? 'o' : isTask ? 't' : 'u';
       if (!list || (parentItem && list.rootId !== docId)) {
         listId = this.nextId();
         this.blocks.set(listId, {
           id: listId,
           type: 'l',
+          subType: listSubtype,
           parentId: ownerId,
           rootId: docId,
           sort: ownerChildren.length,
           content: '',
-        } as VBlock);
+        });
       } else {
         listId = list.id;
+        if (isOrdered && list.subType !== 'o') list.subType = 'o';
       }
 
       const itemId = this.nextId();
@@ -347,10 +409,13 @@ export class VirtualKernel {
       this.blocks.set(itemId, {
         id: itemId,
         type: 'i',
+        subType: listSubtype,
+        task: taskStatus,
         parentId: listId as string,
         rootId: docId,
         sort: listKids.length,
         content: text,
+        markdown: line,
       });
       const paraId = this.nextId();
       this.blocks.set(paraId, {
@@ -360,6 +425,7 @@ export class VirtualKernel {
         rootId: docId,
         sort: 0,
         content: text,
+        markdown: text,
       });
       stack.push({ depth, itemId });
     }
@@ -429,27 +495,44 @@ export class VirtualKernel {
         if (this.elapsed() < this.sqlIndexDelayMs) return this.ok([]);
         return this.ok(this.runSql(stmt));
       }
-      case '/api/block/getBlockDOM':
+      case '/api/block/getBlockDOM': {
+        const id = String(body.id ?? '');
+        const b = this.blocks.get(id);
+        if (!b) return this.err(VMSG.blockNotFound);
+        return this.ok<VBlockDOMData>({ id, dom: this.renderBlockDOM(id) });
+      }
       case '/api/block/getBlockKramdown': {
         const id = String(body.id ?? '');
         const b = this.blocks.get(id);
         if (!b) return this.err(VMSG.blockNotFound);
-        return this.ok(
-          endpoint.endsWith('DOM') ? { id, dom: `<div data-node-id="${id}"></div>` } : { id, kramdown: this.kramdownOf(id) },
-        );
+        return this.ok<VBlockKramdownData>({ id, kramdown: this.kramdownOf(id) });
       }
       case '/api/block/getChildBlocks': {
         const id = String(body.id ?? '');
         if (!this.blocks.has(id)) return this.err(VMSG.blockNotFound);
-        return this.ok(
-          this.childrenOf(id).map((c) => ({ id: c.id, type: c.type, subType: '', content: c.content, markdown: c.content })),
+        return this.ok<VChildBlock[]>(
+          this.childrenOf(id).map((c) => ({
+            id: c.id,
+            type: c.type,
+            subType: c.subType ?? '',
+            content: c.content,
+            markdown: c.markdown ?? c.content,
+          })),
         );
       }
       case '/api/block/updateBlock': {
         const id = String(body.id ?? '');
         const b = this.blocks.get(id);
         if (!b) return this.err(this.writeErrorFor(id));
-        b.content = String(body.data ?? '');
+        const data = String(body.data ?? '');
+        if (body.dataType === 'dom') {
+          const textMatch = /contenteditable="true"[^>]*>([\s\S]*?)<\/div>/i.exec(data);
+          b.content = textMatch ? textMatch[1] : data.replace(/<[^>]+>/g, '').trim();
+          b.markdown = b.content;
+        } else {
+          b.content = data;
+          b.markdown = data;
+        }
         return this.ok([this.tx([{ action: 'update', id }])]);
       }
       case '/api/block/insertBlock':
@@ -461,31 +544,68 @@ export class VirtualKernel {
             endpoint.endsWith('insertBlock') ? VMSG.insertionTargetNotFound : VMSG.parentNotFound(anchor),
           );
         }
-        const md = String(body.data ?? '');
-        const depth = 1;
-        const text = md.trim().replace(/^-\s*/, '').split('\n')[0];
+        const dataStr = String(body.data ?? '');
+        const isDom = String(body.dataType ?? '') === 'dom';
+
+        let text = dataStr.trim().replace(/^-\s*/, '').split('\n')[0];
+        let isTask = false;
+        let taskStatus = 0;
+        let isOrdered = false;
+
+        if (!isDom) {
+          if (/^-\s+\[ \]\s*/.test(dataStr.trim())) {
+            isTask = true;
+            taskStatus = 1;
+            text = dataStr.trim().replace(/^-\s+\[ \]\s*/, '').split('\n')[0];
+          } else if (/^-\s+\[[xX]\]\s*/.test(dataStr.trim())) {
+            isTask = true;
+            taskStatus = 2;
+            text = dataStr.trim().replace(/^-\s+\[[xX]\]\s*/, '').split('\n')[0];
+          } else if (/^\d+\.\s*/.test(dataStr.trim())) {
+            isOrdered = true;
+            text = dataStr.trim().replace(/^\d+\.\s*/, '').split('\n')[0];
+          }
+        } else {
+          const m = /contenteditable="true"[^>]*>([\s\S]*?)<\/div>/i.exec(dataStr);
+          if (m) text = m[1].replace(/<[^>]+>/g, '').trim();
+        }
+
         const parentItem = endpoint.endsWith('insertBlock') ? this.blocks.get(anchor)!.parentId : anchor;
-        const listId = this.ensureList(parentItem);
+        const subType = isOrdered ? 'o' : isTask ? 't' : 'u';
+        const hadList = !!this.childrenOf(parentItem).find((c) => c.type === 'l');
+        const listId = this.ensureList(parentItem, subType);
         const itemId = this.nextId();
+        const rootId = this.blocks.get(anchor)?.rootId || (this.blocks.get(anchor)?.type === 'd' ? anchor : '');
         this.blocks.set(itemId, {
           id: itemId,
           type: 'i',
+          subType,
+          task: taskStatus,
           parentId: listId,
-          rootId: this.blocks.get(anchor)?.rootId ?? '',
+          rootId,
           sort: this.childrenOf(listId).length,
           content: text,
+          markdown: dataStr,
         });
-        void depth;
         const paraId = this.nextId();
         this.blocks.set(paraId, {
           id: paraId,
           type: 'p',
           parentId: itemId,
-          rootId: this.blocks.get(anchor)?.rootId ?? '',
+          rootId,
           sort: 0,
           content: text,
+          markdown: text,
         });
-        return this.ok([this.tx([{ action: 'insert', id: itemId, data: md }])]);
+
+        const opId = !hadList ? listId : itemId;
+        const taskAttr = taskStatus === 2 ? ' data-task="x"' : taskStatus === 1 ? ' data-task=" "' : '';
+        const itemDom = `<div data-node-id="${itemId}" data-type="NodeListItem" class="li" data-subtype="${subType}"${taskAttr}><div data-node-id="${paraId}" data-type="NodeParagraph" class="p"><div contenteditable="true">${escapeHtml(text)}</div></div></div>`;
+        const opData = !hadList
+          ? `<div data-node-id="${listId}" data-type="NodeList" class="list" data-subtype="${subType}">${itemDom}</div>`
+          : itemDom;
+
+        return this.ok([this.tx([{ action: 'insert', id: opId, data: opData }])]);
       }
       case '/api/block/deleteBlock': {
         const id = String(body.id ?? '');
@@ -511,7 +631,11 @@ export class VirtualKernel {
       }
       case '/api/block/updateTaskListItemMarker': {
         const id = String(body.id ?? '');
-        if (!this.blocks.has(id)) return this.err(VMSG.blockNotFound);
+        const b = this.blocks.get(id);
+        if (!b) return this.err(VMSG.blockNotFound);
+        const marker = String(body.marker ?? ' ');
+        b.task = marker.trim().toUpperCase() === 'X' ? 2 : 1;
+        b.subType = 't';
         return this.ok([this.tx([{ action: 'update', id }])]);
       }
       case '/api/attr/getBlockAttrs':
@@ -519,7 +643,9 @@ export class VirtualKernel {
       case '/api/attr/setBlockAttrs':
         return this.ok(null);
       case '/api/notebook/lsNotebooks':
-        return this.ok({ notebooks: [{ id: this.notebook, name: 'Virtual Notebook', closed: false }] });
+        return this.ok<{ notebooks: VNotebook[] }>({
+          notebooks: [{ id: this.notebook, name: 'Virtual Notebook', closed: false }],
+        });
       case '/api/filetree/moveDocs':
       case '/api/filetree/renameDocByID':
       case '/api/notebook/createNotebook':
@@ -555,7 +681,7 @@ export class VirtualKernel {
     return { timestamp: 0, doOperations: ops, undoOperations: [] };
   }
 
-  private ensureList(parentId: string): string {
+  private ensureList(parentId: string, subType: 'u' | 'o' | 't' = 'u'): string {
     const existing = this.childrenOf(parentId).find((c) => c.type === 'l');
     if (existing) return existing.id;
     const id = this.nextId();
@@ -563,6 +689,7 @@ export class VirtualKernel {
     this.blocks.set(id, {
       id,
       type: 'l',
+      subType,
       parentId,
       rootId,
       sort: this.childrenOf(parentId).length,
@@ -575,48 +702,140 @@ export class VirtualKernel {
     const b = this.blocks.get(id);
     if (!b) return '';
     if (b.type === 'd') return this.kramdown(id);
-    if (b.type === 'p' || b.type === 'i') return b.content;
+    if (b.type === 'p') return b.content;
+    if (b.type === 'i') {
+      const para = this.childrenOf(id).find((c) => c.type === 'p');
+      const bullet = b.subType === 'o' ? '1. ' : '- ';
+      const taskMark = b.task === 2 ? '[x] ' : b.task === 1 ? '[ ] ' : '';
+      return `${bullet}{: id="${b.id}"}${taskMark}${para?.content ?? b.content}`;
+    }
     return this.childrenOf(id)
-      .map((c) => c.content)
+      .map((c) => this.kramdownOf(c.id))
       .join('\n');
+  }
+
+  private renderBlockDOM(id: string): string {
+    const b = this.blocks.get(id);
+    if (!b) return '';
+    const renderChildren = (parentId: string): string => {
+      return this.childrenOf(parentId)
+        .map((c) => this.renderBlockDOM(c.id))
+        .join('');
+    };
+
+    if (b.type === 'd') {
+      return `<div data-node-id="${b.id}" data-type="NodeDocument" class="protyle-wysiwyg protyle-wysiwyg--attr">${renderChildren(b.id)}</div>`;
+    }
+    if (b.type === 'l') {
+      const subType = b.subType || 'u';
+      return `<div data-node-id="${b.id}" data-type="NodeList" data-subtype="${subType}" class="list">${renderChildren(b.id)}</div>`;
+    }
+    if (b.type === 'i') {
+      const subType = b.subType || (b.task ? 't' : 'u');
+      const taskAttr = b.task === 2 ? ' data-task="x"' : b.task === 1 ? ' data-task=" "' : '';
+      return `<div data-node-id="${b.id}" data-type="NodeListItem" data-subtype="${subType}" class="li"${taskAttr}>${renderChildren(b.id)}</div>`;
+    }
+    if (b.type === 'p') {
+      return `<div data-node-id="${b.id}" data-type="NodeParagraph" class="p"><div contenteditable="true" spellcheck="false">${escapeHtml(b.content)}</div></div>`;
+    }
+    if (b.type === 'h') {
+      const level = b.subType || '1';
+      return `<div data-node-id="${b.id}" data-type="NodeHeading" data-subtype="${level}" class="h${level}"><div contenteditable="true" spellcheck="false">${escapeHtml(b.content)}</div></div>`;
+    }
+    return `<div data-node-id="${b.id}">${renderChildren(b.id)}</div>`;
   }
 
   /** The slice of SQL the plugin uses: `SELECT … FROM blocks WHERE … LIMIT n`. */
   private runSql(stmt: string): unknown[] {
-    const m = /SELECT\s+(.*?)\s+FROM\s+blocks\s+WHERE\s+(.*?)(?:\s+ORDER\s+BY\s+(.*?))?(?:\s+LIMIT\s+(\d+))?$/is.exec(
-      stmt,
+    const m = /SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.*?))?(?:\s+ORDER\s+BY\s+(.*?))?(?:\s+LIMIT\s+(\d+))?$/is.exec(
+      stmt.trim(),
     );
     if (!m) return [];
-    const [, cols, where, orderBy, limit] = m;
-    const conds = where.split(/\s+AND\s+/i).map((c) => c.trim());
-    let rows = this.rows().filter((b) =>
-      conds.every((c) => {
-        const eq = /^(?:(\w+)\.)?(\w+)\s*=\s*'([^']*)'$/i.exec(c);
-        if (eq) {
-          const key = eq[2].toLowerCase();
-          const val = eq[3];
-          if (key === 'box') return this.rootBox(b) === val;
-          if (key === 'root_id') return b.rootId === val || b.id === val;
-          if (key === 'parent_id') return b.parentId === val;
-          if (key === 'id') return b.id === val;
-          if (key === 'type') return b.type === val;
-          return false;
-        }
-        const isNull = /(\w+)\s+IS\s+NULL/i.exec(c);
-        if (isNull) return !(b as unknown as Record<string, unknown>)[isNull[1].toLowerCase()];
-        return true;
-      }),
-    );
+    const [, cols, , where, orderBy, limit] = m;
+    let rows = this.rows();
+
+    if (where) {
+      const conds = where.split(/\s+AND\s+/i).map((c) => c.trim());
+      rows = rows.filter((b) =>
+        conds.every((c) => {
+          const inMatch = /^(?:(\w+)\.)?(\w+)\s+IN\s*\((.*?)\)$/i.exec(c);
+          if (inMatch) {
+            const key = inMatch[2].toLowerCase();
+            const set = new Set(
+              inMatch[3]
+                .split(',')
+                .map((s) => s.trim().replace(/^['"]|['"]$/g, '')),
+            );
+            if (key === 'id') return set.has(b.id);
+            if (key === 'type') return set.has(b.type);
+            if (key === 'parent_id') return set.has(b.parentId);
+            if (key === 'root_id') return set.has(b.rootId) || (b.type === 'd' && set.has(b.id));
+            if (key === 'subtype') return set.has(b.subType ?? '');
+            return false;
+          }
+          const eq = /^(?:(\w+)\.)?(\w+)\s*=\s*'([^']*)'$/i.exec(c);
+          if (eq) {
+            const key = eq[2].toLowerCase();
+            const val = eq[3];
+            if (key === 'box') return this.rootBox(b) === val;
+            if (key === 'root_id') return b.rootId === val || (b.type === 'd' && b.id === val);
+            if (key === 'parent_id') return b.parentId === val;
+            if (key === 'id') return b.id === val;
+            if (key === 'type') return b.type === val;
+            if (key === 'subtype') return (b.subType ?? '') === val;
+            if (key === 'content') return b.content === val;
+            return false;
+          }
+          const isNull = /(\w+)\s+IS\s+NULL/i.exec(c);
+          if (isNull) return !(b as unknown as Record<string, unknown>)[isNull[1].toLowerCase()];
+          return true;
+        }),
+      );
+    }
+
     if (orderBy) {
       const key = orderBy.trim().split(/\s+/)[0].toLowerCase();
-      rows = rows.sort((a, b) => ((a as never)[key] > (b as never)[key] ? 1 : -1));
+      const desc = /\bDESC\b/i.test(orderBy);
+      rows = rows.sort((a, b) => {
+        let va: string | number = (a as never)[key];
+        let vb: string | number = (b as never)[key];
+        if (key === 'subtype') {
+          va = a.subType ?? '';
+          vb = b.subType ?? '';
+        }
+        if (va === vb) return 0;
+        const res = va > vb ? 1 : -1;
+        return desc ? -res : res;
+      });
     }
+
     const n = limit ? parseInt(limit, 10) : rows.length;
-    return rows.slice(0, n).map((b) => {
+    const sliced = rows.slice(0, n);
+
+    if (cols.toLowerCase().includes('count(')) {
+      return [{ count: sliced.length, 'count(1)': sliced.length, 'count(*)': sliced.length }];
+    }
+
+    return sliced.map((b) => {
       const out: Record<string, unknown> = {};
       for (const raw of cols.split(',')) {
         const key = raw.trim().replace(/^.*\./, '');
-        out[key] = key === 'box' ? this.rootBox(b) : (b as unknown as Record<string, unknown>)[key];
+        const lkey = key.toLowerCase();
+        if (lkey === 'box') {
+          out[key] = this.rootBox(b);
+        } else if (lkey === 'subtype') {
+          out[key] = b.subType ?? '';
+        } else if (lkey === 'markdown') {
+          out[key] = b.markdown ?? b.content;
+        } else if (lkey === 'parent_id') {
+          out[key] = b.parentId;
+        } else if (lkey === 'root_id') {
+          out[key] = b.type === 'd' ? b.id : b.rootId;
+        } else if (lkey === 'ial') {
+          out[key] = b.ial ?? '';
+        } else {
+          out[key] = (b as unknown as Record<string, unknown>)[key];
+        }
       }
       return out;
     });

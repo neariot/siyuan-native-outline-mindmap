@@ -32,13 +32,18 @@ export async function outlineState(page: Page): Promise<OutlineState> {
 }
 
 /**
- * Wait until the outline view is rendered and ready (at least one node row or the empty placeholder).
+ * Wait until the outline view is rendered and ready, with at least one **real** node row.
+ *
+ * ★ The criterion excludes `.node-row-empty`: the placeholder row reuses the `.node-row` class, so
+ *   counting it made this precondition pass on a document whose outline rendered **no content** ——
+ *   the vacuous pass the ledger records as more dangerous than a false failure (a caller then
+ *   measured the placeholder row and called it a node). The message always claimed a real row.
  */
 export async function ensureOutlineReady(page: Page): Promise<void> {
   await expect(page.locator('.om-outline-wrap').last()).toBeVisible({ timeout: 30_000 });
   await expect
-    .poll(async () => page.locator('.om-outline-wrap .node-row').count(), {
-      message: 'the outline should render at least one node row',
+    .poll(async () => page.locator('.om-outline-wrap .node-row:not(.node-row-empty)').count(), {
+      message: 'the outline should render at least one real node row (not the empty placeholder)',
       timeout: 30_000,
     })
     .toBeGreaterThan(0);
@@ -56,53 +61,6 @@ export async function getNodeTexts(page: Page): Promise<string[]> {
 }
 
 /**
- * Focus the node row at the given index.
- */
-export async function focusNodeRow(page: Page, index: number): Promise<void> {
-  const row = page.locator('.om-outline-wrap .node-row:not(.node-row-empty)').nth(index);
-  const textEl = row.locator('.node-text').first();
-  await textEl.click();
-  await page.waitForTimeout(100);
-}
-
-/**
- * Append-typing text into the node row at the given index.
- */
-export async function typeInNode(page: Page, index: number, text: string): Promise<void> {
-  await focusNodeRow(page, index);
-  await page.keyboard.type(text);
-  await page.waitForTimeout(150);
-}
-
-/**
- * Press a key inside the node row at the given index.
- */
-export async function pressKeyInNode(
-  page: Page,
-  index: number,
-  key: string,
-  opts?: { shift?: boolean; ctrl?: boolean; alt?: boolean },
-): Promise<void> {
-  await focusNodeRow(page, index);
-  const modifiers: string[] = [];
-  if (opts?.ctrl) modifiers.push('Control');
-  if (opts?.shift) modifiers.push('Shift');
-  if (opts?.alt) modifiers.push('Alt');
-  const chord = [...modifiers, key].join('+');
-  await page.keyboard.press(chord);
-  await page.waitForTimeout(200);
-}
-
-/**
- * Click the bullet of the given node —— triggers zoom (focus on the subtree).
- */
-export async function clickBullet(page: Page, index: number): Promise<void> {
-  const bullet = page.locator('.om-outline-wrap .node-row:not(.node-row-empty)').nth(index).locator('.om-bullet').first();
-  await bullet.click();
-  await page.waitForTimeout(250);
-}
-
-/**
  * Click the sidebar collapse arrow of the given node —— triggers collapse / expand.
  *
  * ★ The class is `.node-sidebar-arrow` (`outliner-node-sidebar node-sidebar-arrow` in the markup).
@@ -116,13 +74,24 @@ export async function clickArrow(page: Page, index: number): Promise<void> {
 }
 
 /**
- * Find the index of the first bullet that owns children.
+ * Index of the first node row whose bullet carries `has-child` —— i.e. a row that can be zoomed into.
+ *
+ * ★ Fails fast when the fixture has no parent node. Returning `-1` made a caller select the **last**
+ *   row (`nth(-1)`), which for this fixture is a leaf: the case then zoomed an unrelated row and
+ *   could still pass. The precondition is named here instead of being handed to the caller as a
+ *   number it may not check.
  */
 export async function firstParentBullet(page: Page): Promise<number> {
-  return page.evaluate(() => {
+  const idx = await page.evaluate(() => {
     const bs = [...document.querySelectorAll('.om-outline-wrap .om-bullet')];
     return bs.findIndex((b) => (b.className || '').toString().includes('has-child'));
   });
+  if (idx < 0) {
+    throw new Error(
+      'firstParentBullet: no bullet with children in the outline —— the fixture must hold a nested node before zooming',
+    );
+  }
+  return idx;
 }
 
 /**

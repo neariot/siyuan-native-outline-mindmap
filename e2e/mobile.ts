@@ -21,14 +21,12 @@ import { expect, type Browser, type BrowserContext, type Page, devices } from '@
  * - touch gestures and the `data-prevent-swipe` guard against accidental swipes
  */
 
-/** Mobile viewport size (CSS pixels). Defaults to the iPhone 12/13/14 portrait size. */
-export const MOBILE_VIEWPORT = { width: 390, height: 844 };
-
 /**
  * Open a **mobile** browser context.
  *
  * ★ The key is `isMobile: true`: the SiYuan kernel splits the frontend by `User-Agent`.
- * `devices['iPhone 12']` brings UA / deviceScaleFactor / hasTouch / isMobile all at once.
+ * `devices['iPhone 12']` brings UA / deviceScaleFactor / hasTouch / isMobile all at once ——
+ * including the viewport (390×844), so there is no separate constant to keep in sync with it.
  */
 export async function mobileContext(browser: Browser, baseURL?: string): Promise<BrowserContext> {
   return browser.newContext({

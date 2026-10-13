@@ -297,6 +297,12 @@ export async function createTempDocTitled(
   if (!title || title.includes('/')) {
     throw new Error(`createTempDocTitled: the title must be a non-empty path segment, got ${JSON.stringify(title)}`);
   }
+  // ★ An empty notebook would send the document to the kernel's default location instead of the
+  //   configured test notebook —— the "empty means guess one" shape §5.1 forbids. Fail where the
+  //   caller can see it.
+  if (!notebook) {
+    throw new Error('createTempDocTitled: no notebook —— resolveTestNotebook must run before creating a temp document');
+  }
   const r = await api.call('/api/filetree/createDocWithMd', {
     notebook,
     path: `/${title}`,

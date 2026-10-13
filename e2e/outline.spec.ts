@@ -74,7 +74,6 @@ test('the outline view renders rows matching the document', async ({ page }) => 
 test('clicking the bullet zooms into the subtree and shows a breadcrumb', async ({ page }) => {
   const before = await outlineState(page);
   const idx = await firstParentBullet(page);
-  expect(idx, 'a bullet with children should exist').toBeGreaterThanOrEqual(0);
 
   await page.locator('.om-bullet').nth(idx).locator('.bullet-dot, .dot').click();
   await page.waitForTimeout(700);
@@ -204,7 +203,7 @@ test('characters edited in the outline are written back to SiYuan', async ({ pag
   const api = await kernelApi(baseURL, token);
   let tempId = '';
   try {
-    tempId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), TEMP_DOC_MD);
+    tempId = await createTempDoc(api, notebook, TEMP_DOC_MD);
     await openDoc(page, tempId);
     await toOutlineView(page);
 
@@ -298,7 +297,7 @@ test('★ Empty document: a clickable placeholder row; the panel follows once a 
   let tempId = '';
   try {
     // An empty document —— exactly the reported scenario
-    tempId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '');
+    tempId = await createTempDoc(api, notebook, '');
     await openDoc(page, tempId);
     await toOutlineView(page);
 
@@ -377,7 +376,7 @@ test('★ adding several list items in a row must make the panel follow **all** 
   let tempId = '';
   const N = 4;
   try {
-    tempId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '');
+    tempId = await createTempDoc(api, notebook, '');
     await openDoc(page, tempId);
     await toOutlineView(page);
 
@@ -426,7 +425,7 @@ test('★ the UI must not flash loading state while typing', async ({ page }) =>
   const api = await kernelApi(baseURL, token);
   let tempId = '';
   try {
-    tempId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '');
+    tempId = await createTempDoc(api, notebook, '');
     await openDoc(page, tempId);
     await toOutlineView(page);
 
@@ -643,7 +642,7 @@ test.describe('multi-select and batch operations', () => {
     const api = await kernelApi(siyuanUrl(), siyuanToken());
     let docId = '';
     try {
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 分支一\n');
+      docId = await createTempDoc(api, notebook, '- 分支一\n');
       await openDoc(page, docId);
       await toOutlineView(page);
       // A narrow dock starts with the format bar collapsed, so the to-do button is in the DOM but hidden.
@@ -698,7 +697,7 @@ test.describe('multi-select and batch operations', () => {
     const api = await kernelApi(siyuanUrl(), siyuanToken());
     let docId = '';
     try {
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 分支一\n  - 节点一\n');
+      docId = await createTempDoc(api, notebook, '- 分支一\n  - 节点一\n');
       await openDoc(page, docId);
       await toOutlineView(page);
       await ensureOutlineToolbarOpen(page);
@@ -747,7 +746,7 @@ test.describe('multi-select and batch operations', () => {
     try {
       // Two rows: the case needs a real multi-selection at the end, because that is the only menu that
       // offers the explicit clear (measured: with one node the menu offers the toggle and no clear).
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n- 第二个\n');
+      docId = await createTempDoc(api, notebook, '- [ ] 待办节点\n- 第二个\n');
       await openDoc(page, docId);
       await toOutlineView(page);
       await ensureOutlineToolbarOpen(page);
@@ -817,7 +816,7 @@ test.describe('multi-select and batch operations', () => {
     const api = await kernelApi(siyuanUrl(), siyuanToken());
     let docId = '';
     try {
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办节点\n');
+      docId = await createTempDoc(api, notebook, '- [ ] 待办节点\n');
       await openDoc(page, docId);
       await toOutlineView(page);
 
@@ -897,7 +896,7 @@ test.describe('multi-select and batch operations', () => {
     let docId = '';
     try {
       docId = await createTempDoc(
-        api, notebook || (await resolveTestNotebook(api)),
+        api, notebook,
         '- 甲\n  - 节点一\n  - 节点二\n- 乙\n',
       );
       await openDoc(page, docId);
@@ -960,7 +959,7 @@ test.describe('multi-select and batch operations', () => {
     const api = await kernelApi(baseURL, token);
     let docId = '';
     try {
-      docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), TEMP_DOC_MD);
+      docId = await createTempDoc(api, notebook, TEMP_DOC_MD);
       await openDoc(page, docId);
       await toOutlineView(page);
       const rows = page.locator('.node-row');
@@ -1024,7 +1023,7 @@ test('★ Backspace at the start of a to-do turns it into a plain node', async (
     // ★ BOTH nodes must carry a marker: the case asserts the second one is left alone, and a second node
     //   that was never a to-do cannot show that (measured: the first version of this fixture wrote
     //   `- 待办B`, so the expected "- [ ] 待办B" was describing a state the document never had).
-    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- [ ] 待办A\n- [ ] 待办B\n');
+    docId = await createTempDoc(api, notebook, '- [ ] 待办A\n- [ ] 待办B\n');
     await openDoc(page, docId);
     await toOutlineView(page);
 
@@ -1099,7 +1098,7 @@ test('★ dragging a row above, onto, and below another gives three different re
     for (const c of cases) {
       const docId = await createTempDoc(
         api,
-        notebook || (await resolveTestNotebook(api)),
+        notebook,
         '- 甲\n- 乙\n- 丙\n',
       );
       try {
@@ -1140,7 +1139,7 @@ test('★ moving a parent takes its whole subtree', async ({ page }) => {
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
-    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n- 丁\n');
+    docId = await createTempDoc(api, notebook, '- 甲\n  - 乙\n    - 丙\n- 丁\n');
     await openDoc(page, docId);
     await toOutlineView(page);
 

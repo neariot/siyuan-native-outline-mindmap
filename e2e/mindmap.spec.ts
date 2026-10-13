@@ -1080,7 +1080,7 @@ test('★ dragging a node onto another nests it — and BOTH views must agree wi
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
-    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n- 乙\n- 丙\n');
+    docId = await createTempDoc(api, notebook, '- 甲\n- 乙\n- 丙\n');
     await openDoc(page, docId);
     await toMindmapView(page);
 
@@ -1186,7 +1186,7 @@ test('dragging a DEEP node onto a shallow one re-levels it in both views', async
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
-    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n- 丁\n');
+    docId = await createTempDoc(api, notebook, '- 甲\n  - 乙\n    - 丙\n- 丁\n');
     await openDoc(page, docId);
     await toMindmapView(page);
 
@@ -1279,7 +1279,7 @@ test('★ dropping a node into its own subtree is refused (no cycle, nothing los
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
-    docId = await createTempDoc(api, notebook || (await resolveTestNotebook(api)), '- 甲\n  - 乙\n    - 丙\n');
+    docId = await createTempDoc(api, notebook, '- 甲\n  - 乙\n    - 丙\n');
     await openDoc(page, docId);
     await toMindmapView(page);
 

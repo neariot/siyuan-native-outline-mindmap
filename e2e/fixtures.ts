@@ -79,8 +79,8 @@ export async function waitForRendered(page: Page, timeout = 60_000): Promise<voi
 }
 
 /** Open SiYuan and return a page that is ready. */
-export async function openSiYuan(page: Page, opts: { url?: string } = {}): Promise<void> {
-  await page.goto(opts.url ?? '/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+export async function openSiYuan(page: Page): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
   // ① App object is ready
   await page.waitForFunction(

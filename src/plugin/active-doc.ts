@@ -47,13 +47,16 @@
 
 /** The layout structure SiYuan hangs on window (fields change between versions; all treated as optional) */
 type SiYuanGlobal = {
-  /** Desktop: the layout tree root. This is the default root of SiYuan's `getInstanceById`. */
+  /** Desktop: layout tree roots. Default is centerLayout, but detached windows use layout. */
   layout?: {
     centerLayout?: LayoutNode;
+    layout?: LayoutNode;
+    [key: string]: unknown;
   };
   mobile?: {
-    editor?: { protyle?: { block?: { rootID?: string } } };
-    protyle?: { block?: { rootID?: string } };
+    editor?: { protyle?: { block?: { rootID?: string }; options?: { rootId?: string } } };
+    popEditor?: { protyle?: { block?: { rootID?: string }; options?: { rootId?: string } } };
+    protyle?: { block?: { rootID?: string }; options?: { rootId?: string } };
   };
 };
 
@@ -61,15 +64,82 @@ type SiYuanGlobal = {
 type LayoutNode = {
   id?: string;
   model?: {
-    editor?: { protyle?: { block?: { rootID?: string } } };
+    editor?: {
+      protyle?: {
+        block?: { rootID?: string };
+        options?: { rootId?: string };
+      };
+    };
   };
   /** Tab header element —— its `item--focus` class decides "is active", same as SiYuan */
-  headElement?: { classList?: { contains(cls: string): boolean } };
+  headElement?: {
+    classList?: { contains(cls: string): boolean };
+    getAttribute?(name: string): string | null;
+  };
   children?: LayoutNode[];
 };
 
 function asGlobal(): SiYuanGlobal | undefined {
   return (globalThis as unknown as { siyuan?: SiYuanGlobal }).siyuan;
+}
+
+/**
+ * Extract document ID from a layout tree node.
+ * Checks in order:
+ * 1. Active Protyle block rootID (live loaded editor)
+ * 2. Active Protyle options rootId
+ * 3. Tab header data-initdata JSON (used when model is not yet loaded, matching SiYuan's setHeader.ts)
+ */
+function extractDocIdFromNode(node: LayoutNode | undefined): string {
+  if (!node) return '';
+  const rootId = node.model?.editor?.protyle?.block?.rootID;
+  if (rootId) return rootId;
+
+  const optionsRootId = node.model?.editor?.protyle?.options?.rootId;
+  if (optionsRootId) return optionsRootId;
+
+  try {
+    const raw = node.headElement?.getAttribute?.('data-initdata');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.instance === 'Editor' && typeof parsed?.rootId === 'string') {
+        return parsed.rootId;
+      }
+    }
+  } catch {
+    // Ignore JSON parse errors on unexpected initdata formats
+  }
+  return '';
+}
+
+/**
+ * Collect all candidate layout roots from window.siyuan.layout.
+ * In standard window mode, `centerLayout` is the primary root.
+ * In detached window mode (`isWindow()`), `layout.layout` is the root.
+ */
+function getCandidateRoots(): LayoutNode[] {
+  const layout = asGlobal()?.layout;
+  if (!layout) return [];
+
+  const roots: LayoutNode[] = [];
+  if (layout.centerLayout && typeof layout.centerLayout === 'object') {
+    roots.push(layout.centerLayout);
+  }
+  if (layout.layout && typeof layout.layout === 'object' && layout.layout !== layout.centerLayout) {
+    roots.push(layout.layout);
+  }
+  for (const [key, val] of Object.entries(layout)) {
+    if (
+      key !== 'centerLayout' &&
+      key !== 'layout' &&
+      val &&
+      typeof val === 'object' &&
+      'children' in (val as object)
+    ) {
+      roots.push(val as LayoutNode);
+    }
+  }
+  return roots;
 }
 
 /**
@@ -79,27 +149,8 @@ function asGlobal(): SiYuanGlobal | undefined {
  * once found, look the instance up in the layout tree by `data-id` and read its `model`.
  */
 function fromDesktopLayout(): string {
-  const center = asGlobal()?.layout?.centerLayout;
-  if (!center) return '';
+  const roots = getCandidateRoots();
 
-  // ① First locate by "which tab is active" —— that is SiYuan's own criterion.
-  //
-  //    Two paths, fast first then robust:
-  //
-  //      fast: the data-id of `.layout__wnd--active .item--focus`, identify the tab directly.
-  //      robust: walk the layout tree and check whether each Tab's own `headElement` has
-  //          the `item--focus` class.
-  //
-  //    Why the "robust" path is mandatory (measured):
-  //    At the moment a Dock panel is opened, SiYuan's layout is in a **transitional state** ——
-  //    `.layout__wnd--active` vanishes entirely for an instant (measured hit count 0).
-  //    while the Tab's `item--focus` marker in the layout tree **stays correct**:
-  //
-  //        DOM_active windows=0   models=1   rootID=<root-id> focus=True
-  //
-  //    Taking only the fast path intermittently fails (measured 3 failures out of 5 runs),
-  //    the panel sits at "Loading…" and the user thinks it is broken —— this is exactly the other face of
-  //    the report "after creating a notebook, the document keeps saying it has no content".
   const isFocusTab = (node: LayoutNode): boolean => {
     try {
       return node.headElement?.classList?.contains('item--focus') === true;
@@ -113,7 +164,6 @@ function fromDesktopLayout(): string {
     depth: number,
     visit: (n: LayoutNode) => boolean,
   ): boolean => {
-    // Cap the depth to avoid infinite recursion on abnormal structures.
     if (!node || depth > 8) return false;
     if (visit(node)) return true;
     for (const child of node.children ?? []) {
@@ -122,7 +172,7 @@ function fromDesktopLayout(): string {
     return false;
   };
 
-  // Fast path: when the DOM has an explicit active window, locate the tab exactly by data-id.
+  // Fast path: when the DOM has an explicit active window, locate the tab by data-id.
   let activeId = '';
   try {
     const el = document.querySelector('.layout__wnd--active .item--focus');
@@ -131,30 +181,52 @@ function fromDesktopLayout(): string {
     activeId = '';
   }
 
-  let hit: LayoutNode | undefined;
-  if (activeId) {
-    walk(center, 0, (n) => {
-      if (n.id === activeId && n.model) {
-        hit = n;
-        return true;
-      }
-      return false;
-    });
+  for (const root of roots) {
+    let hit: LayoutNode | undefined;
+    if (activeId) {
+      walk(root, 0, (n) => {
+        if (n.id === activeId) {
+          hit = n;
+          return true;
+        }
+        return false;
+      });
+    }
+
+    // Robust path: when the fast path misses or had no active window, find the Tab carrying item--focus.
+    if (!hit) {
+      walk(root, 0, (n) => {
+        if (isFocusTab(n)) {
+          hit = n;
+          return true;
+        }
+        return false;
+      });
+    }
+
+    if (hit) {
+      const docId = extractDocIdFromNode(hit);
+      if (docId) return docId;
+    }
   }
 
-  // Robust path: when the fast path misses, find the Tab carrying the `item--focus` marker directly.
-  if (!hit) {
-    walk(center, 0, (n) => {
-      if (n.model && isFocusTab(n)) {
-        hit = n;
-        return true;
+  // Fallback: active tab header DOM element with data-initdata (during lazy load before model attachment)
+  try {
+    const el =
+      document.querySelector('.layout__wnd--active .item--focus') ??
+      document.querySelector('.item--focus');
+    const raw = el?.getAttribute('data-initdata');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.instance === 'Editor' && typeof parsed?.rootId === 'string') {
+        return parsed.rootId;
       }
-      return false;
-    });
+    }
+  } catch {
+    // Ignore DOM query / JSON parse exceptions
   }
 
-  // ② The document ID comes only from the kernel object —— DOM attributes are just render output and lag behind.
-  return hit?.model?.editor?.protyle?.block?.rootID ?? '';
+  return '';
 }
 
 /** Mobile: the kernel object directly gives the current document */
@@ -162,7 +234,11 @@ function fromMobileEditor(): string {
   const g = asGlobal();
   return (
     g?.mobile?.editor?.protyle?.block?.rootID ??
+    g?.mobile?.editor?.protyle?.options?.rootId ??
+    g?.mobile?.popEditor?.protyle?.block?.rootID ??
+    g?.mobile?.popEditor?.protyle?.options?.rootId ??
     g?.mobile?.protyle?.block?.rootID ??
+    g?.mobile?.protyle?.options?.rootId ??
     ''
   );
 }

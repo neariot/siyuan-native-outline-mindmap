@@ -91,6 +91,26 @@ export async function readTheme(page: Page): Promise<ThemeState> {
 }
 
 /**
+ * The appearance object as it was found, so `restoreTheme` can put it back **verbatim**.
+ *
+ * ★ Why not a literal `light`: the instance is shared, and SiYuan's config carries `modeOS`
+ *   ("follow the system") beside `mode`. `useTheme` must force `modeOS:false` to make the switch
+ *   real, so a suite that only wrote `mode:'light'` back left the machine with "follow the system"
+ *   **permanently off** —— a change to somebody's settings that no case ever asked for. Captured on
+ *   the first switch, before anything is mutated.
+ */
+let originalAppearance: Record<string, unknown> | null = null;
+
+/** Capture the appearance before the first mutation. No-op once captured. */
+async function captureAppearance(page: Page): Promise<void> {
+  if (originalAppearance) return;
+  originalAppearance = await page.evaluate(() => {
+    const app = (window as unknown as { siyuan?: { config?: { appearance?: Record<string, unknown> } } }).siyuan;
+    return app?.config?.appearance ? { ...app.config.appearance } : null;
+  });
+}
+
+/**
  * Switch the isolated instance to `mode` —— **live, with no reload** —— and wait until both the
  * attribute and the painted palette have moved.
  *
@@ -111,6 +131,7 @@ export async function readTheme(page: Page): Promise<ThemeState> {
  * left behind by a failed case would change what every later case sees.
  */
 export async function useTheme(page: Page, mode: ThemeMode): Promise<ThemeState> {
+  await captureAppearance(page);
   const before = await readTheme(page);
   if (before.themeMode === mode) return before; // already there; do not touch a shared instance
 
@@ -168,7 +189,14 @@ export async function useTheme(page: Page, mode: ThemeMode): Promise<ThemeState>
   return after;
 }
 
-/** Put the instance back the way it was found. Safe to call when nothing was switched. */
+/**
+ * Put the instance back the way it was found. Safe to call when nothing was switched.
+ *
+ * ★ Restores the **captured** appearance object verbatim (including `modeOS`), not a literal
+ *   `'light'`: `useTheme` forces `modeOS:false`, so writing `mode` alone would leave the shared
+ *   instance with "follow the system" turned off for good. The `mode` argument is only the
+ *   fallback for a page whose appearance was never captured (nothing was switched).
+ */
 export async function restoreTheme(page: Page, mode: ThemeMode = 'light'): Promise<void> {
   // A case that failed before navigating leaves a blank page; asking it to switch the theme would
   // only burn another timeout, and there is nothing to restore on a page that never loaded.
@@ -176,5 +204,26 @@ export async function restoreTheme(page: Page, mode: ThemeMode = 'light'): Promi
     .evaluate(() => Boolean((window as unknown as { siyuan?: { config?: unknown } }).siyuan?.config))
     .catch(() => false);
   if (!loaded) return;
-  await useTheme(page, mode);
+  if (!originalAppearance) {
+    await useTheme(page, mode);
+    return;
+  }
+  const answer = await page.evaluate(async (appearance: Record<string, unknown>) => {
+    const res = await fetch('/api/setting/setAppearance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(appearance),
+    });
+    return { status: res.status, code: (await res.json()).code };
+  }, originalAppearance);
+  expect(answer.status, `restoreTheme: setAppearance answered HTTP ${answer.status}`).toBe(200);
+  expect(answer.code, `restoreTheme: setAppearance rejected the restore (code ${answer.code})`).toBe(0);
+  const wanted = String(originalAppearance.mode === MODE_DARK ? 'dark' : 'light');
+  await page
+    .waitForFunction(
+      (w: string) => document.documentElement.getAttribute('data-theme-mode') === w,
+      wanted,
+      { timeout: 15_000 },
+    )
+    .catch(() => {});
 }
