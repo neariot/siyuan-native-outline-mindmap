@@ -21,6 +21,7 @@ import { SiYuanClient } from './api';
 import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine } from '../core/map';
 import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
+import { updateTaskMarkerWithFallback } from './host-compat';
 
 /**
  * Whether an entry of the *previous* mapping read must be carried over into this one.
@@ -1433,7 +1434,7 @@ export class SiYuanStore {
             //   exactly that, and it leaves the block's own content alone. (It cannot create a task — it
             //   answers `-1 block is not a task list item` on a plain list item, which is why creation and
             //   clearing take the markdown path instead.)
-            await this.client.updateTaskListItemMarker(liId, wants === 2 ? 'X' : ' ');
+            await updateTaskMarkerWithFallback(this.client, liId, wants === 2, n.text ?? '');
           } else {
             // ★ Creating a to-do (0 → task) and clearing one (task → 0) are both markdown-only: no other
             //   call can introduce or remove the task subtype. The markdown must carry the node's

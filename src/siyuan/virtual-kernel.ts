@@ -646,6 +646,8 @@ export class VirtualKernel {
         return this.ok<{ notebooks: VNotebook[] }>({
           notebooks: [{ id: this.notebook, name: 'Virtual Notebook', closed: false }],
         });
+      case '/api/system/version':
+        return this.ok<string>('3.8.7');
       case '/api/filetree/moveDocs':
       case '/api/filetree/renameDocByID':
       case '/api/notebook/createNotebook':

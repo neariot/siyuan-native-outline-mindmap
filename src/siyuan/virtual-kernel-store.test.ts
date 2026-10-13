@@ -58,14 +58,14 @@ void (async () => {
 
     // Modify text of the first node
     const updatedNodes: OutlineNode[] = JSON.parse(JSON.stringify(loaded.nodes)) as OutlineNode[];
-    updatedNodes[0].text = '节点一更新';
+    updatedNodes[0].text = '节点一内容';
 
     const res = await store.saveNodesIncremental(docId, updatedNodes);
     check('saveNodesIncremental reports 1 updated node', res.updated === 1, `got updated=${res.updated}`);
     check('saveNodesIncremental reports 1 skipped node', res.skipped === 1, `got skipped=${res.skipped}`);
 
     const kd = kernel.kramdown(docId);
-    check('kernel kramdown reflects updated node text', kd.includes('节点一更新'), `got kramdown: ${kd}`);
+    check('kernel kramdown reflects updated node text', kd.includes('节点一内容'), `got kramdown: ${kd}`);
     check('kernel kramdown retains untouched node', kd.includes('节点二'), `got kramdown: ${kd}`);
   }
 

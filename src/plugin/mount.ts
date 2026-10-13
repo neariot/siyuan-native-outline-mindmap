@@ -26,6 +26,7 @@ import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } f
 import type { IEventBus } from 'siyuan';
 import { t } from './i18n';
 import { getActiveDocId as resolveActiveDocId } from './active-doc';
+import { getHostApp } from '../siyuan/host-compat';
 // Component styles: Mindmap does not import CSS itself (it used to rely on App.tsx importing it),
 // so the plugin's mount path must import them explicitly, or the mind map has no styles.
 import '../styles.css';
@@ -379,9 +380,7 @@ function OmTabApp({
       //
       //   `action` is still passed: it decides the "focus/scroll into place after opening" user experience
       //   (SiYuan itself uses this combination when a block reference is clicked), but it is unrelated to the crash.
-      const appRef =
-        (plugin as unknown as { app?: unknown })?.app ??
-        (window as { siyuan?: { ws?: { app?: unknown } } }).siyuan?.ws?.app;
+      const appRef = getHostApp(plugin);
       // ★ No fallback to the plugin instance. It was `appRef ?? plugin`, and the table above measures what a
       //   plugin instance does: the kernel throws `undefined.forEach` inside its own constructor, the tab
       //   comes up **blank**, and the error stays in the background console —— the user gets a broken click

@@ -646,6 +646,23 @@ export class SiYuanClient {
   createNotebook(name: string): Promise<{ notebook: { id: string; name: string } }> {
     return this.post('/api/notebook/createNotebook', { name });
   }
+
+  // ---------------------------------------------------------------- system
+
+  /**
+   * Read the kernel version string (e.g. "3.8.7").
+   * Queries /api/system/version with graceful fallback to window.siyuan config if available.
+   */
+  async getKernelVersion(): Promise<string> {
+    try {
+      return await this.post<string>('/api/system/version', {});
+    } catch {
+      const g = globalThis as unknown as {
+        siyuan?: { config?: { system?: { kernelVersion?: string } } };
+      };
+      return g.siyuan?.config?.system?.kernelVersion ?? '';
+    }
+  }
 }
 
 /**
