@@ -366,8 +366,9 @@ conclusion to draw from a complete-looking list of findings.
   The committed template carries narrative case history and dates, which AGENTS section 7 says belong in the commit message or docs/, and one of its cross-references is off by eight lines — the file grows on every incident instead of staying a key list.
 - **low · docs** `README.md:58`  
   A feature bullet is attached to the end of the preceding paragraph with no blank line, so a user-facing feature item renders as part of the sentence above it (the rest of the README never does this, and the Chinese sibling has the same content as a proper bullet).
-- **low · docs** `scripts/env.py:27`  
-  The module docstring documents a three-tier precedence with built-in defaults, but Config.get() only consults os.environ and the .env file — no defaults tier is reachable through it (DEFAULTS is merged into _values() instead), and the same 'there are no built-in defaults' promise is repeated in .env.example.
+- ~~**low · docs** `scripts/env.py:27`~~ **stale — docstring matches code**
+  The class docstring states two sources plus machine-independent DEFAULTS (verified lines 78-95);
+  no third tier is promised.
 
 ### core
 
@@ -402,8 +403,8 @@ conclusion to draw from a complete-looking list of findings.
   The asset upload is documented against an endpoint that does not exist in the kernel.
 - **low · docs** `docs/MAPPING.md:310`  
   The 'How it is verified' block promises a unit-test command and gives none.
-- **low · docs** `docs/TESTING.md:32`  
-  The doc sends the reader to playwright.config.ts for the /usr/bin/chromium executablePath; the config has no such value, and the literal that does exist (e2e/global-setup.ts) is both the `process.env.X || '<literal>'` shape AGENTS 5.1(3) forbids and unreachable in any real run.
+- ~~**low · docs** `docs/TESTING.md:32`~~ **already fixed before this pass**
+  The doc names `CHROMIUM_PATH` from `.env` (verified line 191); no `/usr/bin` path remains.
 - **low · docs** `docs/TESTING.md:298`  
   The claim that SiYuan's own test script 'is exactly' this project's shape no longer matches app/package.json.
 - **low · docs** `docs/TESTING.md:548`  
@@ -425,13 +426,14 @@ conclusion to draw from a complete-looking list of findings.
   A count inside the document is wrong: it says 7 class names and lists 8.
 - **low · docs** `docs/pitfalls/testing.md:591`  
   A cross-reference points at an entry that does not exist: debug.md has no 6.14.
-- **low · docs** `docs/pitfalls/testing.md:502`  
-  An entry carries the id '6.x', which is not a stable id and is the one entry missing from the PITFALLS.md index.
+- ~~**low · docs** `docs/pitfalls/testing.md:502`~~ **fixed**
+  The `6.x` entry is now `6.14` (fits between 6.13 and 6.15) and the PITFALLS.md index lists it;
+  docs-index gate green (89 checked, none dangling).
 
 ### e2e-helpers
 
-- **low · docs** `docs/TESTING.md:32`  
-  The E2E section still tells the reader to 'Use the system `/usr/bin/chromium` (`executablePath` in `playwright.config.ts`)', which is both a stale description of the code and a machine absolute path in a developer doc (section 1).
+- ~~**low · docs** `docs/TESTING.md:32`~~ **already fixed before this pass**
+  Same `/usr/bin/chromium` staleness as above, fixed by the same doc edit (verified line 191).
 - **low · dead-code** `e2e/fixtures.ts:76`  
   openSiYuan's `opts: { url?: string }` option plus its `opts.url ?? '/'` default is never exercised: the only caller passes no argument, so the third way to decide which URL is opened is untested surface sitting in a file whose header says the target must have exactly one source.
 - **low · dead-code** `e2e/mindmap.ts:31`  

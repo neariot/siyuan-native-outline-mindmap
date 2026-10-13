@@ -498,7 +498,7 @@ Two counter-intuitive points:
 
 See AGENTS §5.1.
 
-### 6.x Before measuring performance, check whether the machine is busy
+### 6.14 Before measuring performance, check whether the machine is busy
 
 **Fact**: measuring "one input -> the sync flows back" in the T3 document (2000 nodes)
 gave **342ms**, **10.9ms** and **75ms** three times in a row on the same day, and in the fourth round SiYuan's own body text
