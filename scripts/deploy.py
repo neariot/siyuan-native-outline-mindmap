@@ -161,6 +161,14 @@ def main():
     if reference in dsts:
         print("  ★ this build also goes to the instance you work in (--test-only to skip it)")
 
+    # ★ State the target list and count BEFORE copying: the AGENTS section 7 check is "confirm the
+    #   printed deploy: N target(s) list before the check runs" — per-target lines after the fact
+    #   do not satisfy a check that must pass before anything is written.
+    print(f"  Deploy targets ({len(dsts)}):")
+    for d in dsts:
+        note = "   ← the instance you work in" if d == reference else ""
+        print(f"    · {d}" + note)
+
     ok = True
     for dst in dsts:
         os.makedirs(dst, exist_ok=True)

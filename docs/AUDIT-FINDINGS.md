@@ -65,8 +65,9 @@ conclusion to draw from a complete-looking list of findings.
   The manual E2E job cannot run as committed and its dispatch input contradicts the entry point: run-e2e.py takes the target from .env (cfg.siyuan_test / cfg.test_token() / cfg.chromium_path), and the job never creates a .env and never calls setup-python, while the input still claims SIYUAN_URL is what selects the instance.
 - **medium · docs** `README.zh-CN.md:74`  
   The Chinese README still documents a build flag that no longer exists (TARGET=plugin) and a dev server port that is not configured anywhere — the dev server in fact binds :3000 — and this stale text is shipped to users, because the build copies both READMEs into the package.
-- **medium · type-escape** `tsconfig.json:15`  
-  `include: ["src"]` is the whole scope of the only type gate, so the two build config files at the repository root are never compiled either — including a property the config type does not have, verified by a controlled probe.
+- ~~**medium · type-escape** `tsconfig.json:15`~~ **stale — already fixed before this pass**
+  `npm run typecheck` runs both `tsc --noEmit` (src) and `tsc --noEmit -p tsconfig.e2e.json`
+  (e2e); the e2e config's header records the 42-error measurement. Verified in package.json.
 
 ### core
 
@@ -187,8 +188,9 @@ conclusion to draw from a complete-looking list of findings.
   The mind-map half of "both the mobile outline and mindmap containers set data-prevent-swipe" is wrapped in a visibility `if` with a swallowed error, so when the view switch is not visible the canvas assertion never runs and the case still passes.
 - **medium · test-quality** `e2e/smoke.spec.ts:79`  
   The "plugin is mounted" smoke case asserts `.om-dock` — the exact signal this repository documents as invalid (it exists only while the panel is open AND the outline view is the mounted one) — and takes `.first()`, the selector form the same note forbids.
-- **medium · type-escape** `tsconfig.json:15`  
-  No gate compiles e2e/**` : `npm run typecheck` (the only type gate in `npm run check` and in CI) is `tsc --noEmit` against a tsconfig whose include is `["src"]`, so the specs in this scope carry type errors that nothing ever reports.
+- ~~**medium · type-escape** `tsconfig.json:15`~~ **stale — already fixed before this pass**
+  Same file, second citation of the same stale claim: e2e has its own tsconfig and gate
+  (see above). No uncompiled scope remains.
 
 ### i18n-consistency
 
@@ -610,8 +612,9 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · bug** `scripts/cdp.py:78`  
   list_tabs() returns [] for every exception, so 'the CDP endpoint is unreachable' is indistinguishable from 'the browser has no tabs' and close_stale_tabs then reports that nothing needed cleaning.
-- **low · ux** `scripts/deploy.py:111`  
-  A real deploy run never prints the target list or count, so the AGENTS section 7 check ('confirm the printed deploy: N target(s) list before the check runs') can only be satisfied through `--list` or `npm run env`, and a zero-target run prints nothing at all before returning 0.
+- ~~**low · ux** `scripts/deploy.py:111`~~ **fixed**
+  Real runs now print the target list and count before copying (the `--list` branch already did;
+  the finding was about actual deploys). Zero-target is unreachable — `plugin_dirs` raises on empty.
 - ~~**low · bug** `scripts/env.py:341`~~ **fixed**
   `token()` turned every conf.json read failure into an empty string. Now raises `RuntimeError`
   naming the path and the real error, like the sibling `test_token()` (verified live: malformed
