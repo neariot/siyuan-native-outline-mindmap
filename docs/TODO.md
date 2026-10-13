@@ -74,6 +74,8 @@ section is a fact worth stating rather than a section to delete and re-invent.
   retyped literals; dragdrop kernel-order assertion compares against the kernel's own order; deleted
   uncalled `escapeKramdown`; refuted the "no-op span step" with measured evidence (it unescapes text
   inside stashed spans).
+- **Script hygiene batch.** Dropped the unused `label` param from the privacy checker; the E2E
+  leftover report points at the instance cleaner; mindmap-shot URL verified already on env.
 
 **Resolved, verified, and removed from the queue:**
 
