@@ -209,6 +209,7 @@
   "tipDeleteNodeDel": "删除主题 (Del)",
   "tipDoneCollapseKeyboard": "完成并收起键盘",
   "tipEditHint": "Enter 保存 · Shift+Enter 换行 · Esc 取消",
+  "tipEmoji": "表情符号",
   "tipExpandAll": "展开全部",
   "tipExpandBar": "展开工具栏",
   "tipExpandChildren": "展开 {n} 个子主题",

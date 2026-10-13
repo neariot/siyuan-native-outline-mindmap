@@ -3597,7 +3597,7 @@ export default function Outliner(props: OutlinerProps) {
           }
         }}>🌐</button>
         <button title={t('tipTable')} onClick={() => (panel === 'table' ? closePanel() : openPanel('table'))}>▦</button>
-        <button title="Emoji" onClick={() => (panel === 'emoji' ? closePanel() : openPanel('emoji'))}>😄</button>
+        <button title={t('tipEmoji')} onClick={() => (panel === 'emoji' ? closePanel() : openPanel('emoji'))}>😄</button>
         <button title={t('tipTagHash')} onClick={() => {
           const tag = prompt(t('phTagName'));
           if (tag && activeId) {

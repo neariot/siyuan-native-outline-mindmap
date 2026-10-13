@@ -47,6 +47,10 @@ section is a fact worth stating rather than a section to delete and re-invent.
   `loadBlockMap`'s DOM branch dropped every entry, and (2) its top-list SQL picked whichever list
   flushed first — measured, the *child* list — misaligning n1 and dropping n2/n3, so every later
   write-back duplicated them. Fixed both; `refresh-align.test.ts` pins each half (both red-proofed).
+- **Stale i18n finding closed without a change.** The `msgSummaryHint`/`msgSummaryTopLevel` encoding
+  mismatch died with the summary feature (`9d06fda`); catalogue key sets are identical and a
+  same-class scan is clean. The neighbouring literal-tooltip finding on the same lines was live
+  (`title="Emoji"`), fixed with `tipEmoji` in both catalogues.
 
 **Resolved, verified, and removed from the queue:**
 

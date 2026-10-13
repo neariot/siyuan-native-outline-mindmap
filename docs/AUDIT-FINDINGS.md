@@ -194,10 +194,14 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · dead-code** `scripts/check-i18n-keys.py:125`  
   The i18n gate reports 'ok (every entry is used)' while six catalogue entries are dead text: its referenced() fallback accepts ANY run of two or more CJK characters of an entry's zh value found anywhere in e2e/ or docs/, so unrelated prose - and a different key's value - rescues entries no code names.
-- **medium · bug** `src/plugin/i18n/zh_CN.json:127`  
-  For the same key the two catalogues do not encode the same string: msgSummaryHint has a real newline in English and a literal backslash-n in Chinese, and en_US msgSummaryTopLevel carries a double-escaped \u2019 that renders as visible text.
-- **medium · language** `src/plugin/outline/Outliner.tsx:3643`  
-  Hardcoded user-visible UI text outside the catalogues: the toolbar's emoji button is the only button in its row whose tooltip is a literal, and no 'Emoji' key exists in either catalogue, so a zh_CN user gets an English tooltip and AGENTS.md section 2 ('UI text has exactly one home: the catalogues') is violated.
+- ~~**medium · bug** `src/plugin/i18n/zh_CN.json:127`~~ **refuted in writing**
+  The summary feature (and its `msgSummaryHint` / `msgSummaryTopLevel` keys) was removed entirely
+  in `9d06fda`; both catalogues hold identical key sets today and a same-class encoding scan finds
+  no remaining literal-`\n` / double-escaped mismatches. Nothing to fix.
+- ~~**medium · language** `src/plugin/outline/Outliner.tsx:3643`~~ **fixed**
+  The toolbar's emoji button was the only one with a literal tooltip. Fixed: `tipEmoji` added to
+  both catalogues and the button now uses `t('tipEmoji')`; `npm run i18n` is green and no other
+  literal `title="…"` remains in either view.
 
 ### mindmap
 

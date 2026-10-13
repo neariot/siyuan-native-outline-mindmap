@@ -209,6 +209,7 @@
   "tipDeleteNodeDel": "Delete topic (Del)",
   "tipDoneCollapseKeyboard": "Done and hide keyboard",
   "tipEditHint": "Enter to save · Shift+Enter for newline · Esc to cancel",
+  "tipEmoji": "Emoji",
   "tipExpandAll": "Expand all",
   "tipExpandBar": "Expand toolbar",
   "tipExpandChildren": "Expand {n} child topic(s)",
