@@ -82,6 +82,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Wait-hygiene batch.** perf-probe and verify-live open tabs on readiness expressions instead of
   fixed 120s/30s sleeps; mindmap-shot's `\u` label verified visible to the language gate (refuted);
   its `Session.ev` shares the raise-on-error contract.
+- **Dead-end UI batch.** The @-mention button hides when its doc list is empty; the unused mirror
+  title derivation is gone; the unreachable signal-chaining branch is removed; test-instance writes
+  its PID only when the kernel is up and warns loudly on skipped digest verification.
 
 **Resolved, verified, and removed from the queue:**
 
