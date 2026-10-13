@@ -226,8 +226,9 @@ conclusion to draw from a complete-looking list of findings.
   Three catalogue entries double the escape: the raw JSON contains a backslash-backslash-n (and one backslash-backslash-u2019), which decodes to a literal backslash plus letter instead of a line break / a curly apostrophe, so the user is shown '\n' and '\u2019' as text.
 - ~~**medium · bug** `src/plugin/mount.ts:2311`~~ **fixed**
   The mind-map write path fires `writeLatest()` with no echo-guard window and no `.catch`, so a failed write-back became an unhandled rejection whose message never reached the error bar. Every other write path surfaces failures through `setErr(describeWriteError(e))`; this call site is fired from a callback with no `await`, so the rejection had to be handled there. Now `.catch`es into the same path, which renders into `.om-mm-err`. ★ The entry said "two write paths" —— there is one such call site (`void ... | rg` over the file); the other must have been removed earlier, and the citation was re-pointed after an edit moved it.
-- **medium · dead-code** `src/plugin/mount.ts:2061`  
-  The '@ reference document' panel is a dead end in the plugin: mount passes an empty document list, so its only list is always empty while the toolbar still offers the button.
+- ~~**medium · dead-code** `src/plugin/mount.ts:2061`~~ **fixed**
+  The @-mention button now hides when `docs` is empty (which mount always passes) instead of
+  offering an empty search panel (verified: typecheck clean, no test references the button).
 
 ### plugin-tests-a
 
@@ -524,10 +525,12 @@ conclusion to draw from a complete-looking list of findings.
   The documented size of the language allowlist no longer matches the file or the tool's own output.
 - **low · dead-code** `src/plugin/index.ts:13`  
   The static `openTab` import is never used - openMindmapTab shadows it with a runtime `await import('siyuan')`, so the top-level import is dead (tsc has no noUnusedLocals).
-- **low · fallback** `src/plugin/index.ts:212`  
-  The mirror block's title is derived by splitting SiYuan's composed window title on ' - ', which silently truncates any document whose name contains that sequence.
-- **low · docs** `src/plugin/index.ts:248`  
-  The comment above the getActiveDocId re-export still describes a sample-data fallback that active-doc.ts deliberately removed, so it contradicts the module it documents.
+- ~~**low · fallback** `src/plugin/index.ts:212`~~ **fixed**
+  The `document.title.split(' - ')` derivation is removed: the callee ignores `title` (verified:
+  `appendMirrorBlock` never reads `_opts.title`), so the truncation vector is gone, not papered over.
+- ~~**low · docs** `src/plugin/index.ts:248`~~ **fixed**
+  The stale comment (sample-data fallback, removed `ws.app` structure) is replaced with the true
+  one-liner: implementation lives in `active-doc.ts`.
 - ~~**low · ux** `src/plugin/outline/Outliner.tsx:918`~~ **fixed**
   Toggling the find bar shut now routes through `closeFind`, restoring focus like every other
   close path (verified: all three `openFind` call sites are toggles; typecheck + unit green).
@@ -580,18 +583,21 @@ conclusion to draw from a complete-looking list of findings.
   (verified: privacy selftest green).
 - **low · docs** `scripts/audit-privacy.py:156`  
   MAX_BYTES silently drops artifacts from the --live scan and nothing prints how many were dropped, so 'the rules found nothing' does not say how much of the local artifact tree was actually read - while the tracked-file scope does print its skipped count.
-- **low · dead-code** `scripts/check.py:155`  
-  The report-only gate machinery is dead: no gate in GATES sets the key, so the branch (and the 'report only:' tail it feeds) can never run.
-- **low · docs** `scripts/redproof.py:253`  
-  It prints `log: .logs/redproof-<file>.log` but never writes that file - `log` is used only by the print - while the docstring tells the operator the script writes its output there, so a background run read from the printed path shows an earlier run or nothing.
+- ~~**low · dead-code** `scripts/check.py:155`~~ **stale — machinery is live**
+  The `report_only` branch at line 366 reads per-gate config; no gate sets the key today, but that
+  is configuration, not dead code — the branch runs the moment one does. Verified by read.
+- ~~**low · docs** `scripts/redproof.py:253`~~ **stale — log is written**
+  The log file is created at line 269 (`LOG_DIR.mkdir` + per-file path) before the printed path;
+  the docstring matches. Verified by read.
 - **low · dead-code** `scripts/run-e2e.py:66`  
   (Fixed: the key is read through `env.py` and the line is gone -- the entry point validates it and passes it explicitly.)
 - **low · docs** `scripts/run-e2e.py:62`  
   The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
 - ~~**low · bug** `scripts/run-tests.py:83`~~ **fixed**
   Watch mode keeps `--test-concurrency=1` like normal mode.
-- **low · dead-code** `scripts/script_log.py:124`  
-  `if callable(owner)` can never be true, because previous[signum] is only ever assigned signal.SIG_DFL - the guard refuses to install the handler when another one exists - so the 'the previous handler still runs' path promised by the docstring is unreachable.
+- ~~**low · dead-code** `scripts/script_log.py:124`~~ **fixed**
+  The unreachable `callable(owner)` chain and its table are removed; the comment now states why no
+  chaining exists (verified: timings report still works).
 - ~~**low · test-quality** `src/plugin/css-scope.test.ts:22`~~ **fixed**
   The promised keyframe cases exist now, and `scopeSelector` carries a keyframe-stop guard so a
   future postcss routing change cannot corrupt `@keyframes` (measured: current postcss never routes
@@ -642,10 +648,11 @@ conclusion to draw from a complete-looking list of findings.
   import block are removed; the surviving header documents the timer correctly.
 - **low · bug** `scripts/snapshot-keymap.py:56`  
   The snapshot records the instance's effective keymap (custom bindings first), taken from the user's own running instance, so a machine whose hotkeys are customized writes those personal bindings into the tracked fixture that the collision test treats as SiYuan's built-in table.
-- **low · fallback** `scripts/test-instance.py:233`  
-  The sha256 verification is silently skipped whenever the release carries no digest field, so the docstring's promise that 'the transfer does not have to be trusted' degrades to trusting it without saying so.
-- **low · bug** `scripts/test-instance.py:468`  
-  The PID file is overwritten before the new kernel is known to be up, so a start that fails against an already-running (hung) kernel loses the tracking of the process that is still alive - `stop` then reports 'not running' while the kernel keeps running.
+- ~~**low · fallback** `scripts/test-instance.py:233`~~ **fixed**
+  A missing digest now logs a loud skip warning instead of silently trusting the transfer.
+- ~~**low · bug** `scripts/test-instance.py:468`~~ **fixed**
+  The PID file is written only after the new kernel answers, and readiness requires our process
+  alive (not just the port answering); on failure the previous tracking is restored.
 - **low · dead-code** `scripts/verify-android.py:126`  
   The device auto-select branch is unreachable: the serial has already been resolved from the required ANDROID_SERIAL, so 'if not self.serial' can never hold - and the docstring's claim that the script 'auto-detects adb and ports by default' is not what it does.
 - **low · docs** `scripts/verify-android.py:652`  

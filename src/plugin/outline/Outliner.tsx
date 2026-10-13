@@ -3613,7 +3613,12 @@ export default function Outliner(props: OutlinerProps) {
             syncText(activeId);
           }
         }}>#</button>
-        <button title={t('tipMentionDoc')} onClick={() => openPanel('mention')}>@</button>
+        {/* ★ The @-mention panel lists `docs`, which mount passes empty (sub-documents go
+            through the mind-map context menu): with no list the panel is a dead end, so the
+            button hides rather than offering an empty search. */}
+        {docs.length > 0 && (
+          <button title={t('tipMentionDoc')} onClick={() => openPanel('mention')}>@</button>
+        )}
         <button title={t('tipNodeRef')} onClick={() => openPanel('noderef')}>⛓</button>
         <span className="sep" />
         <button title={t('tipNumbered')} onClick={() => toggleNumberedMany(activeIds)}>1.</button>

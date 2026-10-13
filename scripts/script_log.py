@@ -117,13 +117,8 @@ def track(name: str, argv=None):
     # ★ `atexit` does NOT run when a signal kills the process, so a killed run used to leave no
     #   trace at all -- exactly the case worth measuring (these are the background jobs that get
     #   cancelled). Record first, then let the signal finish the job it was going to finish.
-    previous = {}
     def on_signal(signum, _frame):
         record("interrupted", f"signal {signum}")
-        owner = previous.get(signum, signal.SIG_DFL)
-        if callable(owner):
-            owner(signum, _frame)
-            return
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
 
@@ -131,7 +126,9 @@ def track(name: str, argv=None):
         try:
             current = signal.getsignal(signum)
             if current is signal.SIG_DFL:  # never steal a signal someone else owns
-                previous[signum] = current
+                # ★ No chaining table: on_signal runs only where it was installed, which is only
+                #   where the previous handler was SIG_DFL — so a "run the previous handler" branch
+                #   here could never fire (removed; it promised a path that was unreachable).
                 signal.signal(signum, on_signal)
         except (ValueError, OSError):
             pass  # not the main thread; the atexit net still applies

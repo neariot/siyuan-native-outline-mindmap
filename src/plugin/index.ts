@@ -209,7 +209,6 @@ export default class NativeOutlineMindmapPlugin extends Plugin {
       });
       await store.appendMirrorBlock(docId, docId, {
         height: 420,
-        title: document.title.split(' - ')[0] || t('mindmapTitle'),
       });
       showMessage(t('msgMirrorInserted'), 3000, 'info');
     } catch (e) {
@@ -244,12 +243,7 @@ export default class NativeOutlineMindmapPlugin extends Plugin {
 /**
  * Get the root document ID of the currently active editor.
  *
- * SiYuan hangs the app instance on `window.siyuan.ws.app` (not an official public API),
- * so do full defensive checks: if any link is missing, safely return an empty string and let the caller fall back to sample data.
+ * Implementation lives in `active-doc.ts` (re-exported here for the tab entry point).
  */
 // Get the currently active document ID -- implementation in `active-doc.ts`.
-//
-// * This used to carry its own implementation here, duplicated with `mount.ts:resolveActiveDocId`, and both depended on
-//   `window.siyuan.ws.app.layout` (that structure no longer exists in SiYuan 3.8.6) -> always returned an empty string,
-//   which made the dock panel keep showing "no document opened yet". Now merged into a single implementation.
 export { getActiveDocId };
