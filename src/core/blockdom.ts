@@ -160,7 +160,18 @@ export function treeToBlockDom(nodes: OutlineNode[]): string {
   return renderList(nodes);
 }
 
-/** The DOM of a single paragraph block (for `insertParagraphAfter`) */
-export function paragraphBlockDom(html: string): string {
-  return paragraphDom(html);
+/**
+ * The DOM **fragment** of one paragraph, as `updateBlock` / `insertBlock` expect it.
+ *
+ * ★ A fragment, not a whole block: the kernel is told `dataType: 'dom'` and the target block ID is a
+ *   separate parameter, so the fragment carries no `data-node-id` of its own. `paragraphDom` above is
+ *   the *whole-block* form used when building a tree (`treeToBlockDom`), where every block needs its
+ *   own ID —— the two are not interchangeable, which is why this used to be written out by hand at
+ *   five call sites and got a sixth, subtly different, copy in the export this replaces.
+ *
+ * ★ The `|| '\u200b'` is load-bearing: SiYuan does not keep a completely empty paragraph body, so an
+ *   empty string must become a zero-width placeholder or the paragraph collapses.
+ */
+export function paragraphBlockFragment(html: string): string {
+  return `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
 }

@@ -116,54 +116,59 @@ def measure(doc_id: str, samples: int, interval: float) -> int:
     stop.set()
     th.join(timeout=1.0)
 
-    if not ids:
-        print('  ❌ Not a single block got inserted, cannot measure', file=sys.stderr)
-        return 1
+    # ★ Cleanup belongs in `finally`: the two early returns below and any raised exception used to
+    #   leave every `index_lag_probe_i` paragraph inside the target document (an audit finding). A
+    #   probe that outlives the run is not just untidy —— it becomes content in a document nobody
+    #   asked to change.
+    try:
+        if not ids:
+            print('  ❌ Not a single block got inserted, cannot measure', file=sys.stderr)
+            return 1
 
-    marks = sorted((seen[i] - t_base) * 1000 for i in ids if i in seen)
-    print(f'\n  ── Collected the visible instant of {len(marks)}/{len(ids)} blocks')
-    if not marks:
-        print('  ❌ None became visible within the sampling window', file=sys.stderr)
-        return 1
+        marks = sorted((seen[i] - t_base) * 1000 for i in ids if i in seen)
+        print(f'\n  ── Collected the visible instant of {len(marks)}/{len(ids)} blocks')
+        if not marks:
+            print('  ❌ None became visible within the sampling window', file=sys.stderr)
+            return 1
 
-    # Merge flushes of the same batch (a gap < 40ms counts as the same flush)
-    flush: list[float] = []
-    for m in marks:
-        if not flush or m - flush[-1] > 40:
-            flush.append(m)
-    gaps = [round(flush[i + 1] - flush[i]) for i in range(len(flush) - 1)]
+        # Merge flushes of the same batch (a gap < 40ms counts as the same flush)
+        flush: list[float] = []
+        for m in marks:
+            if not flush or m - flush[-1] > 40:
+                flush.append(m)
+        gaps = [round(flush[i + 1] - flush[i]) for i in range(len(flush) - 1)]
 
-    print(f'     flush instants: {[round(f) for f in flush]}')
-    if gaps:
-        print(f'     flush intervals: {gaps}')
-        print(f'     median {statistics.median(gaps):.0f} ms'
-              f'   min {min(gaps)}   max {max(gaps)}')
+        print(f'     flush instants: {[round(f) for f in flush]}')
+        if gaps:
+            print(f'     flush intervals: {gaps}')
+            print(f'     median {statistics.median(gaps):.0f} ms'
+                  f'   min {min(gaps)}   max {max(gaps)}')
 
-    # ★ "How long you may have to wait at worst" = the maximum of the **single flush intervals**,
-    #   not "the total span from the first flush to the last".
-    #   The total span grows linearly with the sampling duration, and using it as the criterion makes every run come out "too tight"
-    #   (measured, hit this: one run produced a fake worst value of 8998ms and flagged even a 4800ms budget red).
-    worst = max(gaps) if gaps else max(marks)
-    if not gaps:
-        print('     (only one flush observed, using the maximum visible lag as the cost)')
+        # ★ "How long you may have to wait at worst" = the maximum of the **single flush intervals**,
+        #   not "the total span from the first flush to the last".
+        #   The total span grows linearly with the sampling duration, and using it as the criterion makes every run come out "too tight"
+        #   (measured, hit this: one run produced a fake worst value of 8998ms and flagged even a 4800ms budget red).
+        worst = max(gaps) if gaps else max(marks)
+        if not gaps:
+            print('     (only one flush observed, using the maximum visible lag as the cost)')
 
-    print(f'\n  ── Polling budget check (worst flush interval measured at {worst:.0f} ms)')
-    bad = []
-    for name, budget in POLL_BUDGETS:
-        ok = budget > worst
-        print(f'     {name:<32} {budget:>5} ms   {"✅ sufficient" if ok else "⚠️ too tight"}')
-        if not ok:
-            bad.append((name, budget))
+        print(f'\n  ── Polling budget check (worst flush interval measured at {worst:.0f} ms)')
+        bad = []
+        for name, budget in POLL_BUDGETS:
+            ok = budget > worst
+            print(f'     {name:<32} {budget:>5} ms   {"✅ sufficient" if ok else "⚠️ too tight"}')
+            if not ok:
+                bad.append((name, budget))
 
-    for nid in ids:
-        drop(nid)
-
-    if bad:
-        print(f'\n  ⚠️ {len(bad)} polling budgets < the worst flush interval; '
-              'they give up early in the corresponding phase')
-        return 1
-    print('\n  ✅ All polling budgets are sufficient')
-    return 0
+        if bad:
+            print(f'\n  ⚠️ {len(bad)} polling budgets < the worst flush interval; '
+                  'they give up early in the corresponding phase')
+            return 1
+        print('\n  ✅ All polling budgets are sufficient')
+        return 0
+    finally:
+        for nid in ids:
+            drop(nid)
 
 
 def main() -> int:

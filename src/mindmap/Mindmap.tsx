@@ -29,6 +29,9 @@ export type {
 } from '../core/layout';
 import {
   normalizeShape,
+  normalizeStructure,
+  normalizeLineStyle,
+  normalizeThemeIdx,
   MM_SHAPE_LABELS,
   MM_THEMES,
   themeToDark,
@@ -232,13 +235,12 @@ export default function Mindmap({
   //
   //   ★ Collapsed state is stored **per document**: node IDs differ between documents, so mixing them would bleed across.
   const PREF_KEY = 'om-mm-prefs';
-  const readPrefs = (): Partial<{
-    structure: MmStructure; themeIdx: number;
-    lineStyle: MmLineStyle; shape: MmTopicShape;
-  }> => {
+  // ★ Returns `Record<string, unknown>` rather than the preferences' declared types: the JSON has no
+  //   type until it is validated, and declaring the shape here is what let the cast go unnoticed.
+  const readPrefs = (): Record<string, unknown> => {
     try {
       const raw = localStorage.getItem(PREF_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, never>) : {};
+      return raw ? (JSON.parse(raw) as unknown as Record<string, unknown>) : {};
     } catch {
       // Unavailable storage / broken JSON must not affect functionality; fall back to the defaults
       return {};
@@ -247,11 +249,13 @@ export default function Mindmap({
   const saved = readPrefs();
 
   const [structure, setStructure] = useState<MmStructure>(
-    () => saved.structure ?? initialStructure,
+    () => normalizeStructure(saved.structure, initialStructure),
   );
-  const [themeIdx, setThemeIdx] = useState<number>(() => saved.themeIdx ?? initialThemeIdx);
+  const [themeIdx, setThemeIdx] = useState<number>(
+    () => normalizeThemeIdx(saved.themeIdx, initialThemeIdx),
+  );
   const [lineStyle, setLineStyle] = useState<MmLineStyle>(
-    () => saved.lineStyle ?? initialLineStyle,
+    () => normalizeLineStyle(saved.lineStyle, initialLineStyle),
   );
   const [shape, setShape] = useState<MmTopicShape>(() => normalizeShape(saved.shape ?? initialShape));
   // ★ Whole-object override rather than per-field `??`: when the caller explicitly passes initial*, the caller wins.

@@ -207,6 +207,16 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-audit-findings.py").is_file(),
     },
     {
+        # ★ The helper two gates now read their baseline through. Its failure mode is "silently read the
+        #   working tree instead of the tag" —— which is exactly what those gates were doing before, and
+        #   what nothing would notice, because a checkout near the tag makes the two agree. Its selftest
+        #   feeds it two tags whose blobs differ and a tag that does not exist, so the fallback cannot pass.
+        "name": "siyuan-tag-selftest",
+        "command": "python3 scripts/siyuan_tag.py --selftest",
+        "why": "the released-tag reader reads the tag, raises on a missing tag, and never falls back to the tree",
+        "requires": lambda: (REPO_ROOT / "scripts" / "siyuan_tag.py").is_file(),
+    },
+    {
         "name": "language",
         "command": "python3 scripts/audit-language.py",
         "why": "the section 2 language policy, over every file type at once",
@@ -262,6 +272,18 @@ GATES = [
         "command": "python3 scripts/check-version-floor.py",
         "why": "minAppVersion and the version constants agree with the official release tags",
         "requires": lambda: (REPO_ROOT / "scripts" / "check-version-floor.py").is_file(),
+    },
+    {
+        # ★ A citation is only an authority if it can be read. Twenty-three tracked files named
+        #   `.logs/API-GOTCHAS.md §NN` or `.logs/perf-test-design.md §N` as the basis for their
+        #   assertions —— and `.logs/` is gitignored, so the measured facts behind those assertions
+        #   were unreadable to anyone who cloned the repository. The tool flags a **document**
+        #   (`.md`/`.rst`) under a gitignored directory and leaves log paths and `.tmp` data handoffs
+        #   alone, because "is this a document?" is decidable and "is this a citation?" is not.
+        "name": "citations",
+        "command": "python3 scripts/check-citations.py",
+        "why": "every document a tracked file cites is one a clone actually carries",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-citations.py").is_file(),
     },
     {
         # Section 1's "never hardcode machine absolute paths". It was a rule enforced by remembering to look,

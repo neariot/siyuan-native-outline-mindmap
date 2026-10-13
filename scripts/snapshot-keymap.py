@@ -31,7 +31,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cdp import Tab, close_stale_tabs  # noqa: E402
+from cdp import Tab, close_stale_tabs, CDPUnreachable  # noqa: E402
 from env import cfg  # noqa: E402
 import script_log  # noqa: E402
 
@@ -110,4 +110,8 @@ def main():
 
 if __name__ == '__main__':
     with script_log.track("snapshot-keymap"):
-        sys.exit(main())
+        try:
+            sys.exit(main())
+        except CDPUnreachable as exc:
+            print(f"snapshot-keymap: cannot run —— {exc}", file=sys.stderr)
+            sys.exit(2)

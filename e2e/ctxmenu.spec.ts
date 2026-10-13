@@ -13,10 +13,14 @@ import {
  * ## Why it gets its own suite
  *
  * Previously only three items were covered (add child node / focus / back to full map),
- * while the menu has **7 items in total** —— "Edit node", "Add sibling node", "Expand as sub-document"
- * and "Delete node (with children)" were never clicked at all.
+ * while the menu has **8 items in total** —— the other five are "Edit node", "Note / description",
+ * "Add sibling node", "Expand as sub-document" and "Delete node (with children)", of which four are
+ * clicked below and the note/description item is only enumerated.
  * Menu items are **conditionally rendered** (`editable && onEditNode`, `deletable && onDeleteNode`),
  * so a missing prop silently drops an item: no error, the user just loses a feature.
+ * ★ The count here and the `toHaveLength(8)` below are one fact stated twice; when they disagreed the
+ *   header said 7 and the case said 8, which is the shape of a stale claim (the note/description item
+ *   had been added without the header following).
  *
  * ## One pitfall you must know: `window.confirm` **cancels by default** in a headless browser
  *
@@ -172,6 +176,10 @@ test('"Add sibling node" inserts a node at the same level', async ({ page }) => 
   //   index — a leftover sibling would shift every index after it.
   // ★ Level is asserted against the DOCUMENT markdown, not just the node count: a child insert
   //   also grows the count by one, so count-only passes for a child/sibling swap.
+  // ★★ Index 1, **not 0**: `.mm-node` 0 is the synthetic `__root__`, which correctly has no
+  //    "Add sibling" entry (the menu guards it with `!isCtxRoot`). Opening the menu on the root and
+  //    then waiting for that item is a wait that cannot end —— measured, it timed out at 2 minutes
+  //    while every other case in the suite passed in seconds.
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let id = '';
   try {
@@ -179,7 +187,7 @@ test('"Add sibling node" inserts a node at the same level', async ({ page }) => 
     await openDoc(page, id);
     await toMindmapView(page);
     const before = await mindmapState(page);
-    await openCtxMenu(page, 0);
+    await openCtxMenu(page, 1);
     await clickCtxItem(page, '新增兄弟节点');
     await page.waitForTimeout(1200);
 
@@ -188,12 +196,21 @@ test('"Add sibling node" inserts a node at the same level', async ({ page }) => 
       after.nodes,
       `the node count should grow after adding a sibling (${before.nodes} → ${after.nodes})`,
     ).toBe(before.nodes + 1);
+    // ★ The criterion is **indentation**, not content. A newly added sibling is empty (the user types
+    //   into it), so a regex demanding text on every line fails on a correct product —— measured:
+    //   the export was `- 分支一 / - / - 分支二`, three top-level lines, and the assertion timed out
+    //   because the middle one had no text. What distinguishes a sibling from a child is that its
+    //   line starts at column 0; a nested item would be indented.
     await expect
       .poll(async () => {
         const res = await api.call('/api/export/exportMdContent', { id });
-        return String((res.data as { content?: string })?.content ?? '');
+        const content = String((res.data as { content?: string })?.content ?? '');
+        // Count the list lines that sit at column 0 (indentation is what encodes level here).
+        // ★ `^-(?:\s|$)` —— a list marker, not `---` (the YAML front-matter fence). The first version
+        //   used `^-[ \t]?` and counted the two `---` fences as list items (received 5, expected 3).
+        return content.split('\n').filter((l) => /^-(?:\s|$)/.test(l)).length;
       }, { message: 'the new node must be a top-level sibling, not a nested child', timeout: 15_000 })
-      .toMatch(/^-\s+[^\n]+\n-\s+[^\n]+\n-\s+[^\n]+/m);
+      .toBe(3);
   } finally {
     if (id) await removeDoc(api, id);
     await api.dispose();

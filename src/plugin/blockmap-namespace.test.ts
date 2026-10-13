@@ -1,7 +1,7 @@
 /**
  * The mapping's **key namespace**: which ID may be a key, and which entries survive one read.
  *
- * Corresponds to .logs/API-GOTCHAS.md §80 / §82, and `kernel-api.md` §7.7 ("do not mix two kinds of ID in
+ * Corresponds to `docs/pitfalls/data.md` §1.1 and `docs/kernel-api.md` §7.7 ("do not mix two kinds of ID in
  * one map").
  *
  * ★ This file used to hold `class MapModel` —— a hand-written mirror of `SiYuanStore.loadBlockMap`'s three

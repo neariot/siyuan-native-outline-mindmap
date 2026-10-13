@@ -37,23 +37,46 @@ function luma(rgb: string): number {
  * The sheet is found by its scoping class (`om-mm-host`, added by the build to every selector), not
  * by file name, and the selectors are read out of the CSSOM —— the browser's own parsed model.
  * Nothing here reads CSS as text.
+ *
+ * ★ Grouping rules are walked **recursively** (`@media` / `@supports` / `@container` / `@layer`).
+ *   The first version read only `sheet.cssRules`' top level and mapped `selectorText` over it, so a
+ *   theme-conditional rule nested in an at-rule was invisible while the case's own comment claimed it
+ *   checked every one of them. That was latent —— all of them are top level today —— but a latent
+ *   "cannot see it" in a check that says "every" is a check that will pass on the defect it names.
+ *   `CSSGroupingRule` is the CSSOM interface for at-rules that contain rules; matching on it covers
+ *   any grouping rule the browser knows, including ones that do not exist yet.
  */
 async function pluginThemeSelectors(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    [...document.styleSheets]
-      .flatMap((sheet) => {
-        let rules: CSSRule[];
-        try {
-          rules = [...sheet.cssRules];
-        } catch {
-          return []; // a cross-origin sheet cannot be read; not ours
-        }
-        if (!rules.some((r) => (r as CSSStyleRule).selectorText?.includes('om-mm-host'))) return [];
-        return rules
-          .map((r) => (r as CSSStyleRule).selectorText)
-          .filter((t): t is string => Boolean(t) && t.includes('data-theme'));
-      }),
-  );
+  return page.evaluate(() => {
+    // ★ Every rule's own selector is collected, then its children are walked —— **not** an
+    //   either/or. In current Chromium a `CSSStyleRule` also has a `cssRules` member (CSS Nesting),
+    //   so "if it has cssRules, recurse and continue" treated every ordinary style rule as a grouping
+    //   rule and collected nothing at all: the guard reported "the plugin stylesheet has no
+    //   theme-conditional rules at all" on a sheet full of them. Collecting first and recursing second
+    //   is correct for both shapes.
+    const walk = (rules: CSSRule[], out: string[]): string[] => {
+      for (const r of rules) {
+        const sel = (r as CSSStyleRule).selectorText;
+        if (sel) out.push(sel);
+        const nested = (r as CSSGroupingRule).cssRules;
+        if (nested) walk([...nested], out);
+      }
+      return out;
+    };
+
+    return [...document.styleSheets].flatMap((sheet) => {
+      let rules: CSSRule[];
+      try {
+        rules = [...sheet.cssRules];
+      } catch {
+        return []; // a cross-origin sheet cannot be read; not ours
+      }
+      const all = walk(rules, []);
+      // Ownership is decided by the build's scoping class, at any depth.
+      if (!all.some((sel) => sel.includes('om-mm-host'))) return [];
+      return all.filter((sel) => sel.includes('data-theme'));
+    });
+  });
 }
 
 /** For each selector, the CSS engine's answer to "can this match anything here right now?" */

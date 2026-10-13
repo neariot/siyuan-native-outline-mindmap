@@ -70,12 +70,25 @@ def _http(url, method="GET", timeout=10):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
+class CDPUnreachable(RuntimeError):
+    """The CDP HTTP endpoint did not answer. **Not** the same as "the browser has no tabs"."""
+
+
 def list_tabs(host=DEFAULT_HOST, port=DEFAULT_PORT):
-    """Return information for every tab (including webSocketDebuggerUrl)."""
+    """Return information for every tab (including webSocketDebuggerUrl).
+
+    ★ An unreachable endpoint **raises** — it is not reported as an empty list.
+      This function used to `return []` for every exception, which made "CDP is not running" and "the
+      browser has no tabs" the same answer; `close_stale_tabs` then computed a tab count of 0 and
+      reported "cleaned up nothing", which reads as a healthy state while the browser was in fact
+      absent. The very next step (`Tab()`) failed somewhere else, with a message about a socket. An
+      empty browser and an absent browser are different facts, so only one of them returns `[]`.
+    """
+    url = _base(host, port) + "/json/list"
     try:
-        return json.load(_http(_base(host, port) + "/json/list"))
-    except Exception:
-        return []
+        return json.load(_http(url))
+    except Exception as exc:
+        raise CDPUnreachable(f"CDP endpoint {url} is unreachable: {exc}") from exc
 
 
 def close_stale_tabs(host=DEFAULT_HOST, port=DEFAULT_PORT, keep_first=True,
@@ -90,7 +103,7 @@ def close_stale_tabs(host=DEFAULT_HOST, port=DEFAULT_PORT, keep_first=True,
     closing is asynchronous but usually finishes within tens of milliseconds, so a fixed 5-second wait is pure waste.
     `settle` is only a fallback wait once the polling has timed out.
     """
-    tabs = list_tabs(host, port)
+    tabs = list_tabs(host, port)   # raises CDPUnreachable rather than pretending the browser is empty
     if not tabs:
         return 0
     targets = tabs[1:] if keep_first else tabs
@@ -106,7 +119,14 @@ def close_stale_tabs(host=DEFAULT_HOST, port=DEFAULT_PORT, keep_first=True,
         return 0
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if len(list_tabs(host, port)) <= want:
+        try:
+            remaining = len(list_tabs(host, port))
+        except CDPUnreachable:
+            # ★ The endpoint vanishing mid-close means the browser is gone, so no tab is left to
+            #   close. Treating this as "count reached 0" is the honest reading; the alternative —
+            #   propagating — would report a failure for having *succeeded* too well.
+            return n
+        if remaining <= want:
             return n
         time.sleep(0.2)
     # Timeout fallback: in a few environments tabs linger for a while, so give one fixed wait anyway.

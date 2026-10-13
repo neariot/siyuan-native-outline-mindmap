@@ -1,7 +1,7 @@
 /**
  * The decision boundary of `isTargetGoneError`.
  *
- * Corresponds to .logs/API-GOTCHAS.md §85 (target document deleted externally → edit silently lost).
+ * Corresponds to `docs/pitfalls/data.md` §1.4 (target document deleted externally → edit silently lost).
  *
  * ★ Why this is worth a unit test: the predicate decides whether the UI shows
  *   "a useless block not found" or "a readable message + a save-as recovery entry".

@@ -1,7 +1,7 @@
 /**
  * **Anchor choice** when Tab/Enter adds a node on the mind map.
  *
- * See .logs/API-GOTCHAS.md §100 / §101.
+ * See `docs/kernel-api.md` §7.1 / §7.16 (anchors) and `docs/pitfalls/data.md` §1.6.
  *
  * ★ Core: `insertBlock`'s anchor decides whether the new node is a "sibling" or a "child",
  *   and **the two semantics are exactly opposite** — the parent level needs a paragraph block, the sibling level must not have one.

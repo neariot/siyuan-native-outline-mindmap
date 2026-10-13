@@ -2,7 +2,7 @@
  * The auto-scroll decisions, as pure functions so they can be tested without a browser.
  *
  * ★ They live here rather than inline in `Outliner.tsx` because the first version of them was
- *   re-implemented inside the test that claimed to freeze them (`.logs/API-GOTCHAS.md` §115), so every
+ *   re-implemented inside the test that claimed to freeze them (`docs/pitfalls/mobile.md` §3.3), so every
  *   assertion compared a literal the test had just written with itself: no change to the product could
  *   turn that file red. A decision that is written twice is tested once.
  */

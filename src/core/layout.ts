@@ -51,6 +51,35 @@ export function normalizeShape(s: unknown): MmTopicShape {
   return (VALID_SHAPES as string[]).includes(s as string) ? (s as MmTopicShape) : 'underline';
 }
 
+const VALID_STRUCTURES: MmStructure[] = ['balanced', 'right', 'left', 'org', 'timeline'];
+const VALID_LINE_STYLES: MmLineStyle[] = ['curve', 'rounded', 'straight'];
+
+/**
+ * Validate a value that came from **outside this program** (localStorage, a stored preference).
+ *
+ * ★ A cast is not a validation. The preferences are read from `localStorage` and were asserted into
+ *   their types with `as Record<string, never>`, so any JSON a user or an older build left behind ——
+ *   `{"structure":"tree"}`, `{"lineStyle":42}` —— flowed into `structure`/`themeIdx`/`lineStyle`/`shape`
+ *   as if it had the declared type. Nothing raised; the layout just received a value no branch handles.
+ *   `shape` was already normalised, which is what made the other three look fine.
+ *
+ * Each returns the fallback for anything that is not a member of the union, so the caller gets a value
+ * the renderer can actually switch on. `themeIdx` is checked against the real theme count, because an
+ * out-of-range index is not caught by a union.
+ */
+export function normalizeStructure(s: unknown, fallback: MmStructure): MmStructure {
+  return (VALID_STRUCTURES as string[]).includes(s as string) ? (s as MmStructure) : fallback;
+}
+
+export function normalizeLineStyle(s: unknown, fallback: MmLineStyle): MmLineStyle {
+  return (VALID_LINE_STYLES as string[]).includes(s as string) ? (s as MmLineStyle) : fallback;
+}
+
+export function normalizeThemeIdx(s: unknown, fallback: number): number {
+  // ★ `Number.isInteger` also rejects NaN/Infinity, which `Number(...)` alone would let through.
+  return typeof s === 'number' && Number.isInteger(s) && s >= 0 && s < MM_THEMES.length ? s : fallback;
+}
+
 export interface BranchPalette {
   border: string;
   fill: string;

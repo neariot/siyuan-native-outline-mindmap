@@ -29,7 +29,7 @@ import time
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cdp import Tab, close_stale_tabs  # noqa: E402
+from cdp import Tab, close_stale_tabs, CDPUnreachable  # noqa: E402
 from env import cfg  # noqa: E402
 import script_log  # noqa: E402
 
@@ -181,7 +181,7 @@ def run_resize(tab):
     # ── Relationship to SiYuan's splitter (the final criterion for root cause 2.3)────────────────────
     #
     # agy once conjectured that `.mm-canvas`'s `touch-action: none` '1px overlaps' the host's
-    # `.layout__resize` hot zone, making it undraggable. Measurement ruled that **does not hold** (see .tmp/rc-2-3-verdict.md):
+    # `.layout__resize` hot zone, making it undraggable. Measurement ruled that **does not hold**:
     #   · rectangle overlap area 0 (hot zone right edge 762, canvas left edge 762, adjacent not intersecting);
     #   · really dragging 150px moved the panel width by exactly +150, no failure.
     # Both are pinned here as checks, to prevent a real overlap from being introduced inadvertently when the CSS is changed later.
@@ -523,4 +523,11 @@ def main():
 
 if __name__ == "__main__":
     with script_log.track("verify-live"):
-        sys.exit(main())
+        try:
+            sys.exit(main())
+        except CDPUnreachable as exc:
+            # ★ Named precondition, not a traceback: "the browser is not running" is a setup problem
+            #   the reader can act on, and it is a different fact from "the check failed".
+            print(f"verify-live: cannot run —— {exc}\n"
+                  f"  Start Chromium with --remote-debugging-port={cfg.cdp_port} first.", file=sys.stderr)
+            sys.exit(2)

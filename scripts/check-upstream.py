@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import env  # noqa: E402
 import script_log  # noqa: E402
+import siyuan_tag  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -66,8 +67,14 @@ def main() -> int:
 
     print("=== SiYuan Upstream Compatibility Health Check ===")
     git_info = check_upstream_git(siyuan_src)
+    # ★ The **released tag** the sub-checks verify against, not the checkout's branch. Measured: this
+    #   machine's `SIYUAN_SRC` is on a fork branch (`fix-moveblock-transaction-error`) whose HEAD is in
+    #   no release, and printing that as "Branch / Tag" read as if it were the baseline —— while the
+    #   checks below actually read v3.8.6. The branch is still shown, labelled as the working tree.
+    tag = siyuan_tag.tag_for_check(siyuan_src)
     print(f"  Upstream checkout: {siyuan_src}")
-    print(f"  Branch / Tag:      {git_info['branch']} ({git_info['describe']})")
+    print(f"  Verified against:  released tag {tag or '(none —— no stable tag in this clone)'}")
+    print(f"  Working tree:      {git_info['branch']} ({git_info['describe']})  ← not used as the baseline")
     print(f"  Commit:            {git_info['commit']}")
     print()
 

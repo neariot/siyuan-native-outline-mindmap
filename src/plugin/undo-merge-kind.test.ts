@@ -1,7 +1,7 @@
 /**
  * The **classification** semantics of the undo merge window.
  *
- * Corresponds to .logs/API-GOTCHAS.md §88.
+ * Corresponds to `docs/pitfalls/editor.md` §2.2 (the undo merge window treats discrete operations like typing).
  *
  * ★ The core distinction:
  *   · continuous typing (kind='text' / undefined) -> **merge** (otherwise Ctrl+Z has to walk back one character at a time)

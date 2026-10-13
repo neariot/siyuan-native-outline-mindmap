@@ -1,5 +1,5 @@
 /**
- * Wait strategy for batch moves (corresponds to section 3.5 of `.logs/perf-test-design.md`).
+ * Wait strategy for batch moves (batch tree mutation; `docs/TESTING.md`, "Performance testing").
  *
  * ──────────────────────────────────────────────────────────────────
  * Cause: a fixed 300ms × every node

@@ -179,8 +179,7 @@ E transaction.go:142: transaction failed and requires UI reload:
 **Why the numbers live here and not in the test**: `kernel-bugs.test.ts` / `kernel-side-effects.test.ts`
 keep the *shape* of the behaviour and nothing else (`code:0` + an empty `msg` for both outcomes, the
 read-back contract, "every probe green while the store changed") —— a printed number inside a test cannot
-go red, so it is not evidence. The measurements themselves are here and in
-`.logs/kernel-bug-report.md` (defect 1).
+go red, so it is not evidence. The measurements themselves are here.
 
 ---
 

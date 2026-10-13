@@ -1,7 +1,7 @@
 /**
  * The mapping table points at "a block the kernel already destroyed" → silent data loss.
  *
- * Corresponds to .logs/API-GOTCHAS.md §105 / §106.
+ * Corresponds to `docs/pitfalls/data.md` §1.6 / §1.8 (a mapping to a destroyed block; a listItem mapping is what `moveNodes` needs).
  *
  * ★ Core point: a **mapping that points at a dead block** is far more dangerous than "no mapping".
  *   No mapping   → treated as a new node and re-inserted (idempotent);

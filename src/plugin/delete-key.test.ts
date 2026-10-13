@@ -1,7 +1,7 @@
 /**
  * The **Delete** key's branch order, and the wiring that carries it out.
  *
- * Corresponds to .logs/API-GOTCHAS.md §95 and `docs/pitfalls/editor.md` §2.3.
+ * Corresponds to `docs/pitfalls/editor.md` §2.3 (paired reverse keys: check branch completeness on both).
  *
  * ★ The measured defect: a single selection whose caret is **not** at the end of the line fell through the
  *   handler and reached the browser's native forward-delete —— the text disappeared while the node stayed:

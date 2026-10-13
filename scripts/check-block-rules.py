@@ -14,6 +14,14 @@ Each was measured against a running kernel, which is honest but **slow and unver
 lives in a comment, no test can re-run it, and the next person has to take it on trust. SiYuan's source is on
 this machine (`SIYUAN_SRC`), so the rules can be **asked** instead of remembered.
 
+★★ **The source is read at a released tag, not as a working tree.** `SIYUAN_SRC` may be a fork, a feature
+   branch, or a tree somebody is editing —— measured on this machine its HEAD is a fork branch reachable
+   from no release, and `kernel/api/router.go` differs from v3.8.6 by 8 lines. Reading it as a working tree
+   made "aligned with upstream" mean "aligned with whatever is checked out". `siyuan_tag.materialise()`
+   extracts the tag's own `kernel/` tree out of the local object store (~16 MB, 0.1s, no checkout, no
+   download), so every claim below is answered by the code users install. Set `SIYUAN_TAG` to pin one;
+   otherwise the newest stable tag is used.
+
 ★ This checks the *rule*, not our model of it. `kernel/treenode.CanContainBlock` is the function the kernel
 itself calls to reject a bad tree —— the same one that answers
 `invalid block structure: NodeList [<id>] cannot contain NodeHeading [<id>]` —— so a disagreement here means our
@@ -25,7 +33,9 @@ comment is wrong, not that the source is.
     `github.com/88250/lute/ast` types. There is no second copy of the rule to drift.
   * **Not a full kernel build.** `treenode` is standalone (`go build ./treenode/` needs no database, no SQL, no
     HTTP), so this is a small program rather than the whole kernel —— the full module's dependency graph is
-    what made an earlier attempt at importing the kernel fail, and it is avoidable.
+    what made an earlier attempt at importing the kernel fail, and it is avoidable. (The *source* of the
+    whole `kernel/` package is extracted, because `treenode` imports `kernel/av`, `kernel/cache` and
+    `kernel/util`; nothing else is built.)
   * **Not a replacement for the live instance.** The running kernel is still what settles "what does the API
     return"; this settles "what does the rule say", which is the part a comment can get wrong quietly.
 
@@ -40,6 +50,7 @@ Exit 0 = every claimed rule matched (or the source is absent), 1 = a claim disag
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -52,6 +63,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import env  # noqa: E402
 import script_log  # noqa: E402
+import siyuan_tag  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # The claims this repository makes about SiYuan's block structure.
@@ -203,6 +215,20 @@ def main() -> int:
         )
         return 0
 
+    # ★★ Read the **released tag**, not the working tree. Measured: this machine's checkout is a fork
+    #    branch reachable from no release, and `kernel/api/router.go` there differs from v3.8.6 by 8
+    #    lines —— so "aligned with upstream" would have meant "aligned with this fork". `SIYUAN_TAG`
+    #    pins a version; otherwise the newest stable tag is used and named in the output.
+    src_path = Path(src)
+    tag = siyuan_tag.tag_for_check(src_path)
+    if not tag:
+        print(
+            "check-block-rules: SKIPPED —— no stable `vX.Y.Z` tag in SIYUAN_SRC and SIYUAN_TAG is unset, so\n"
+            "  there is no released version to verify against. A branch tip is not a release."
+        )
+        return 0
+    print(f"check-block-rules: verifying against released tag {tag}")
+
     go = go_toolchain()
 
     # ---- the endpoint paths and matched strings: a pure text scan, always run, needs no Go ----
@@ -212,7 +238,8 @@ def main() -> int:
     #   let `GOTOOLCHAIN=auto` start a 70 MB download inside `npm run check` —— which breaks the "the fast
     #   path stays fast" rule more quietly than a failure does). Splitting them means the cheap, always-
     #   applicable checks are never hostage to the expensive one.
-    kernel_root = Path(src) / "kernel"
+    tag_root = siyuan_tag.materialise_dir(src_path, tag, ["kernel"])
+    kernel_root = tag_root / "kernel"
     bad = 0
     string_bad = 0
 
@@ -275,7 +302,7 @@ def main() -> int:
         # ★ `replace` must point at the directory holding the kernel's own go.mod —— the module root is
         #   `<src>/kernel`, not `<src>` (the repo root has no go.mod). Pointing one level too high fails with
         #   "reading <src>/go.mod: no such file or directory", which is how this was found.
-        kernel_dir = Path(src) / "kernel"
+        kernel_dir = kernel_root
         if not (kernel_dir / "go.mod").is_file():
             print(
                 f"check-block-rules: SKIPPED —— no kernel/go.mod under SIYUAN_SRC ({src}), so this is not a "
@@ -362,7 +389,8 @@ def main() -> int:
     )
     print(
         f"check-block-rules: OK {len(endpoints)} endpoint path(s) still routed, "
-        f"{len(STRING_CLAIMS)} matched kernel string(s) still present, {containment} (source: {src})"
+        f"{len(STRING_CLAIMS)} matched kernel string(s) still present, {containment} "
+        f"(source: released tag {tag} from {src})"
     )
     return 0
 

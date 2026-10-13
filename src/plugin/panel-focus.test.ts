@@ -1,7 +1,7 @@
 /**
  * **Focus restoration** semantics for panels / overlays —— and the reason Escape needs it.
  *
- * See .logs/API-GOTCHAS.md §91.
+ * See `docs/pitfalls/editor.md` §2.1 (“whatever steals the focus must give it back”).
  *
  * ★ The same pattern appears in four places:
  *   · mind map edit overlay (textarea)

@@ -1,5 +1,6 @@
 /**
- * Workload generator for the performance tests (corresponds to section 2, T1–T4, of `.logs/perf-test-design.md`).
+ * Workload generator for the performance tests (the T1–T4 tiers are defined in `docs/TESTING.md`,
+ * "Performance testing").
  *
  * ──────────────────────────────────────────────────────────────────
  * Why this is a separate module
@@ -26,7 +27,7 @@
  * The "width + depth" branches **each take their own share of nodes**, so the total stays exactly the configured number.
  */
 
-/** Parameters of each load tier, copied straight from the workload profile table in perf-test-design.md */
+/** Parameters of each load tier; the table in `docs/TESTING.md` ("Performance testing") is the same numbers. */
 export interface Tier {
   name: string;
   nodes: number;

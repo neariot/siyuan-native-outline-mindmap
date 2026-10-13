@@ -1,7 +1,7 @@
 /**
  * Parsing and navigation of backlinks / mentions.
  *
- * Corresponds to .logs/API-GOTCHAS.md §117, §118; defects #56, #57.
+ * Corresponds to `docs/pitfalls/editor.md` §6.9cc (a reference the parser cannot read degrades to plain text) and `docs/pitfalls/plugin.md` §5.4 (`openTab` needs the real application instance).
  *
  * ★ Both halves used to hold a **copy** of the thing they described, and the copy was the whole test:
  *

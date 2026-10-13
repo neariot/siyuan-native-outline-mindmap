@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real-device input latency probe (corresponds to section 3.2 of `.logs/perf-test-design.md`).
+"""Real-device input latency probe (the T1–T4 load tiers are defined in `docs/TESTING.md`, "Performance testing").
 
 ──────────────────────────────────────────────────────────────────
 Why this script exists at all
@@ -26,7 +26,7 @@ Usage
     python3 scripts/perf-probe.py --doc <docId>       # specify a document
     python3 scripts/perf-probe.py --keep-open         # do not close the tab after measuring
 
-Criterion (perf-test-design.md 3.2): keystroke to repaint < 50ms; > 100ms is a delay the user clearly perceives.
+Criterion (`docs/TESTING.md`, input latency): keystroke to repaint < 50ms; > 100ms is a delay the user clearly perceives.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ import time
 #   (sys.path.insert(0, 'scripts') dies with ModuleNotFoundError outside the repo root).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from cdp import Tab, close_stale_tabs  # noqa: E402
+from cdp import Tab, close_stale_tabs, CDPUnreachable  # noqa: E402
 from env import cfg  # noqa: E402
 import script_log  # noqa: E402
 
@@ -107,7 +107,7 @@ def free_mem_mb() -> int:
 #
 # So this script would rather refuse to produce a number than hand you noise that gets taken as a conclusion.
 
-INP_BUDGET_MS = 50.0  # criterion from perf-test-design.md 3.2
+INP_BUDGET_MS = 50.0  # criterion from docs/TESTING.md (input latency)
 
 
 def probe_js() -> str:
@@ -217,7 +217,7 @@ def main() -> int:
             row['sel'], row['cells_count'], row['median'], verdict))
         print('  %-22s rounds %s' % ('', row['rounds']))
     print()
-    print('  criterion: keystroke to repaint < %.0f ms (perf-test-design.md 3.2)' % INP_BUDGET_MS)
+    print('  criterion: keystroke to repaint < %.0f ms (docs/TESTING.md)' % INP_BUDGET_MS)
 
     if not args.keep_open:
         t.close()
@@ -226,4 +226,8 @@ def main() -> int:
 
 if __name__ == '__main__':
     with script_log.track("perf-probe"):
-        raise SystemExit(main())
+        try:
+            raise SystemExit(main())
+        except CDPUnreachable as exc:
+            print(f"perf-probe: cannot run —— {exc}", file=sys.stderr)
+            raise SystemExit(2)

@@ -1,5 +1,5 @@
 /**
- * Memory footprint of the undo stack (section 3.6-① of `.logs/perf-test-design.md`).
+ * Memory footprint of the undo stack (a T3-profile document; `docs/TESTING.md`, "Performance testing").
  *
  * ──────────────────────────────────────────────────────────────────
  * What the document is worried about

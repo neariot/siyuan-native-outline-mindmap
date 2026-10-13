@@ -1,7 +1,7 @@
 /**
  * **First-edit** semantics of the undo stack.
  *
- * See .logs/API-GOTCHAS.md §89.
+ * See `docs/pitfalls/editor.md` §2.2 (the first edit after loading a document is not undoable).
  *
  * ★ Background: `pushUndo` is implemented as
  *     const src = before ?? prevTreeRef.current;

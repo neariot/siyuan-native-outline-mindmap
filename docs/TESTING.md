@@ -653,8 +653,24 @@ instead of speculating.
 
 ## Performance testing
 
-Following the T1–T4 load profiles in `.logs/perf-test-design.md` (50 / 500 / 2000 / 10000 nodes).
-The load generator lives in `src/perf/loadgen.ts`: exact node counts, mixed breadth and depth, Poisson-distributed text lengths.
+The load tiers (T1–T4) are a **standardised data set** so a measurement can be compared with a later
+one. The generator is `src/perf/loadgen.ts`, and its `TIERS` table is the authority —— this table is
+the same numbers written once for a reader:
+
+| Tier | Nodes | Max depth | Attachment paragraphs | Special elements | What it stands in for |
+|---|---|---|---|---|---|
+| T1 tiny | 50 | 3 | 5 | a few rich-text runs | a daily note; the sensitivity baseline |
+| T2 medium | 500 | 6 | 60 | 20 to-dos, 10 tags, 5 formulas | a typical heavy outline |
+| T3 large | 2,000 | 10 | 300 | 50 code/formula, 30 two-way links | a long knowledge-base outline |
+| T4 stress | 10,000 | 15 | 1,500 | dense nesting and collapsed branches | the capacity limit |
+
+Topology requirements: **breadth and depth together** (50 siblings under one parent *and* a branch
+nested 10+ levels), and text lengths drawn from a Poisson distribution (mean 28 characters) mixing
+plain text, inline bold/italic, LaTeX (`$E=mc^2$`) and two-way links.
+
+★ This table used to be cited as `.logs/perf-test-design.md` §2 —— a gitignored file, so a reader who
+cloned the repository could not open the thing that defined the tiers. `scripts/check-citations.py`
+now fails on that shape.
 
 | Dimension | Artifact | Conclusion |
 |---|---|---|

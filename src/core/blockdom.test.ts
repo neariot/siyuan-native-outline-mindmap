@@ -8,7 +8,7 @@
  *   ④ whether empty paragraphs / empty nodes / task state are produced correctly
  */
 import type { OutlineNode } from '../model/types';
-import { treeToBlockDom, paragraphBlockDom } from './blockdom';
+import { treeToBlockDom, paragraphBlockFragment } from './blockdom';
 
 let pass = 0;
 let fail = 0;
@@ -137,14 +137,15 @@ console.log('=== inline styles (through htmlToSiyuanDom) ===');
   check('no bare HTML tags are left behind', !/<b>|<i>/.test(dom));
 }
 
-console.log('=== single paragraph block (for insertParagraphAfter) ===');
+console.log('=== single paragraph fragment (for updateBlock / insertParagraphAfter) ===');
 {
-  const p = paragraphBlockDom('正文');
+  const p = paragraphBlockFragment('正文');
   check('produces NodeParagraph', p.includes('data-type="NodeParagraph"'));
-  check('carries a valid ID', /data-node-id="\d{14}-[0-9a-z]{7}"/.test(p));
-  check('contains contenteditable', p.includes('contenteditable="true"'));
-  const empty = paragraphBlockDom('');
+  check('carries NO block ID —— the fragment is not a whole block', !p.includes('data-node-id'));
+  const empty = paragraphBlockFragment('');
   check('empty content is filled with a placeholder', empty.includes('\u200b'));
+  check('★ the fragment and a tree paragraph agree on the paragraph element',
+    p.startsWith('<div data-type="NodeParagraph">') && p.endsWith('</div>'));
 }
 
 console.log('=== empty tree ===');

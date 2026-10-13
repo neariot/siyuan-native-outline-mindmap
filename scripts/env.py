@@ -93,6 +93,7 @@ class Config:
         "SIYUAN_TOKEN": "",          # empty means read from <workspace>/conf/conf.json
         "PLUGIN_NAME": "siyuan-native-outline-mindmap",
         "SIYUAN_SRC": "",            # empty = this machine has no source checkout (an explicit statement, not a guess)
+        "SIYUAN_TAG": "",            # empty = newest stable tag; pins which release the source checks read
     }
 
     # Machine-related values must be provided explicitly.

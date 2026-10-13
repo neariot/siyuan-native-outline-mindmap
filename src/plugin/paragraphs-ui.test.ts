@@ -15,6 +15,7 @@
 export {};
 
 import { treeToKramdown } from '../core/map';
+import { paragraphBlockFragment } from '../core/blockdom';
 import type { OutlineNode } from '../model/types';
 import { isParaEmpty, paraDisplayLine, paraPlainText } from '../model/tree';
 
@@ -202,9 +203,19 @@ console.log('=== write-path consistency regression ===');
   check('★ the append branch must not go through markdown',
     !/appendBlock\(/.test(body), body.slice(0, 200));
 
-  // Content always goes through htmlToSiyuanDom into SiYuan's native data-type structure
-  check('★ written content goes through htmlToSiyuanDom uniformly',
-    /htmlToSiyuanDom/.test(body));
+  // Content always goes through `htmlToSiyuanDom` into SiYuan's native data-type structure.
+  // ★ The construct now lives in one place (`paragraphBlockFragment`), so this asserts the property at
+  //   both ends instead of looking for a symbol name: the write path must *route through* the builder,
+  //   and the builder must really produce SiYuan-native DOM from bare HTML. Asserting only the name
+  //   would pass if the builder were reimplemented to emit markdown, and it would fail for a rename
+  //   that changed nothing.
+  check('★ the write path routes every paragraph through the shared builder',
+    /paragraphBlockFragment\(/.test(body), body.slice(0, 200));
+  check('★ the shared builder emits SiYuan-native DOM (bare tags are converted, not passed through)',
+    paragraphBlockFragment('<b>粗</b>') === '<div data-type="NodeParagraph"><span data-type="strong">粗</span></div>',
+    paragraphBlockFragment('<b>粗</b>'));
+  check('★ the shared builder yields exactly one paragraph element',
+    (paragraphBlockFragment('甲').match(/data-type="NodeParagraph"/g) ?? []).length === 1);
 }
 
 // ---------------------------------------------------------------- ⑧ insertion position and order

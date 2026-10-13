@@ -224,10 +224,14 @@ test('the collapse circle is invisible when the exported SVG is rendered', async
 });
 
 /**
- * ★ Exporting the same tree twice should give nearly identical bytes (deterministic content).
+ * ★ Exporting the same tree twice must give **exactly identical** bytes (deterministic content).
  *
  * A non-deterministic export breaks the "export → something goes wrong → export again and compare" way of investigating.
- * A little variation is allowed (timestamps and the like), but not most of the file every time.
+ * ★ The criterion is byte equality, not "nearly identical": the comment here used to allow "a little
+ *   variation (timestamps and the like)" while the assertion below is `toBe(a)` —— so the prose
+ *   described a weaker check than the one that ran, and a future reader who trusted it would loosen
+ *   the assertion believing the comment already permitted it. If the export ever legitimately needs a
+ *   timestamp, the assertion is what has to change, deliberately.
  */
 test('two exports of the same mind map produce identical .mm content', async ({ page }) => {
   const a = (await exportAndRead(page, '导出 .mm')).buf.toString('utf8');

@@ -36,6 +36,9 @@ import {
   layoutHorizontal,
   layoutOrg,
   normalizeShape,
+  normalizeStructure,
+  normalizeLineStyle,
+  normalizeThemeIdx,
   runsOf,
   themeToDark,
   widthOf,
@@ -310,6 +313,35 @@ console.log('\nshapes: 7 of them, and unknown input has a definite fallback');
   check('a valid value is returned as-is', normalizeShape('hexagon') === 'hexagon');
   check('★ the fallback result is stable (repeated calls agree)',
     normalizeShape('???') === fallback && normalizeShape('???') === fallback);
+}
+
+{
+  // The other three preferences are read from the same localStorage record as `shape`, and used to be
+  // taken on trust: `structure`/`lineStyle` were cast straight into their unions and `themeIdx` into a
+  // number, so `{"structure":"tree"}` reached the layout as a `MmStructure` no branch handles.
+  // Each validator now answers "is this a member of the union" and returns the caller's fallback if not.
+  console.log('\npreference validators: a stored value is a member of its union or the fallback');
+
+  check('★ an unknown structure falls back', normalizeStructure('tree', 'balanced') === 'balanced');
+  check('an absent structure falls back', normalizeStructure(undefined, 'balanced') === 'balanced');
+  check('a number as a structure falls back', normalizeStructure(3, 'balanced') === 'balanced');
+  check('an object as a structure falls back', normalizeStructure({}, 'balanced') === 'balanced');
+  check('a valid structure is returned as-is', normalizeStructure('org', 'balanced') === 'org');
+  check('★ the caller\'s fallback is what comes back, not a fixed one',
+    normalizeStructure('???', 'timeline') === 'timeline');
+
+  check('★ an unknown line style falls back', normalizeLineStyle('wavy', 'curve') === 'curve');
+  check('an absent line style falls back', normalizeLineStyle(undefined, 'curve') === 'curve');
+  check('a valid line style is returned as-is', normalizeLineStyle('straight', 'curve') === 'straight');
+
+  check('★ a theme index outside the list falls back', normalizeThemeIdx(MM_THEMES.length, 0) === 0);
+  check('a negative theme index falls back', normalizeThemeIdx(-1, 0) === 0);
+  check('a fractional theme index falls back', normalizeThemeIdx(1.5, 0) === 0);
+  check('NaN falls back', normalizeThemeIdx(Number.NaN, 0) === 0);
+  check('a numeric string falls back (JSON can hold one)', normalizeThemeIdx('1', 0) === 0);
+  check('an absent theme index falls back', normalizeThemeIdx(undefined, 2) === 2);
+  check('★ the last valid theme index is accepted', normalizeThemeIdx(MM_THEMES.length - 1, 0) === MM_THEMES.length - 1);
+  check('a valid theme index is returned as-is', normalizeThemeIdx(1, 0) === 1);
 }
 
 // ──────────────────────────────────────────────────────────────────

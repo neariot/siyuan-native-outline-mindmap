@@ -1,7 +1,7 @@
 /**
  * Local view (zoom) wiring, and the two representations of a document title must stay in sync.
  *
- * Corresponds to .logs/API-GOTCHAS.md §96 / §97.
+ * Corresponds to `docs/pitfalls/wiring.md` §0.1 (an unpassed optional prop disables the chain).
  *
  * ★ Both defects are the same shape: **a callback that is never given a value** (`onZoomChange` missing from
  *   the props, the heading block never written), where the optional chain or the missing write swallows the

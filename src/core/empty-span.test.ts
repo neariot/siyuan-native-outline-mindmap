@@ -33,9 +33,9 @@ function check(name: string, cond: boolean, extra = '') {
   }
 }
 
-// Reproduce the store.ts write-back construct: `htmlToSiyuanDom(html) || '\u200b'`
-const buildParagraphDom = (html: string): string =>
-  `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
+// The store.ts write-back construct is now a real export, so this test calls the real thing instead
+// of reproducing it by hand —— a copy is a second version that drifts the moment the product changes.
+import { paragraphBlockFragment as buildParagraphDom } from './blockdom';
 
 // ---- 1. empty spans must be stripped ----
 {

@@ -18,8 +18,8 @@ import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes, findNode, findPath } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine } from '../core/map';
-import { treeToBlockDom } from '../core/blockdom';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine } from '../core/map';
+import { treeToBlockDom, paragraphBlockFragment } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 import { updateTaskMarkerWithFallback } from './host-compat';
 
@@ -1401,7 +1401,7 @@ export class SiYuanStore {
         //   **escaped into literal source**; the two paths also store different shapes, which makes a comparison always report "there is a difference".
         //   Now it is uniform: the body is always DOM (`htmlToSiyuanDom` already converts bare tags into
         //   SiYuan-native forms such as `<span data-type="strong">`).
-        const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(n.text ?? '') || '\u200b'}</div>`;
+        const dom = paragraphBlockFragment(n.text ?? '');
         await this.client.updateBlockDom(blockId, dom);
         updated++;
       } else {
@@ -1582,7 +1582,7 @@ export class SiYuanStore {
       const html = want[i] ?? '';
       const plain = (await this.plainOfHtml(html)).trim();
       if (norm(existing[i].content) === plain) continue; // no change → do not write
-      const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
+      const dom = paragraphBlockFragment(html);
       await this.client.updateBlockDom(existing[i].id, dom);
     }
 
@@ -1623,7 +1623,7 @@ export class SiYuanStore {
     let anchor = (existing[existing.length - 1] ?? paras[0])?.id ?? '';
     for (let i = existing.length; i < want.length; i++) {
       const html = want[i] ?? '';
-      const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
+      const dom = paragraphBlockFragment(html);
       const newId = await this.client.insertParagraphAfter(anchor, dom);
       // move the anchor forward to the block just inserted so the next paragraph follows it (otherwise reversed)
       if (newId) anchor = newId;
@@ -1686,7 +1686,7 @@ export class SiYuanStore {
       const html = want[i] ?? '';
       const plain = (await this.plainOfHtml(html)).trim();
       if (norm(existing[i].content) === plain) continue;
-      const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
+      const dom = paragraphBlockFragment(html);
       await this.client.updateBlockDom(existing[i].id, dom);
     }
 
@@ -1698,7 +1698,7 @@ export class SiYuanStore {
 
     for (let i = existing.length; i < want.length; i++) {
       const html = want[i] ?? '';
-      const dom = `<div data-type="NodeParagraph">${htmlToSiyuanDom(html) || '\u200b'}</div>`;
+      const dom = paragraphBlockFragment(html);
       let newId = '';
       if (anchor) {
         newId = await this.client.insertParagraphAfter(anchor, dom);

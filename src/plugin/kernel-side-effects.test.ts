@@ -1,7 +1,7 @@
 /**
  * Kernel side effects: every probe is green, yet the kernel changed the data.
  *
- * Corresponds to .logs/API-GOTCHAS.md §102 / §103 / §104.
+ * Corresponds to `docs/kernel-api.md` §7.1 / §7.15 / §7.16.
  *
  * ★ Core point: `code:0` only means "the transaction was accepted", **not that the result matches expectations** ——
  *   the same insert lands at the top level, inside the child list, or overwrites an existing item depending

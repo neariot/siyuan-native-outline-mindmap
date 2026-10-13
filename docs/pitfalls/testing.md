@@ -1224,3 +1224,36 @@ correct no-op (nothing *should* move) are the same number.
   *to an existing green case*, so it converted a working case into a red one, and the red run then cost a
   stashed-baseline comparison to attribute. **Before adding an assertion to a passing case, ask what the
   case's inputs actually are.**
+
+### 6.27 An assertion that demands content where the criterion is *level* (and the index that is the root)
+
+**Symptom.** The rewritten `"Add sibling node"` case (ctxmenu) timed out after 2 minutes waiting for the
+`新增兄弟节点` menu item, while every other case in the suite passed in seconds. After the index was fixed it
+failed a second way: `expect(received).toMatch(...)` on the exported markdown.
+
+**Cause — two independent mistakes, both in the criterion, neither in the product.**
+
+1. **Index 0 is the synthetic root.** `.mm-node` 0 is `__root__`, and the menu guards three entries with
+   `!isCtxRoot` (add sibling / extract sub-document / delete). Opening the menu on the root and waiting for
+   "Add sibling" is a wait that cannot end. The case had been `openCtxMenu(page, 1)` and the rewrite
+   changed it to `0` while adding a temp document —— the index and the fixture were edited in the same
+   commit, and only the fixture was reconsidered.
+2. **A newly added sibling is *empty*.** The level assertion was
+   `/^-\s+[^\n]+\n-\s+[^\n]+\n-\s+[^\n]+/m`, which needs text on all three lines. The measured export was
+   `- 分支一 / - / - 分支二` —— **three top-level lines**, exactly the correct result —— and the middle one
+   is empty because the user has not typed into it yet. The product was right; the regex demanded content
+   that the criterion (level) does not involve.
+
+**Practice.**
+
+- **Ask what distinguishes the two outcomes before writing the matcher.** A sibling and a child differ in
+  **indentation**, not in whether they have text, so the assertion must read the column. Counting list
+  lines at column 0 is the property; `[^\n]+` is a different property that happens to be true of the
+  fixture's original nodes.
+- **A regex over a fixture's *text* silently encodes the fixture.** `分支一`/`分支二` were non-empty, so the
+  assertion looked like it was about structure while it was about the sample.
+- ★ **`---` is a list marker to a careless regex.** The first column-0 counter used `^-[ \t]?` and counted
+  the two YAML front-matter fences (received 5, expected 3). `^-(?:\s|$)` is the marker.
+- ★ **When two edits land in one commit, the second one is unreviewed.** Here the index and the fixture
+  changed together; the index was never reconsidered, and the resulting 2-minute timeout was read as a
+  product problem first.

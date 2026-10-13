@@ -224,9 +224,12 @@ export default class NativeOutlineMindmapPlugin extends Plugin {
    * Open a mind map tab.
    *
    * When docId is empty, try to use "the document the current editor is in", so that running the command from any document shows its outline mind map.
+   *
+   * ★ `openTab` is the **static import** at the top of this file, like `mount.ts` uses. It used to be
+   *   re-imported here with `await import('siyuan')`, which shadowed the static import and left it dead
+   *   —— two patterns for one call, and a top-level import that read as if it were in use.
    */
   async openMindmapTab(docId = ''): Promise<void> {
-    const { openTab } = await import('siyuan');
     const target = docId || getActiveDocId();
     openTab({
       app: this.app,

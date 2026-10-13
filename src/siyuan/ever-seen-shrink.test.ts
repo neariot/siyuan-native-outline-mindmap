@@ -1,5 +1,5 @@
 /**
- * The shrink boundary of the `everSeen` set (corresponds to section 3.6-② of `.logs/perf-test-design.md`).
+ * The shrink boundary of the `everSeen` set (`docs/TESTING.md`, "Performance testing").
  *
  * ──────────────────────────────────────────────────────────────────
  * What `everSeen` is for

@@ -130,6 +130,38 @@ section is a fact worth stating rather than a section to delete and re-invent.
   the first sibling —— indent is then a legitimate no-op, so the assertion failed on a correct product.
   Fixed to select siblings (rows 0,2) and to assert both the row that moves and the row that must not;
   outline suite 26/26 green. Recorded in `docs/pitfalls/testing.md`.
+- **Twenty-three files cited a gitignored diary as their authority (`check-citations.py`).** Every
+  one of `src/plugin/*.test.ts` named `.logs/API-GOTCHAS.md §NN`, and the perf tests named
+  `.logs/perf-test-design.md` —— both gitignored, so the measured facts behind those assertions
+  (anchor tables, error wording, load profiles) were unreadable to anyone who cloned the repository.
+  All 23 retargeted to the committed homes (`docs/kernel-api.md` §7.x, `docs/pitfalls/{data,editor,
+  wiring,mobile,plugin}.md`); the T1–T4 tier table moved into `docs/TESTING.md`. New gate
+  `scripts/check-citations.py` flags a **document** (`.md`/`.rst`) under a gitignored directory and
+  deliberately leaves log paths and `.tmp` data handoffs alone —— "is this a document?" is decidable,
+  "is this a citation?" is not. An allowlist entry that excuses nothing is a failure (it caught three
+  of my own guesses). Red-proofed both ways: a reintroduced citation fails, a stale entry fails, a
+  `.txt` handoff is not flagged. Wired into `npm run check`.
+- **Six concrete code defects closed from the audit queue.** Dead `paragraphBlockDom` replaced by a
+  real `paragraphBlockFragment` that the five hand-written copies now call (and `empty-span.test.ts`
+  imports it instead of reproducing it); the dead static `openTab` import in `plugin/index.ts` (a
+  runtime `await import` shadowed it); the `as Record<string, never>` cast on stored preferences
+  replaced by three validators with 17 unit cases; `cdp.list_tabs()` raising `CDPUnreachable` instead
+  of returning `[]` for every exception; `kernel-index-lag.py` probe cleanup in a `finally`; and the
+  `lblEmptyNode` short/long mismatch. Plus three stale-prose fixes (ctxmenu 7→8, export "nearly
+  identical"→byte-equal, theme engine guard now recursive). Two entries refuted in writing (env.py
+  SIYUAN_SRC "dead"; mobile.spec.ts fallbacks). Ledger: 46 open → 34, all `cannot-judge` prose.
+- **Source-dependent gates now read a released tag, not the working tree (`siyuan_tag.py`).** Both
+  `check-block-rules.py` (the kernel's own `treenode.CanContainBlock`, the route table, the matched
+  error strings) and `check-kernel-shapes.py` (the generated API contract) read `SIYUAN_SRC` as a
+  **working tree** —— and measured on this machine that checkout is a fork branch whose HEAD is in no
+  release, differing from v3.8.6 by 8 lines in `kernel/api/router.go` and **127 lines** in the very
+  contract file one of them reads. So "aligned with upstream" meant "aligned with whatever is checked
+  out". `siyuan_tag.py` extracts the tag's own files out of the local object store (`git archive`,
+  0.12s for the whole `kernel/` tree) —— no checkout, no release download, no working-tree change.
+  Verified: the materialised contract hashes **identical to `v3.8.6`** while the working tree differs;
+  both gates pass against v3.8.4 and v3.8.6 independently. `check-upstream.py` now prints the verified
+  tag and labels the branch as "not used as the baseline". New `SIYUAN_TAG` key pins a release; a tag
+  that predates the file makes the check skip and say so, never fall back to the tree.
 - **Version floor measured against official release tags (`check-version-floor.py`).** Two claims about
   upstream were wrong and nothing checked them: `TASK_MARKER_API_MIN_VERSION` said `3.1.0` while
   `/api/block/updateTaskListItemMarker` first appears in **v3.6.4**, and `minAppVersion` said `3.0.0`

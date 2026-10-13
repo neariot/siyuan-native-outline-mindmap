@@ -1,7 +1,7 @@
 /**
  * A node's identity must survive the write-back, or the mapping keys drift and the node is **duplicated**.
  *
- * Corresponds to .logs/API-GOTCHAS.md §109, defect #54.
+ * Corresponds to `docs/pitfalls/data.md` §1.9 (the mapping key must stay in one namespace).
  *
  * ★ The mechanism has changed since this file was written, and the old version pinned the *old* one: it
  *   asserted that inserting writes `- {: id="…"}body` into the markdown so the kernel keeps the ID. The

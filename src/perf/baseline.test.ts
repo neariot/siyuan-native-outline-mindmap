@@ -1,5 +1,6 @@
 /**
- * Performance baseline regression test (corresponds to section 3.1 of `.logs/perf-test-design.md`).
+ * Performance baseline regression test (cold-mount/layout latency; the T1–T4 tiers are in
+ * `docs/TESTING.md`, "Performance testing").
  *
  * ──────────────────────────────────────────────────────────────────
  * What this test guards

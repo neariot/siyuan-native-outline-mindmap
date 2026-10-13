@@ -1,7 +1,7 @@
 /**
  * A child node must be **merged into the parent's existing child list**, not create a new child list for every insertion.
  *
- * Corresponds to .logs/API-GOTCHAS.md §108.
+ * Corresponds to `docs/pitfalls/data.md` §1.7 (merge into the parent's existing child list).
  *
  * ★ This is the **last layer** of root cause for defect #53:
  *   a wrong insertion anchor → **two sibling child lists** appear under 甲 →

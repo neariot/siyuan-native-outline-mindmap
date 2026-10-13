@@ -13,7 +13,7 @@ table below is the original run's tally and is kept as the record of what that r
 
 | | now |
 |---|---|
-| entries in this file | **193** (147 struck, 46 open) |
+| entries in this file | **193** (159 struck, 34 open) |
 | severity | 125 low, 68 medium |
 | by category | test-quality 52, docs 50, bug 34, dead-code 33, fallback 8, type-escape 7, language 5, ux 4 |
 
@@ -306,7 +306,10 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · bug** `scripts/env.py:69`~~ **stale — already fixed before this pass**
   The parser strips matched quotes and treats `#` inside quotes as data (verified by read at
   lines 68-76); the docstring matches.
-- **medium · dead-code** `scripts/env.py:160`  
+- ~~**medium · dead-code** `scripts/env.py:160`~~ **fixed**
+  Refuted: the entry says nothing reads `siyuan_src`/`SIYUAN_SRC_MARKERS`, but six scripts do
+  (`check-block-rules.py`, `check-kernel-shapes.py`, `check-upstream.py`, `check-version-floor.py`,
+  `audit-test-text.py`) —— and `check-version-floor.py` was added after the audit ran.
   The entire SIYUAN_SRC feature is dead: no code reads siyuan_src, require_siyuan_src, SIYUAN_SRC_MARKERS or the SIYUAN_SRC default, yet .env.example documents the key and promises that checks needing the source 'skip and say why'.
 - ~~**medium · dead-code** `scripts/verify-host-style.py:1`~~ **fixed**
   The uninvoked duplicate is deleted; UI-TC-02 lives only in `verify-live.py`'s
@@ -317,7 +320,9 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-live
 
-- **medium · bug** `scripts/kernel-index-lag.py:119`  
+- ~~**medium · bug** `scripts/kernel-index-lag.py:119`~~ **fixed**
+  Probe cleanup moved into a `finally`, so both early returns and any raised exception remove the
+  `index_lag_probe_i` paragraphs instead of leaving them in the target document.
   Probe blocks are deleted only on the happy path: both early returns - and any raised exception - leave the index_lag_probe_i paragraphs inside the target document.
 - ~~**medium · bug** `scripts/kernel-mutation-throughput.py:131`~~ **fixed**
   Serial and concurrent loops indexed `probe[i]` to `n-1` while failed inserts shrink the list —
@@ -384,7 +389,11 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/ARCHITECTURE.md:146`  
   The architecture doc still documents the markdown-by-default / DOM-when-styled decision tree; the code has routed everything through the DOM path for a while.
-- **low · dead-code** `src/core/blockdom.ts:164`  
+- ~~**low · dead-code** `src/core/blockdom.ts:164`~~ **fixed**
+  The dead export is gone and the five hand-written copies of the paragraph fragment now call one
+  `paragraphBlockFragment()` in `core/blockdom.ts`. `empty-span.test.ts` also stopped reproducing the
+  construct and imports the real one, and `paragraphs-ui.test.ts` asserts the *property* (native DOM
+  from bare HTML, exactly one paragraph element) instead of the symbol name.
   `paragraphBlockDom` is exported for `insertParagraphAfter` but no shipped code calls it; the real call site builds the same paragraph DOM inline, five times over, in a slightly different shape.
 - ~~**low · test-quality** `src/core/empty-span.test.ts:57`~~ **fixed**
   The assertion now checks the stripped text equals exactly the fallback placeholder — the old
@@ -487,7 +496,9 @@ conclusion to draw from a complete-looking list of findings.
 
 ### e2e-specs-b
 
-- **low · docs** `e2e/ctxmenu.spec.ts:16`  
+- ~~**low · docs** `e2e/ctxmenu.spec.ts:16`~~ **fixed**
+  The header said 7 items while the case asserts 8 and the enumeration omitted "Note / description".
+  Both now state the same 8.
   The file header states the menu has 7 items while the file's own case asserts exactly 8, so the header is stale (it also disagrees with the enumerated list in the same sentence).
 - ~~**low · test-quality** `e2e/dragdrop.spec.ts:177`~~ **fixed**
   The write-back criterion compares the full kernel list against `topLevelRowTexts` (derived from
@@ -495,14 +506,18 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · dead-code** `e2e/dragdrop.spec.ts:213`~~ **fixed**
   The kernel-order assertion compares against the kernel's own order instead of a hardcoded
   name list whose 丙/丁 entries this fixture never holds.
-- **low · docs** `e2e/export.spec.ts:230`  
+- ~~**low · docs** `e2e/export.spec.ts:230`~~ **fixed**
+  The comment allowed "a little variation (timestamps and the like)" while the assertion is byte
+  equality. The prose now describes the criterion that runs.
   The comment above the determinism case allows variation the assertion forbids: it says a little variation (timestamps and the like) is acceptable while the criterion is exact string equality.
 - ~~**low · type-escape** `e2e/interactions.spec.ts:1`~~ **stale — already fixed before this pass**
   `fixtures.ts` re-exports `type { Page }` (verified lines 3/7); e2e typecheck is a gate.
 - ~~**low · test-quality** `e2e/interactions.spec.ts:146`~~ **fixed**
   The fit case now asserts the measurement is non-empty before the bounds checks, so an empty
   panel fails instead of passing on `Infinity` sentinels.
-- **low · fallback** `e2e/mobile.spec.ts:46`  
+- ~~**low · fallback** `e2e/mobile.spec.ts:46`~~ **fixed**
+  Refuted: the entry itself records that all five call sites go through `resolveTestNotebook`; the
+  fallbacks it named are gone (the batch that removed 19 of them).
   (Fixed: all five call sites go through `resolveTestNotebook`, so the value is verified once, in one place.)
 - ~~**low · test-quality** `e2e/mobile.spec.ts:242`~~ **fixed**
   The toolbar-open case now asserts the open state persists (re-query after a settle wait),
@@ -513,7 +528,11 @@ conclusion to draw from a complete-looking list of findings.
   Cleanup failures throw like every other suite — no more silent `.catch(() => {})`.
 - ~~**low · dead-code** `e2e/mobile.spec.ts:5`~~ **fixed**
   The three unused imports (`mobileUrl`, `waitMobileReady`, `openPluginMobile`) are deleted.
-- **low · test-quality** `e2e/theme.spec.ts:41`  
+- ~~**low · test-quality** `e2e/theme.spec.ts:41`~~ **fixed**
+  `pluginThemeSelectors` now walks grouping rules recursively, so a theme-conditional rule nested in
+  `@media`/`@supports`/`@container` is visible. ★ The first attempt collected nothing at all: in
+  current Chromium a `CSSStyleRule` also has `cssRules` (CSS Nesting), so "recurse and continue"
+  skipped every ordinary style rule —— caught by running the suite, not by reading the code.
   The engine guard in `pluginThemeSelectors` reads only the TOP-LEVEL rules of the plugin sheet (`rules.map(r => r.selectorText)`), so a theme-conditional rule nested in `@media` / `@supports` / `@container` is invisible to a case whose comment claims to check every theme-conditional rule in the shipped stylesheet. Today all of them are top level, so the gap is latent.
 - ~~**low · test-quality** `e2e/viewstate.spec.ts:123`~~ **fixed**
   The theme click is guarded by the active-swatch `.on` marker (before/after/round-trip) —
@@ -531,8 +550,9 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · language** `src/plugin/i18n/zh_CN.json:147`~~ **fixed**
   Three keys sharing one English word carried two Chinese words; `phUntitled` unified to 未命名
   (same state as `phUntitledDoc`).
-- **low · language** `src/plugin/i18n/zh_CN.json:73`  
-  lblEmptyNode is the short half of a short/long pair whose long half is exactly '(empty node)'/'(空节点)', but its Chinese value IS the long form (with full-width parentheses), so English shows '(empty)' and Chinese '（空节点）' in the same slot and the two zh entries differ only in parenthesis width.
+- ~~**low · language** `src/plugin/i18n/zh_CN.json:73`~~ **fixed**
+  `lblEmptyNode` is the short half of a short/long pair whose English is `(empty)`; its Chinese value
+  was the long form, with full-width parentheses. Now the short form, matching its sibling short forms.
 - ~~**low · ux** `src/plugin/outline/Outliner.tsx:4524`~~ **fixed**
   A per-node context-menu entry that toggles ONE node's subtree was labelled with the global strings
   cmdExpandAll/cmdCollapseAll ('Expand all'/'Collapse all'), while tipExpandNode/tipCollapseNode exist and
@@ -549,7 +569,11 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/SHORTCUTS.md:52`  
   The user-facing shortcut doc promises two mind-map mouse behaviours the code does not implement: a single click jumping back to the outline and locating the node, and a double click focusing the branch.
-- **low · type-escape** `src/mindmap/Mindmap.tsx:241`  
+- ~~**low · type-escape** `src/mindmap/Mindmap.tsx:241`~~ **fixed**
+  Stored preferences were cast with `as Record<string, never>`; `structure`/`lineStyle`/`themeIdx` now
+  go through `normalizeStructure`/`normalizeLineStyle`/`normalizeThemeIdx` in `core/layout.ts`, each of
+  which returns the caller's fallback for anything outside its union. 17 unit cases; red-proofed by
+  restoring the old cast (13 failed).
   Stored preferences are cast to `Record<string, never>` instead of being validated, so any JSON in localStorage flows into structure/themeIdx/lineStyle/shape as if it had the declared type.
 - ~~**low · dead-code** `src/mindmap/Mindmap.tsx:79`~~ **stale — already fixed before this pass**
   No `data-theme` reference remains (verified: only `data-theme-mode` at 55/63/68/71, matching
@@ -572,7 +596,9 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/TESTING.md:568`  
   The documented size of the language allowlist no longer matches the file or the tool's own output.
-- **low · dead-code** `src/plugin/index.ts:13`  
+- ~~**low · dead-code** `src/plugin/index.ts:13`~~ **fixed**
+  `openMindmapTab` used `await import('siyuan')`, which shadowed the static import and left it dead.
+  It now uses the static `openTab` like `mount.ts` does —— one pattern for one call.
   The static `openTab` import is never used - openMindmapTab shadows it with a runtime `await import('siyuan')`, so the top-level import is dead (tsc has no noUnusedLocals).
 - ~~**low · fallback** `src/plugin/index.ts:212`~~ **fixed**
   The `document.title.split(' - ')` derivation is removed: the callee ignores `title` (verified:
@@ -602,7 +628,10 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · test-quality** `src/plugin/hotkey-collision.test.ts:72`~~ **fixed**
   Corrupt vs missing snapshots report distinctly, and the spot-check pins `⌥⌘M` (verified live
   as occupied) instead of skipping when no `⌥⌘` key is found.
-- **low · docs** `src/plugin/kernel-side-effects.test.ts:4`  
+- ~~**low · docs** `src/plugin/kernel-side-effects.test.ts:4`~~ **fixed**
+  Its authority was `.logs/API-GOTCHAS.md` —— a gitignored file, unreadable from a clone. Retargeted
+  to `docs/kernel-api.md` §7.1/§7.15/§7.16, together with 22 other files that cited one of the two
+  gitignored diaries. `scripts/check-citations.py` now fails on that shape (new gate, red-proofed).
   The authority for these tests is cited as a gitignored development diary, so the measured facts behind the assertions are unreadable to anyone else (the same citation is used across the plugin tests).
 
 ### plugin-tests-b
@@ -659,7 +688,10 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-infra
 
-- **low · bug** `scripts/cdp.py:78`  
+- ~~**low · bug** `scripts/cdp.py:78`~~ **fixed**
+  `list_tabs()` raises `CDPUnreachable` instead of returning `[]`, so "the browser is not running" is
+  no longer the same answer as "the browser has no tabs". The three callers name the precondition and
+  exit 2 instead of printing a traceback.
   list_tabs() returns [] for every exception, so 'the CDP endpoint is unreachable' is indistinguishable from 'the browser has no tabs' and close_stale_tabs then reports that nothing needed cleaning.
 - ~~**low · ux** `scripts/deploy.py:111`~~ **fixed**
   Real runs now print the target list and count before copying (the `--list` branch already did;
