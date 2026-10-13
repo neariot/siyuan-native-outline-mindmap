@@ -76,6 +76,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
   inside stashed spans).
 - **Script hygiene batch.** Dropped the unused `label` param from the privacy checker; the E2E
   leftover report points at the instance cleaner; mindmap-shot URL verified already on env.
+- **Test-quality batch.** Find-bar toggle restores focus; indent.test shadow copy removed;
+  touch-longpress vacuous block deleted; mobile-swipe renders with real props; tree-ops Run line
+  fixed; css-scope keyframe cases + guard.
 
 **Resolved, verified, and removed from the queue:**
 
