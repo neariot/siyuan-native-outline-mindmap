@@ -556,8 +556,8 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · dead-code** `src/mindmap/Mindmap.tsx:19`~~ **fixed**
   The named re-export list duplicated `export *` with zero importers (verified: only the default
   import is used). Deleted.
-- **low · test-quality** `src/mindmap/structure-order.test.ts:192`  
-  The "five labels are pairwise distinct" check reads the test's own literal instead of the labels parsed out of the source and the catalogue, so it is always true and can never go red.
+- ~~**low · test-quality** `src/mindmap/structure-order.test.ts:192`~~ **fixed**
+  The distinctness check reads the parsed `labels` (source + catalogue), not the test's own literal.
 
 ### plugin-code
 
@@ -580,8 +580,8 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · test-quality** `src/plugin/outline/touch-longpress.test.ts:275`~~ **fixed**
   The vacuous 'criterion itself is effective' block (literals asserting themselves) is deleted; the
   real fnBody-against-source checks stay.
-- **low · test-quality** `src/plugin/source-probe.ts:52`  
-  The comment stripper is a hand-written character scanner where AGENTS section 7 requires the parser the build already uses; it mis-classifies a regex literal containing a quote and then fails to strip the following comment.
+- ~~**low · test-quality** `src/plugin/source-probe.ts:52`~~ **stale — parser-based**
+  The stripper uses the TypeScript compiler's own trivia ranges (verified by read); no hand scanner remains.
 
 ### plugin-tests-a
 
@@ -601,15 +601,15 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · type-escape** `src/plugin/mobile-swipe.test.ts:74`~~ **fixed**
   Both components render with real props (no `as never`), stale `summaryData`/`linkLines` dropped,
   missing `modified` added, and the cannot-fail hand-walk third case is deleted.
-- **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  
-  The single-child-list regression is asserted against a literal that the test itself declares one line above, so it can never fail.
+- ~~**low · test-quality** `src/plugin/node-id-block-id.test.ts:78`~~ **stale — asserts parsed state**
+  Lines 70-90 assert counts and mappings out of the parsed DOM (verified by read); the cited
+  literal shape is not present.
 - ~~**low · dead-code** `src/plugin/stale-mapping.test.ts:72`~~ **stale — already fixed before this pass**
   Lines 68-76 hold live assertions on `deadMappingSuspects` (verified by read); no unused locals.
 - ~~**low · docs** `src/plugin/tree-ops.test.ts:8`~~ **fixed**
   The Run line points at the sanctioned runner (`python3 scripts/run-tests.py tree-ops`).
-- **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
-  See the entry below; this is the same file, and it is now the only one the vacuous-test tool still lists as
-  unable to go red.
+- ~~**low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`~~ **stale — tool lists nothing**
+  The vacuous-test gate reports zero unreaching files (verified by run); the cited shape is gone.
 
 ### scripts-gates
 

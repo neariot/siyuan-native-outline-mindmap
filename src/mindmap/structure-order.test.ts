@@ -182,7 +182,9 @@ console.log('\n⑥ labels must spell out the behavior, not lean on a chart-kind 
   //   a comment mentioning an old name is legitimate history,
   //   a whole-file scan would flag such remarks as violations too (hit before: that comment spot was a false positive).
   const kindWords = /思维导图|逻辑图|树形图|组织结构图|时间轴|鱼骨图/;
-  const offending = Object.entries(labels).filter(([, v]) => kindWords.test(v));
+  const offending = Object.keys(expect)
+    .map((k) => [k, labels[k]] as const)
+    .filter(([, v]) => kindWords.test(v ?? ''));
   check(
     '★ none of the five labels uses a "XX图" chart-kind name',
     offending.length === 0,
@@ -190,7 +192,8 @@ console.log('\n⑥ labels must spell out the behavior, not lean on a chart-kind 
   );
   check(
     '★ the five labels are pairwise distinct (otherwise indistinguishable options come back)',
-    new Set(Object.values(expect)).size === 5,
+    new Set(Object.keys(expect).map((k) => labels[k])).size === 5,
+    Object.keys(expect).map((k) => labels[k]).join(' / '),
   );
 }
 
