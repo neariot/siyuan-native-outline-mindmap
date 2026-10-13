@@ -5,7 +5,7 @@
 // But until now there were **no tests at all** -- which is exactly why the "mind map cannot delete a top-level node" bug
 // survived for so long. This file pins the deletion semantics down.
 //
-// Run: node .tmp/t27/out/plugin/tree-ops.test.js
+// Run: python3 scripts/run-tests.py tree-ops   (or the whole suite with no filter)
 
 import {
   addChild,

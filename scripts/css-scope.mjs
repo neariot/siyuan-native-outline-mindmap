@@ -47,6 +47,11 @@ export const isScoped = (selector) => selector.includes(HOST_SCOPE);
  */
 export const scopeSelector = (selector, prefixed) => {
   if (isScoped(selector)) return selector;
+  // ★ Keyframe stops (`from` / `to` / `50%`) are not selectors: postcss-prefix-selector never
+  //   routes them through `transform` today (measured), but if a postcss upgrade ever does,
+  //   prefixing them would corrupt every @keyframes block. Guard here so the corruption is
+  //   impossible whatever the caller does.
+  if (/^(from|to|\d+(\.\d+)?%)(\s*,\s*(from|to|\d+(\.\d+)?%))*$/.test(selector.trim())) return selector;
   if (/^html\[/.test(selector)) {
     return selector.replace(/^(html\[[^\]]*\])/, `$1 ${HOST_SCOPE}`);
   }

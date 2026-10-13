@@ -525,12 +525,15 @@ conclusion to draw from a complete-looking list of findings.
   The mirror block's title is derived by splitting SiYuan's composed window title on ' - ', which silently truncates any document whose name contains that sequence.
 - **low · docs** `src/plugin/index.ts:248`  
   The comment above the getActiveDocId re-export still describes a sample-data fallback that active-doc.ts deliberately removed, so it contradicts the module it documents.
-- **low · ux** `src/plugin/outline/Outliner.tsx:918`  
-  Closing the find bar through its own toggle (toolbar/dock button, Ctrl+F) skips the focus restore, so typing afterwards goes to BODY - the exact 'one-way focus migration' the code comments describe.
-- **low · dead-code** `src/plugin/outline/indent.test.ts:63`  
-  The module-level readBool helper is unused - the only call site resolves to a second, block-scoped copy declared inside the same block.
-- **low · test-quality** `src/plugin/outline/touch-longpress.test.ts:275`  
-  The 'the criterion itself is effective' block asserts properties of a literal object built three lines above it, so it passes whatever the implementation does.
+- ~~**low · ux** `src/plugin/outline/Outliner.tsx:918`~~ **fixed**
+  Toggling the find bar shut now routes through `closeFind`, restoring focus like every other
+  close path (verified: all three `openFind` call sites are toggles; typecheck + unit green).
+- ~~**low · dead-code** `src/plugin/outline/indent.test.ts:63`~~ **fixed**
+  The shadowing module-level copy is removed; the documented narrowing rationale now lives on the
+  one remaining use site.
+- ~~**low · test-quality** `src/plugin/outline/touch-longpress.test.ts:275`~~ **fixed**
+  The vacuous 'criterion itself is effective' block (literals asserting themselves) is deleted; the
+  real fnBody-against-source checks stay.
 - **low · test-quality** `src/plugin/source-probe.ts:52`  
   The comment stripper is a hand-written character scanner where AGENTS section 7 requires the parser the build already uses; it mis-classifies a regex literal containing a quote and then fails to strip the following comment.
 
@@ -547,14 +550,15 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-tests-b
 
-- **low · type-escape** `src/plugin/mobile-swipe.test.ts:74`  
-  The component is rendered through `as never` with props it does not accept and a required prop missing, and the third case's 'algorithm matches SiYuan' check is a locally built two-object walk that cannot fail.
+- ~~**low · type-escape** `src/plugin/mobile-swipe.test.ts:74`~~ **fixed**
+  Both components render with real props (no `as never`), stale `summaryData`/`linkLines` dropped,
+  missing `modified` added, and the cannot-fail hand-walk third case is deleted.
 - **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  
   The single-child-list regression is asserted against a literal that the test itself declares one line above, so it can never fail.
 - **low · dead-code** `src/plugin/stale-mapping.test.ts:72`  
   Unused locals left behind by removed assertions (four instances in scope).
-- **low · docs** `src/plugin/tree-ops.test.ts:8`  
-  The file's 'Run:' instruction points at a stale compiled copy of the test instead of the sanctioned runner.
+- ~~**low · docs** `src/plugin/tree-ops.test.ts:8`~~ **fixed**
+  The Run line points at the sanctioned runner (`python3 scripts/run-tests.py tree-ops`).
 - **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
   See the entry below; this is the same file, and it is now the only one the vacuous-test tool still lists as
   unable to go red.
@@ -585,8 +589,10 @@ conclusion to draw from a complete-looking list of findings.
   Watch mode keeps `--test-concurrency=1` like normal mode.
 - **low · dead-code** `scripts/script_log.py:124`  
   `if callable(owner)` can never be true, because previous[signum] is only ever assigned signal.SIG_DFL - the guard refuses to install the handler when another one exists - so the 'the previous handler still runs' path promised by the docstring is unreachable.
-- **low · test-quality** `src/plugin/css-scope.test.ts:22`  
-  The test header promises to lock down three easy-to-get-wrong points, but the third - keyframes selectors (from / to / 50%) must not be prefixed - has no case at all: 'keyframes' appears only in that comment.
+- ~~**low · test-quality** `src/plugin/css-scope.test.ts:22`~~ **fixed**
+  The promised keyframe cases exist now, and `scopeSelector` carries a keyframe-stop guard so a
+  future postcss routing change cannot corrupt `@keyframes` (measured: current postcss never routes
+  stops through `transform`; build output still fully scoped).
 
 ### scripts-infra
 

@@ -946,8 +946,15 @@ export default function Outliner(props: OutlinerProps) {
    *   and everything the user types next is **lost** (measured ['A','B','C'] → ['A','B','C']).
    */
   const openFind = (): void => {
+    // ★ Toggling shut must restore focus like closeFind does: calling openFind again used to
+    //   overwrite the focus record instead of restoring it, so typing afterwards went to BODY —
+    //   the same one-way focus migration closePanel was fixed for.
+    if (find.open) {
+      closeFind();
+      return;
+    }
     panelReturnFocus.current = activeNodeId || null;
-    setFind((f) => ({ ...f, open: !f.open }));
+    setFind((f) => ({ ...f, open: true }));
   };
 
   const closeFind = (): void => {

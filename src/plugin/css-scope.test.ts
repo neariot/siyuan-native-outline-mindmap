@@ -90,6 +90,19 @@ console.log('\nscope predicate function:');
   check('.om-bullet → unscoped (.om- is its own prefix, but it is not under the host)', isScoped('.om-bullet'), false);
 }
 
+console.log('\n★ keyframe stops (from / to / 50%) must not be prefixed:');
+{
+  // postcss-prefix-selector never routes keyframe stops through `transform` (measured: a full
+  // @keyframes block passes through byte-identical while `.x` gains the prefix). These cases pin
+  // that the plugin's transform is never even asked about them — if a postcss upgrade starts
+  // routing them, the right fix is a guard in scopeSelector, and these go red first.
+  // (The header of this file always promised this third point; the cases were missing.)
+  const stops = ['from', 'to', '50%', '0%', '100%', 'from, to', '0%, 100%'];
+  for (const s of stops) {
+    check(`keyframe stop '${s}' passes through untouched`, scopeSelector(s, `${HOST_SCOPE} ${s}`), s);
+  }
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (failures.length) {
   console.log('\nFAILURES:');

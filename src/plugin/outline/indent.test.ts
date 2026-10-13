@@ -50,18 +50,6 @@ function check(name: string, cond: boolean, extra = '') {
   }
 }
 
-/**
- * Launder a boolean value to dodge TypeScript's literal narrowing.
- *
- * Why it is needed: tests often write `obj.field = true` immediately followed by the assertion `obj.field === false`.
- * TS narrows the static type of `obj.field` to the literal `true` because of the assignment, so
- * `=== false` is judged "necessarily false" and reports TS2367 -- yet of course it can change at runtime,
- * and the assertion exists precisely to check that change. One function call is enough to make TS give up narrowing.
- *
- * Writing `const x: boolean = obj.field` directly is **not enough** -- narrowing pierces aliases.
- */
-const readBool = (v: boolean): boolean => v;
-
 const N = (id: string, ...children: OutlineNode[]): OutlineNode =>
   ({ id, modified: 0, text: id, children }) as OutlineNode;
 
@@ -191,7 +179,8 @@ console.log('\nsingle indent: attach under the previous sibling');
   indentNodes(t, ['B']);
   // TS narrows the static type of `a.collapsed` to the literal true (it was just assigned true),
   // so `=== false` is judged "necessarily false" and errors. Of course it can change at runtime.
-  // Launder the value through a function returning boolean to dodge narrowing.
+  // Launder the value through a function returning boolean to dodge narrowing
+  // (a plain `const x: boolean` alias is NOT enough — narrowing pierces aliases).
   const readBool = (v: boolean): boolean => v;
   check('★ the parent node is expanded', readBool(a.collapsed) === false);
 }

@@ -266,19 +266,6 @@ console.log('\n★ alignment with the source (threshold, callbacks, optional vib
   check('slices the body of onBulletTouchEnd (red when the slice fails)', endBody.length > 0);
   check('★ preventDefault only when active', /if \(st\.active\) e\.preventDefault\(\)/.test(endBody));
 }
-
-// ──────────────────────────────────────────────────────────────────
-console.log('\nthe criterion itself is effective');
-
-{
-  // a wrong implementation where "a short press also drags" must be caught
-  const bad = { touchDragging: true, zoomed: null as string | null };
-  check('★ the criterion can spot "a short press taken as a drag"', bad.touchDragging === true && bad.zoomed === null);
-
-  // a wrong implementation where "the long press does nothing" must be caught
-  const noop = { touchDragging: false, vibrated: null as number | null };
-  check('★ the criterion can spot "the long press does nothing"', noop.touchDragging === false);
-}
 }
 
 main().then(() => {

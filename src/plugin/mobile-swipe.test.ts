@@ -66,13 +66,13 @@ function findPreventSwipeAttr(html: string, containerClass: string): boolean {
 
 test('mind map canvas declares data-prevent-swipe (blocks the mobile sidebar swipe gesture)', () => {
   const node = {
-    id: 'n1', text: '节点测试', children: [],
-    paragraphs: [], summaryData: [], linkLines: [],
+    id: 'n1', modified: 1, text: '节点测试', children: [],
+    paragraphs: [],
   };
   const html = renderToStaticMarkup(
-    React.createElement(Mindmap as never, {
-      nodes: [node], onChange: () => {}, settings: {},
-    } as never),
+    React.createElement(Mindmap, {
+      nodes: [node], title: 't', onEditNode: () => {}, onEditParagraphs: () => {},
+    }),
   );
   assert.ok(html.length > 0, 'the mind map should have output');
   assert.ok(
@@ -84,15 +84,15 @@ test('mind map canvas declares data-prevent-swipe (blocks the mobile sidebar swi
 
 test('outline container declares data-prevent-swipe', () => {
   const node = {
-    id: 'n1', text: '节点测试', children: [], paragraphs: [],
+    id: 'n1', modified: 1, text: '节点测试', children: [], paragraphs: [],
   };
   const html = renderToStaticMarkup(
-    React.createElement(Outliner as never, {
+    React.createElement(Outliner, {
       nodes: [node], externRev: 0, onChange: () => {},
       onUndo: () => {}, onRedo: () => {}, docs: [], docId: 'doc',
       onOpenDoc: () => {}, zoomId: null, onZoomChange: () => {},
       onOpenRef: () => {}, docTitle: '标题', onTitleChange: () => {},
-    } as never),
+    }),
   );
   assert.ok(html.length > 0, 'the outline should have output');
   assert.ok(
@@ -103,18 +103,4 @@ test('outline container declares data-prevent-swipe', () => {
   // also confirm it is not attached twice (once per container is enough)
   assert.equal(countPreventSwipe(html), 1,
     'data-prevent-swipe should be attached only once; attaching it twice means it was added in the wrong place');
-});
-
-test('regression: the attribute must be findable along the ancestor chain (algorithm matches SiYuan)', () => {
-  // simulate SiYuan's upward lookup: the target is a deep child element, the attribute is on an ancestor
-  const target = { attr: undefined as string | undefined, parent: null as unknown };
-  const container = { attr: 'true', parent: null };
-  (target as { parent: unknown }).parent = container;
-  let e: { attr?: string; parent: unknown } | null = target;
-  let found = false;
-  while (e && e !== null) {
-    if (e.attr !== undefined) { found = true; break; }
-    e = e.parent as typeof e;
-  }
-  assert.ok(found, 'when the attribute hangs on the container, a deep target must find it by walking up');
 });
