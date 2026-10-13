@@ -99,6 +99,8 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **E2E criterion batch.** Sibling/child inserts assert document level, not just count; focus-restore
   unconditional on the menu item; mobile drops the silent visibility skip; smoke uses the entry
   button; @container widths verified self-controlled.
+- **Docs hygiene.** Pitfall `6.x` renamed to stable `6.14` with index updated (gate green); env
+  docstring and TESTING chromium path verified already fixed and struck.
 - **Hygiene sweep.** verify-android help names `.env` keys, screenshot example passes a directory,
   dead adb input methods deleted; privacy scan counts oversized artifacts; auto-select refuted with
   constructor evidence; docs-index suffix ranges expand and the over-advertised range fixed; TESTING
