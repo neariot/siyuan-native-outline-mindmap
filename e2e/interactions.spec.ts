@@ -162,6 +162,11 @@ test('the content still fits after switching the structure', async ({ page }) =>
       }
       return { l, r };
     });
+    // ★ Fail on an empty measurement, not on vacuous bounds: with no node measured the
+    //   accumulators stay at Infinity/-Infinity, which satisfy both comparisons below —
+    //   a missing precondition reporting as a pass (the 0-satisfies-toBeLessThan(N) family).
+    expect(content.l, `structure ${v}: no node measured`).not.toBe(Infinity);
+    expect(content.r, `structure ${v}: no node measured`).not.toBe(-Infinity);
     expect(content.l, `structure ${v}: content left ${content.l} must not exceed canvas left ${c.l}`).toBeGreaterThanOrEqual(c.l - 2);
     expect(content.r, `structure ${v}: content right ${content.r} must not exceed canvas right ${c.r}`).toBeLessThanOrEqual(c.r + 2);
   }

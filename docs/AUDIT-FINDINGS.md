@@ -464,8 +464,9 @@ conclusion to draw from a complete-looking list of findings.
   The comment above the determinism case allows variation the assertion forbids: it says a little variation (timestamps and the like) is acceptable while the criterion is exact string equality.
 - ~~**low · type-escape** `e2e/interactions.spec.ts:1`~~ **stale — already fixed before this pass**
   `fixtures.ts` re-exports `type { Page }` (verified lines 3/7); e2e typecheck is a gate.
-- **low · test-quality** `e2e/interactions.spec.ts:146`  
-  The fit case's bounds check passes vacuously when no node was measured: the accumulators stay at `Infinity`/`-Infinity`, which satisfy both comparisons (the 0-satisfies-toBeLessThan(N) family this repo records as more dangerous than a false failure).
+- ~~**low · test-quality** `e2e/interactions.spec.ts:146`~~ **fixed**
+  The fit case now asserts the measurement is non-empty before the bounds checks, so an empty
+  panel fails instead of passing on `Infinity` sentinels.
 - **low · fallback** `e2e/mobile.spec.ts:46`  
   (Fixed: all five call sites go through `resolveTestNotebook`, so the value is verified once, in one place.)
 - **low · test-quality** `e2e/mobile.spec.ts:242`  
