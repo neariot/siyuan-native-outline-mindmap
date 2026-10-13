@@ -24,6 +24,54 @@ let api: KernelApi;
 let notebook = '';
 let docId = '';
 
+/**
+ * The document's markdown, read from the kernel.
+ *
+ * ★ Level is read as **indentation**, never as text. A newly added node is **empty** until the user types
+ *   into it, so any pattern demanding `[^\n]+` on that line fails on a correct product. This suite had three
+ *   such assertions (Tab / Enter / menu child-add), all added at once and none of them ever run —— the whole
+ *   suite was red from that commit, on a product that was doing exactly the right thing. The measured export
+ *   for a correct Tab is `- 甲 / ␣␣- 节点一 / ␣␣- ` (an empty nested item).
+ */
+async function docMarkdown(): Promise<string> {
+  const res = await api.call('/api/export/exportMdContent', { id: docId });
+  return String((res.data as { content?: string })?.content ?? '');
+}
+
+/** Top-level list items (column 0). `^-(?:\s|$)` —— a marker, not the `---` front-matter fence. */
+function topLevelCount(md: string): number {
+  return md.split('\n').filter((l) => /^-(?:\s|$)/.test(l)).length;
+}
+
+/** Whether `child` appears indented under `parent` —— the only thing that tells a child from a sibling. */
+function isIndentedUnder(md: string, parent: string, child: string): boolean {
+  const lines = md.split('\n');
+  const pi = lines.findIndex((l) => new RegExp(`^-\\s+${parent}\\s*$`).test(l));
+  if (pi < 0) return false;
+  const ci = lines.findIndex((l, i) => i > pi && new RegExp(`^\\s+-\\s+${child}\\s*$`).test(l));
+  return ci > pi;
+}
+
+/**
+ * How many list items are indented **directly under** a top-level parent.
+ *
+ * Reads the block between `parent`'s line and the next column-0 list item. Used instead of a regex over the
+ * whole export because "a new empty child appeared" is a count, not a match —— an empty item has no text to
+ * match on.
+ */
+function childCountOf(md: string, parent: string): number {
+  const lines = md.split('\n');
+  const pi = lines.findIndex((l) => new RegExp(`^-\\s+${parent}\\s*$`).test(l));
+  if (pi < 0) return 0;
+  let n = 0;
+  for (let i = pi + 1; i < lines.length; i++) {
+    if (/^-/.test(lines[i])) break;            // the next top-level item ends the block
+    if (/^\s+-/.test(lines[i])) n++;           // an indented list item belongs to `parent`
+  }
+  return n;
+}
+
+
 test.beforeAll(async () => {
   const baseURL = siyuanUrl();
   const token = siyuanToken();
@@ -105,13 +153,19 @@ test('Tab adds one child node to the selected node', async ({ page }) => {
   const after = await mindmapState(page);
   expect(after.nodes, `the node count should go +1 after Tab (${before.nodes} → ${after.nodes})`).toBe(before.nodes + 1);
   // ★ A sibling insert also grows the count: only document nesting tells child from sibling.
-  //   TEMP_DOC_MD is `- 甲/节点一 - 乙/节点八`; Tab on 节点一 must indent the new node under 甲.
+  //   TEMP_DOC_MD is `- 甲/节点一 - 乙/节点八`; Tab on 节点一 must indent a **new, still-empty** node under 甲.
+  //   ★ The criterion is the number of items indented under 甲, not a match on text: the new item is empty
+  //     until the user types, so `[^\n]+` would demand content the product is right not to have.
   await expect
-    .poll(async () => {
-      const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String((res.data as { content?: string })?.content ?? '');
-    }, { message: 'Tab must nest the new node as a child, not a sibling', timeout: 15_000 })
-    .toMatch(/- 甲\s*\n(?:\s*\n)?\s+- 节点一\s*\n(?:\s*\n)?\s+- [^\n]+/);
+    .poll(async () => childCountOf(await docMarkdown(), '甲'), {
+      message: 'Tab must nest the new node under 甲 (the pre-existing child plus the new empty one)',
+      timeout: 15_000,
+    })
+    .toBe(2);
+  expect(
+    isIndentedUnder(await docMarkdown(), '甲', '节点一'),
+    'the pre-existing child must still sit under 甲',
+  ).toBe(true);
 });
 
 /** ★ Enter adds a sibling node: the node count should go +1 — and it must stay level. */
@@ -124,14 +178,14 @@ test('Enter adds one sibling node to the selected node', async ({ page }) => {
 
   const after = await mindmapState(page);
   expect(after.nodes, `the node count should go +1 after Enter (${before.nodes} → ${after.nodes})`).toBe(before.nodes + 1);
-  // ★ A child insert also grows the count: the new node must appear as a flush-left sibling,
-  //   i.e. the document gains a third top-level item (was 甲/乙).
+  // ★ A child insert also grows the count: the new node must appear as a flush-left sibling —— the document
+  //   gains a third top-level item (was 甲/乙). `\S` here excluded the new **empty** item, so a correct
+  //   Enter read as 2 and the case failed; the top-level **count** is the property.
   await expect
-    .poll(async () => {
-      const res = await api.call('/api/export/exportMdContent', { id: docId });
-      const body = String((res.data as { content?: string })?.content ?? '');
-      return body.split('\n').filter((l) => /^- \S/.test(l)).length;
-    }, { message: 'Enter must add a same-level sibling, not a nested child', timeout: 15_000 })
+    .poll(async () => topLevelCount(await docMarkdown()), {
+      message: 'Enter must add a same-level sibling, not a nested child',
+      timeout: 15_000,
+    })
     .toBe(3);
 });
 
@@ -177,13 +231,14 @@ test('context menu: adding child node really adds a node', async ({ page }) => {
   await page.waitForTimeout(900);
 
   expect(await mindmapState(page).then((s) => s.nodes), 'there should be one more node').toBe(before.nodes + 1);
-  // ★ Same child/sibling ambiguity as the Tab case: only nesting proves it is a child.
+  // ★ Same child/sibling ambiguity as the Tab case: only nesting proves it is a child —— and the new item is
+  //   **empty**, so the criterion is the number indented under 甲, not a text match.
   await expect
-    .poll(async () => {
-      const res = await api.call('/api/export/exportMdContent', { id: docId });
-      return String((res.data as { content?: string })?.content ?? '');
-    }, { message: 'menu child-add must nest the new node, not add a sibling', timeout: 15_000 })
-    .toMatch(/- 甲\s*\n(?:\s*\n)?\s+- 节点一\s*\n(?:\s*\n)?\s+- [^\n]+/);
+    .poll(async () => childCountOf(await docMarkdown(), '甲'), {
+      message: 'menu child-add must nest the new node under 甲',
+      timeout: 15_000,
+    })
+    .toBe(2);
 });
 
 /** Escape closes the context menu. */

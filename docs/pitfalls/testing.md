@@ -1295,3 +1295,39 @@ the line".
 - ★ **A red proof confirms the case can fail, and that it fails for the right reason.** Moving
   `DROP_ABOVE_RATIO` to 0.40 made the case fail on the assertion that names the 25% line — not on an
   unrelated timeout or a missing element.
+
+### 6.29 An assertion that needs text on a node the user has not typed into yet
+
+**Symptom.** `e2e/keyboard.spec.ts` was **3 of 11 red** for three commits, and every failure was the product
+doing the right thing:
+
+```
+Tab adds one child node        Expected /- 甲\n\s+- 节点一\n\s+- [^\n]+/   Received "…- 甲 / ␣␣- 节点一 / ␣␣- "
+Enter adds one sibling node    Expected 3, received 2
+context menu: adding child     same pattern as Tab
+```
+
+**Cause.** All three were added in one commit that rewrote them to assert *level* instead of a node count —
+correct in intent — but each matcher also required **text** on the new line (`[^\n]+`, or `/^- \S/`). A
+newly created node is **empty** until the user types into it, and the measured export proves it: a correct
+Tab produces `- 甲 / ␣␣- 节点一 / ␣␣- ` with an empty nested item. The count-based criterion `/^- \S/` had the
+same defect from the other side: `\S` skipped the empty item, so a correct Enter read as 2.
+
+★ The commit that introduced them never ran this suite — it ran the outline and mindmap suites and reported
+"green". A rewritten assertion is a new assertion: it needs the suite it lives in to be run before the commit
+says it passes.
+
+**Practice.**
+
+- ★ **A newly added node has no text.** Any criterion about *where* it landed must read indentation or a
+  count of indented items, never a match on content. This is the second instance of the same mistake in one
+  pass (see §6.27, where a sibling case demanded text on an empty sibling) — the two were written by the same
+  hand in the same session, which is why the ledger now names the shape rather than the case.
+- **Assert the count of items indented under the parent**, not a regex over the whole export:
+  `childCountOf(md, '甲') === 2` reads as "the pre-existing child plus the new empty one", and it cannot be
+  satisfied by text that happens to be there.
+- ★ **Run the suite an assertion lives in.** The three cases were in `keyboard.spec.ts`; the commit ran
+  `outline` and `mindmap`. A suite that is not run is not evidence, and "the other suites are green" is not
+  about this one.
+- **A red proof of the criterion, not just of the case**: changing Tab to insert a *sibling* fails on the
+  assertion that names nesting, which is what shows the criterion still discriminates.
