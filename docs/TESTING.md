@@ -188,7 +188,8 @@ So just open that address with Playwright's Chromium:
 - does not depend on "the user already has some page open" -- every run gets a clean context
 - measured cold start (launch Chromium → UI interactive) is about **11 seconds**
 
-Use the system `/usr/bin/chromium` (`executablePath` in `playwright.config.ts`),
+Use the Chromium from `CHROMIUM_PATH` in `.env` (injected by `scripts/run-e2e.py`;
+`executablePath` in `playwright.config.ts` — required, no default),
 which saves a few hundred MB of browser downloads.
 
 ### Before you run

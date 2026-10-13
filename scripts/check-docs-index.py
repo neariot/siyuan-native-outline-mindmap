@@ -34,6 +34,8 @@ ROW = re.compile(r"^\|\s*\[`(pitfalls/[^`]+)`\]\([^)]+\)\s*\|.*\|\s*(.+?)\s*\|\s
 # `6.9b/d` / `6.9f–m` / `1.1–1.10` and plain `4.3`
 SHORT_RANGE = re.compile(r"^(\d+\.\d+)([a-z](?:–[a-z])?(?:/[a-z](?:–[a-z])?)*)$")
 LONG_RANGE = re.compile(r"^(\d+\.\d+)–(\d+\.\d+)$")
+# Suffix ranges over multi-letter suffixes: `6.9aa`–`6.9cc` rejoins to `6.9aa–6.9cc`.
+SUFFIX_RANGE = re.compile(r"^(\d+\.\d+)([a-z]+)–\d+\.\d+([a-z]+)$")
 
 
 def heading_ids(path: Path) -> set:
@@ -47,9 +49,30 @@ def heading_ids(path: Path) -> set:
 
 
 def expand(spec: str) -> set:
-    """Turn an index cell (`` `4.1`–`4.7`, `6.9c/e/n` ``) into the numbers it advertises."""
+    """Turn an index cell (`` `4.1`–`4.7`, `6.9c/e/n` ``) into the numbers it advertises.
+
+    ★ Cells join backtick spans with an en dash (`1.1`–`1.10`): matching per-span tokens alone
+    sees only the two endpoints and never verifies the middle. Dash-linked spans are rejoined
+    first so LONG_RANGE fires on the real range.
+    """
     out = set()
-    for token in re.findall(r"`([^`]+)`", spec):
+    # Split while keeping spans; a – between two spans links them into one range token.
+    parts = re.split(r"(`[^`]+`)", spec)
+    tokens: list[str] = []
+    acc: str | None = None
+    for part in parts:
+        if part.startswith("`") and part.endswith("`") and len(part) >= 2:
+            inner = part[1:-1]
+            acc = inner if acc is None else acc + "–" + inner
+        elif acc is not None and part.strip() in ("–", "-"):
+            continue  # dash links the spans around it; keep accumulating
+        else:
+            if acc is not None:
+                tokens.append(acc)
+                acc = None
+    if acc is not None:
+        tokens.append(acc)
+    for token in tokens:
         for piece in [p.strip() for p in token.split(",") if p.strip()]:
             short = SHORT_RANGE.match(piece)
             if short:
@@ -68,6 +91,30 @@ def expand(spec: str) -> set:
                 prefix = low.split(".")[0]
                 for number in range(int(low.split(".")[1]), int(high.split(".")[1]) + 1):
                     out.add("%s.%d" % (prefix, number))
+                continue
+            suffix = SUFFIX_RANGE.match(piece)
+            if suffix:
+                stem, low, high = suffix.groups()
+                # Letter-suffixes advance as base-26 counters, same length both ends
+                # (aa→ab→…→az→ba…; mixed lengths are rejected as malformed).
+                if len(low) == len(high):
+                    cur = list(low)
+                    while True:
+                        out.add(stem + "".join(cur))
+                        if "".join(cur) == high:
+                            break
+                        # increment base-26 with carry
+                        i = len(cur) - 1
+                        while i >= 0:
+                            if cur[i] != "z":
+                                cur[i] = chr(ord(cur[i]) + 1)
+                                break
+                            cur[i] = "a"
+                            i -= 1
+                        if i < 0:
+                            break  # overflowed past high; stop rather than loop
+                else:
+                    out.add(piece)
                 continue
             out.add(piece)
     return out

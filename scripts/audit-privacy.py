@@ -157,8 +157,13 @@ def tracked_files():
 
 
 def local_artifacts():
-    """Local, gitignored output: the copies that no history rewrite reaches."""
+    """Local, gitignored output: the copies that no history rewrite reaches.
+
+    Returns (paths, skipped_too_large): oversized files are counted, not silently dropped —
+    otherwise 'the rules found nothing' does not say how much of the tree was actually read.
+    """
     found = []
+    skipped_too_large = 0
     for root in (".logs", "test-results", ".tmp"):
         base = REPO_ROOT / root
         if not base.is_dir():
@@ -175,11 +180,12 @@ def local_artifacts():
                     continue
                 try:
                     if path.stat().st_size > MAX_BYTES:
+                        skipped_too_large += 1
                         continue
                 except OSError:
                     continue
                 found.append(str(path.relative_to(REPO_ROOT)))
-    return sorted(found)
+    return sorted(found), skipped_too_large
 
 
 def read_lines(relpath):
@@ -513,13 +519,16 @@ def main():
         return selftest()
 
     tracked = tracked_files()
-    artifacts = local_artifacts()
+    artifacts, oversized = local_artifacts()
     if args.list_files:
         print("tracked files: %d" % len(tracked))
         print("local artifacts (gitignored, still worth checking): %d" % len(artifacts))
         return 0
 
     print("audit-privacy: %d tracked file(s), %d local artifact(s)" % (len(tracked), len(artifacts)))
+    if oversized:
+        print("audit-privacy: %d local artifact(s) skipped as oversized (>%d bytes) — unread, not clean"
+              % (oversized, MAX_BYTES))
     findings, scanned, skipped, counts, excused = check_patterns(tracked)
 
     if args.live:

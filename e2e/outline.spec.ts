@@ -967,6 +967,10 @@ test.describe('multi-select and batch operations', () => {
       await expect(page.locator('.selbar')).toHaveCount(1);
 
       const beforeRows = await outlineState(page).then((s) => s.rows);
+      const beforeX = await page.evaluate(() =>
+        [...document.querySelectorAll('.om-outline-wrap .node-row:not(.node-row-empty) .node-text')]
+          .slice(0, 2).map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
+      );
       await page.locator('.selbar button', { hasText: '缩进' }).first().click();
       await page.waitForTimeout(800);
 
@@ -976,6 +980,20 @@ test.describe('multi-select and batch operations', () => {
         await outlineState(page).then((s) => s.rows),
         'indent only changes the level, the row count should not change',
       ).toBe(beforeRows);
+      // ★ ...but the row count alone cannot see the level change (a no-op passes): the indented
+      //   rows must sit deeper, and the document must nest them.
+      const afterX = await page.evaluate(() =>
+        [...document.querySelectorAll('.om-outline-wrap .node-row:not(.node-row-empty) .node-text')]
+          .slice(0, 2).map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
+      );
+      expect(afterX[0], 'the first indented row must sit deeper than before').toBeGreaterThan(beforeX[0]);
+      expect(afterX[1], 'the second indented row must sit deeper than before').toBeGreaterThan(beforeX[1]);
+      await expect
+        .poll(async () => {
+          const res = await api.call('/api/export/exportMdContent', { id: docId });
+          return String((res.data as { content?: string })?.content ?? '');
+        }, { message: 'indented rows must nest in the document, not only on screen', timeout: 15_000 })
+        .toMatch(/- 甲\s*\n\s+- /);
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();

@@ -41,7 +41,7 @@
   python3 scripts/verify-android.py --scenario setup
 
   # 5. Quickly capture the current real-device screen
-  python3 scripts/verify-android.py --scenario shot -o .tmp/android-test/shot.png
+  python3 scripts/verify-android.py --scenario shot -o .tmp/android-test
 """
 
 import argparse
@@ -189,15 +189,6 @@ class AndroidBridge:
         # Escape special characters
         escaped = text.replace(" ", "%s").replace("&", "\\&")
         self.run("shell", "input", "text", escaped)
-
-    def input_key(self, keycode):
-        """Inputs a key event, e.g. KEYCODE_ENTER=66, KEYCODE_DEL=67, KEYCODE_BACK=4."""
-        self.run("shell", "input", "keyevent", str(keycode))
-
-    def tap(self, x, y):
-        """Taps physical screen coordinates."""
-        self.run("shell", "input", "tap", str(int(x)), str(int(y)))
-
 
 class AndroidVerifier:
     """Connects to the Android browser CDP via Playwright and runs the outline/mind-map verification."""
@@ -648,9 +639,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--serial", "-s", default="", help="ADB device serial (read from .env by default, otherwise auto-detected)")
-    parser.add_argument("--browser-pkg", "-p", default="", help="browser package name (defaults to com.brave.browser)")
-    parser.add_argument("--cdp-port", type=int, default=0, help="CDP debug port forwarded to this machine (defaults to 9222)")
+    parser.add_argument("--serial", "-s", default="", help="ADB device serial (defaults to ANDROID_SERIAL from .env)")
+    parser.add_argument("--browser-pkg", "-p", default="", help="browser package name (defaults to ANDROID_BROWSER_PKG from .env)")
+    parser.add_argument("--cdp-port", type=int, default=0, help="CDP debug port forwarded to this machine (defaults to ANDROID_CDP_PORT from .env)")
     parser.add_argument("--siyuan-port", type=int, default=0, help="SiYuan port (defaults to SIYUAN_TEST_PORT from .env; ★ never falls back to the user instance)")
     parser.add_argument("--siyuan-host", default=cfg.siyuan_host,
                         help="hostname used from the host side to reach SiYuan (defaults to SIYUAN_HOST from .env). Note this is used only for **host-side** probing; the phone side goes through adb reverse, see DEVICE_LOOPBACK")

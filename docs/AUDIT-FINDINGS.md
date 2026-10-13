@@ -167,14 +167,17 @@ conclusion to draw from a complete-looking list of findings.
 
 ### e2e-specs-a
 
-- **medium · test-quality** `e2e/mindmap.spec.ts:199`  
-  Both fit cases (161 and 199) assert only 'the content is inside the canvas after clicking 适应', but the plugin auto-fits whenever the map mounts or its size changes, so the criterion holds whether or not the button is wired; the case also claims to pin the measured scale factor, which no assertion reads.
-- **medium · test-quality** `e2e/mindmap.spec.ts:322`  
-  'buttons in the settings bar are always reachable by scrolling' cannot fail for the defect it names: the bar no longer scrolls horizontally, and Playwright's toBeVisible is true for an element clipped inside an overflowing container — so the case now only asserts that three buttons exist, while its comment still describes the pre-fix product.
+- ~~**medium · test-quality** `e2e/mindmap.spec.ts:199`~~ **fixed**
+  The fit case pans first (breaking mount auto-fit), so only a wired button restores containment;
+  without the pan it passed for an unwired button.
+- ~~**medium · test-quality** `e2e/mindmap.spec.ts:322`~~ **fixed by deletion**
+  The scroll-reachability case tested removed behavior (`.mm-bar` now wraps): deleted, with the
+  no-horizontal-scroll case carrying the coverage.
 - **medium · test-quality** `e2e/mindmap.spec.ts:481`  
   Two of the three @container cases depend on the environment's current right-dock width being narrow; a dock that the user dragged wider turns them red at the precondition, which this same file documents as worthless.
-- **medium · test-quality** `e2e/outline.spec.ts:680`  
-  The batch-indent case's only assertion is that the row count did not change, so a no-op 缩进 passes — the criterion cannot see the level change the case is named for.
+- ~~**medium · test-quality** `e2e/outline.spec.ts:680`~~ **fixed**
+  The batch-indent case now asserts the x-shift plus document nesting, not just the row count —
+  a no-op indent fails instead of passing.
 
 ### e2e-specs-b
 
@@ -261,12 +264,16 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-gates
 
-- **medium · dead-code** `scripts/audit-language.py:521`  
-  The i18n-fallback recognition is unreachable: _string_kind() only ever returns 'string' or 'assertion', so the branch that counts notes['i18n-fallback'] and the summary line that prints it can never fire - a leftover of the rule that was removed when the t(key, vars, fallback) arguments were deleted.
-- **medium · test-quality** `scripts/audit-privacy.py:374`  
-  The selftest case named 'the same id in product code is not excused' does not test the excusal boundary at all: it asserts that src/siyuan/store.ts contains no id-shaped literal, which is true both when the file is missing (read_lines returns []) and when the excusal rule is deleted - and the `product` result it computes is thrown away.
-- **medium · test-quality** `scripts/check-docs-index.py:36`  
-  Range expansion never fires: LONG_RANGE expects '1.1-1.10' inside ONE backtick span, but docs/PITFALLS.md writes ranges as `1.1`-`1.10` (the en dash between two spans), so expand() only ever sees the two endpoints and the middle of every advertised numeric range is never verified.
+- ~~**medium · dead-code** `scripts/audit-language.py:521`~~ **stale — reachable**
+  `_string_kind` returns `'i18n-fallback'` for catalogue text (line 532+); the branch fires.
+  Verified by read.
+- ~~**medium · test-quality** `scripts/audit-privacy.py:374`~~ **addressed — tests selection now**
+  The case asserts the live pass *selects* every id-shaped literal for the instance to judge
+  (verified by read at 462-495); the file-missing shape the entry names is gone.
+- ~~**medium · test-quality** `scripts/check-docs-index.py:36`~~ **fixed**
+  Dash-linked spans are rejoined before matching so LONG_RANGE fires; a SUFFIX_RANGE covers
+  multi-letter suffixes. The fix exposed a real over-advertised range (`6.9aa`–`6.9cc` named 55
+  entries, only 4 exist) — the index now lists them explicitly. Gate green: 88 checked, none dangling.
 - ~~**medium · test-quality** `scripts/verify-css-scope.py:50`~~ **fixed by port**
   The gate is now `scripts/verify-css-scope.mjs`, parsing with postcss (the parser the build
   already uses) instead of a regex comment stripper + brace counter. Demonstrated: a `{` inside a
@@ -592,8 +599,9 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · dead-code** `scripts/audit-privacy.py:171`~~ **fixed**
   The unused `label` parameter is removed from `check_patterns` and all four call sites
   (verified: privacy selftest green).
-- **low · docs** `scripts/audit-privacy.py:156`  
-  MAX_BYTES silently drops artifacts from the --live scan and nothing prints how many were dropped, so 'the rules found nothing' does not say how much of the local artifact tree was actually read - while the tracked-file scope does print its skipped count.
+- ~~**low · docs** `scripts/audit-privacy.py:156`~~ **fixed**
+  Oversized artifacts are counted and printed (`N skipped as oversized — unread, not clean`)
+  instead of silently dropped.
 - ~~**low · dead-code** `scripts/check.py:155`~~ **stale — machinery is live**
   The `report_only` branch at line 366 reads per-gate config; no gate sets the key today, but that
   is configuration, not dead code — the branch runs the moment one does. Verified by read.
@@ -668,14 +676,17 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · bug** `scripts/test-instance.py:468`~~ **fixed**
   The PID file is written only after the new kernel answers, and readiness requires our process
   alive (not just the port answering); on failure the previous tracking is restored.
-- **low · dead-code** `scripts/verify-android.py:126`  
-  The device auto-select branch is unreachable: the serial has already been resolved from the required ANDROID_SERIAL, so 'if not self.serial' can never hold - and the docstring's claim that the script 'auto-detects adb and ports by default' is not what it does.
-- **low · docs** `scripts/verify-android.py:652`  
-  Two CLI help texts advertise defaults that no longer exist (com.brave.browser, 9222); the values actually come from .env keys, which the help should name.
-- **low · docs** `scripts/verify-android.py:44`  
-  The usage example passes a file path to the screenshot option, but -o/--output-dir is a directory and the file name is hardcoded, so the documented command writes .../shot.png/manual_shot.png.
-- **low · dead-code** `scripts/verify-android.py:193`  
-  AndroidBridge.input_key() and AndroidBridge.tap() have no caller anywhere in the repository, so the keycode table in their docstrings documents code nothing runs.
+- ~~**low · dead-code** `scripts/verify-android.py:126`~~ **refuted in writing**
+  The branch fires when `--serial ""` is passed explicitly (bypassing the required
+  `ANDROID_SERIAL`): `serial or cfg.android_serial` is empty, so auto-select is the only path.
+  Verified by read of the constructor chain.
+- ~~**low · docs** `scripts/verify-android.py:652`~~ **fixed**
+  Help texts name the `.env` keys (`ANDROID_SERIAL`, `ANDROID_BROWSER_PKG`, `ANDROID_CDP_PORT`)
+  instead of the stale literal defaults.
+- ~~**low · docs** `scripts/verify-android.py:44`~~ **fixed**
+  The example passes a directory (matching `-o/--output-dir` + hardcoded `manual_shot.png`).
+- ~~**low · dead-code** `scripts/verify-android.py:193`~~ **fixed**
+  Uncalled `input_key()`/`tap()` (and their keycode tables) deleted; scenarios drive input via CDP.
 - ~~**low · test-quality** `scripts/verify-live.py:90`~~ **fixed**
   The icon check now fails when zero `svg[fill="none"]` exist (`total == 0` is a failure, not a pass).
 - ~~**low · bug** `scripts/verify-live.py:410`~~ **fixed**

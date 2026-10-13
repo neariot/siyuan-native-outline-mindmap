@@ -203,10 +203,23 @@ test('fit button fits all the nodes', async ({ page }) => {
   //   SiYuan's right dock gets pushed entirely off screen (the dock sits at 908~1145 while the viewport is only 900 wide),
   //   and the plugin's buttons can no longer be clicked —— that is SiYuan's layout behavior, not the thing under test.
   //   Besides, at the default 1440 viewport the dock is only 237px wide anyway, which is already narrow enough.
+  //
+  // ★ Pan FIRST, then fit: the plugin auto-fits on mount, so asserting containment right away holds
+  //   whether or not the button is wired. Panning breaks the fit (proven by the drag-pans case
+  //   above); only a working button restores it. Without the pan this case cannot go red for an
+  //   unwired button.
+  const c = await canvasBox(page);
+  const cx = c.l + c.w / 2;
+  const cy = c.t + c.h / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 200, cy + 120, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+
   await clickBarButton(page, '适应');
   await page.waitForTimeout(600);
 
-  const c = await canvasBox(page);
   const content = await contentBox(page);
   expect(content.l, `content left ${content.l} should not exceed canvas left ${c.l}`).toBeGreaterThanOrEqual(c.l - 2);
   expect(content.r, `content right ${content.r} should not exceed canvas right ${c.r}`).toBeLessThanOrEqual(c.r + 2);
@@ -355,21 +368,6 @@ test('a plain wheel pans instead of zooming', async ({ page }) => {
   expect(await currentScale(page), 'a plain wheel should not change the scale').toBeCloseTo(scaleBefore, 3);
   const after = await contentBox(page);
   expect(Math.abs(after.t - before.t), 'a plain wheel should pan the content').toBeGreaterThan(20);
-});
-
-/**
- * ★ The settings bar overflows horizontally in a narrow panel —— this records the status quo so it cannot quietly get worse.
- *
- * Measured: the sidebar has 237px available while the bar content is 1131px, so fit and export image buttons fall outside the viewport.
- * Right now they can only be reached by scrolling with `overflow-x: auto` (`scrollLeft` 0 → 894).
- * This case does not assert "it must overflow" (that would box in whoever fixes the layout later),
- * it only asserts that **the buttons are always reachable by scrolling** —— a floor that cannot be given up.
- */
-test('buttons in the settings bar are always reachable by scrolling', async ({ page }) => {
-  for (const label of ['适应', '导出图片', '导出 .mm']) {
-    const btn = await revealInBar(page, label);
-    await expect(btn, `"${label}" should be visible`).toBeVisible({ timeout: 5_000 });
-  }
 });
 
 /**
