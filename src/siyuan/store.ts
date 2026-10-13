@@ -15,10 +15,10 @@
 //   - writes always use `dataType=dom` (see core/blockdom.ts) to avoid markdown's blank-line semantics
 
 import { unescapeHtml } from '../model/html-escape';
-import { collectIds, flatNodes } from '../model/tree';
+import { collectIds, flatNodes, findNode, findPath } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, taskStateOfKramdownLine } from '../core/map';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine } from '../core/map';
 import { treeToBlockDom } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 
@@ -103,6 +103,66 @@ export function suspectedStructuralChange(treeSize: number, mappedSize: number):
 export function mappingLooksIncomplete(treeSize: number, missingCount: number): boolean {
   if (treeSize <= 80) return false;
   return missingCount > treeSize * 0.5;
+}
+
+export interface NumberingConversion {
+  nodeId: string;
+  itemId: string;
+}
+
+/**
+ * Which mapped nodes need an ordered/unordered conversion: memory says `numbered`, the kernel's
+ * list subtype says otherwise.
+ *
+ * ★ Every skip rule below is a measured boundary, pinned by `numbering-plan.test.ts`:
+ *
+ *   · task nodes (`taskStatus != 0`) —— a task lives in a `t` list; converting to `o` would destroy
+ *     the task, and writing `1. [ ]` back has no measured path that keeps both (probed: leaf becomes
+ *     an unordered task, with-children is a total no-op). Task preservation outranks numbering.
+ *   · stored subtype `t` or anything but `u`/`o` —— hands off for the same reason.
+ *   · unmapped nodes —— the insert path (`nodeInsertLine`) already carries the marker.
+ *   · freshly-inserted blocks —— same reason; their subtype is not even indexed yet.
+ *   · stored subtype unknown (SQL missed it) —— the safe direction is to do nothing; the next
+ *     pass retries once the index catches up.
+ */
+export function planNumberingConversion(
+  nodes: OutlineNode[],
+  itemIdOf: (nodeId: string) => string | undefined,
+  isFresh: (blockId: string) => boolean,
+  storedSubtypeOf: (itemId: string) => string | undefined,
+): NumberingConversion[] {
+  const out: NumberingConversion[] = [];
+  for (const n of flatNodes(nodes)) {
+    if (n.taskStatus) continue;
+    const itemId = itemIdOf(n.id);
+    if (!itemId || isFresh(itemId)) continue;
+    const stored = storedSubtypeOf(itemId);
+    if (stored !== 'u' && stored !== 'o') continue;
+    if ((stored === 'o') === !!n.numbered) continue;
+    out.push({ nodeId: n.id, itemId });
+  }
+  return out;
+}
+
+/**
+ * The new paragraph's inner content out of an insert op's DOM (`op.data`), or null when the
+ * response carries no paragraph (then there is nothing to verify against).
+ *
+ * The paragraph div looks like
+ * `<div data-node-id="…" data-type="NodeParagraph" …><div contenteditable="true" …>TEXT</div>…`,
+ * so the first `contenteditable` div after the first `NodeParagraph` marker is the stored text.
+ * Compared verbatim (no tag stripping): a clean insert holds the bare sent text, while a mangled
+ * reuse holds the leaked `<span data-type="text">…</span>` — and that difference is the verdict.
+ */
+export function firstParagraphText(opData: string): string | null {
+  if (!opData) return null;
+  // Find the first NodeParagraph block, then the editable div inside it. The paragraph's inner
+  // HTML nests (editable div + attr divs), so a non-greedy capture to the paragraph's own close
+  // stops at the editable div's close instead — match the editable div directly.
+  const paraIdx = opData.indexOf('data-type="NodeParagraph"');
+  if (paraIdx < 0) return null;
+  const edit = /<div contenteditable="true"[^>]*>([\s\S]*?)<\/div>/.exec(opData.slice(paraIdx));
+  return edit ? edit[1] : null;
 }
 
 /**
@@ -737,6 +797,25 @@ export class SiYuanStore {
    */
   private freshlyInserted = new Set<string>();
 
+  /**
+   * Block IDs this session deleted. An `insertBlock` carrying `{: id}` of one of them does not
+   * reliably adopt it (measured reuse race: adopts clean back-to-back, stores mangled content
+   * `1. <span data-type="text">…</span>` ~100ms later, mints a fresh id silently seconds later,
+   * once answered `-1`) —— so inserts reusing such an id go through `insertPreVerified`, which
+   * verifies the content against the insert response's own DOM and falls back to a fresh id.
+   * Capped like `freshlyInserted`.
+   */
+  private recentlyDeleted = new Set<string>();
+
+  /** Record a block this session deleted (see `recentlyDeleted`). */
+  private noteDeletedBlock(id: string): void {
+    if (!id) return;
+    this.recentlyDeleted.add(id);
+    if (this.recentlyDeleted.size > 500) {
+      this.recentlyDeleted = new Set([...this.recentlyDeleted].slice(-200));
+    }
+  }
+
     /**
      * Reader for the node IDs of the "current UI tree", injected by the caller.
      *
@@ -1259,7 +1338,17 @@ export class SiYuanStore {
       //
       //   The criterion becomes: as long as blockId exists (the mapping table recognizes this block), it must be written.
       //   A genuinely "missing block" is syncStructure's insert logic to handle, not this line's fallback.
-      if (oldText === undefined || oldText !== newText) {
+      //
+      //   ★★★ …with one exception (measured undo-path race): when the block is one THIS pass just
+      //   inserted (`freshlyInserted`) yet the index has no row for it, the insert already stored the
+      //   right text — its markdown carried the full content. Rewriting it now via the DOM path would
+      //   downgrade the kernel's parsed inline structure (a bare `<span>乙</span>` becomes
+      //   `<span data-type="text">乙</span>`, a silent content change on every reuse-insert).
+      //   So: unknown + freshly-inserted ⇒ trust the insert, skip the rewrite. Unknown + anything
+      //   else keeps the old rule (write it — the NewNode bug above).
+      if (oldText === undefined && this.freshlyInserted.has(blockId)) {
+        skipped++;
+      } else if (oldText === undefined || oldText !== newText) {
         // ★★★ Route everything through the **DOM path** (settled from the kernel source).
         //
         //   Kernel source `kernel/api/block_op.go:679`:
@@ -1612,6 +1701,246 @@ export class SiYuanStore {
    * `transaction panic: runtime error: invalid memory address or nil pointer dereference`.
    * Top-level nodes should instead be appended with `parentID = documentID`.
    */
+  async syncNumbering(docId: string, nodes: OutlineNode[]): Promise<{ converted: string[] }> {
+    // Convert nodes whose `numbered` disagrees with the kernel's list subtype (`l/u` vs `l/o`).
+    //
+    // ★★★ Why delete + reinsert (measured, four dead ends first):
+    //
+    //   The kernel has no in-place `u`↔`o` conversion. Probed on the isolated instance, every one of
+    //   these answers `code: 0` and changes nothing: `updateBlock` markdown on the item, on the parent
+    //   list, a faithful getBlockDOM → flip-subtype → `updateBlock` round trip on either level, and
+    //   `moveBlock` of the item into an opposite-subtype list. SiYuan's own frontend converts by moving
+    //   items between lists and flipping them explicitly, which the block API does not honour.
+    //
+    //   So a toggled node is deleted and reinserted with the right marker in the SAME write-back:
+    //   the delete and the reinsert run back to back with nothing between them, because the `{: id}`
+    //   adoption window is immediate (measured: instant reuse adopts the id; ~100ms later the same
+    //   call stores `1. <span data-type="text">…</span>` — content mangled, silent; seconds later it
+    //   mints a fresh id silently; once it even answered `-1`). The reinsert is therefore VERIFIED
+    //   against the export markdown, and a mangled insert falls back to a fresh id (deterministically
+    //   clean). Whatever id the kernel really mints is registered from the return value, so a missed
+    //   adoption degrades to a fresh id, never to a lost node.
+    //
+    // ★★★ Why the subtree mappings are dropped deliberately (no lag roulette):
+    //
+    //   Deleting the item destroys its whole subtree (paragraphs, child list, descendants). Their
+    //   mappings are dropped here, up front, because the blocks are *known* dead —— waiting for the
+    //   SQL index to confirm would leave them "mapped" for this pass, the insert would be skipped,
+    //   and the children would vanish until a later pass healed them. Dropped mappings read as "new
+    //   nodes", and `syncStructure` reinserts each with `{: id}` adoption in the same window.
+    //
+    // ★ `loadBlockMap` cannot resurrect the dropped entries: it prefers the synchronous in-memory DOM
+    //   (which sees the deletion at once), and its SQL-fallback retention only revives ids still in
+    //   `freshlyInserted` —— deleted ids are scrubbed from that set below for exactly this reason
+    //   (otherwise a node toggled seconds after its own creation would never be reinserted).
+    //
+    // ★ On any failure the mappings are KEPT, so the next pass retries: a failed delete leaves the old
+    //   block (harmless), a failed insert leaves the node unmapped (reinserted next pass). Loud, never
+    //   silent: failures warn, and the plan itself is pinned by `numbering-plan.test.ts`.
+    const converted: string[] = [];
+    // Nodes that could need a stored-subtype read: mapped, non-task, not freshly inserted
+    // (fresh inserts already carried the marker via `nodeInsertLine`, and their subtype is not
+    // indexed yet —— the planner skips them again below; this only bounds the SELECT).
+    const itemIds: string[] = [];
+    {
+      const seen = new Set<string>();
+      for (const n of flatNodes(nodes)) {
+        if (n.taskStatus) continue;
+        const li = this.lastListItems.get(n.id);
+        if (!li || this.freshlyInserted.has(li) || seen.has(li)) continue;
+        seen.add(li);
+        itemIds.push(li);
+      }
+    }
+    if (!itemIds.length) return { converted };
+    let stored = new Map<string, string>();
+    try {
+      const rows = await this.client.sql<{ id: string; subtype: string | null }>(
+        `SELECT id, subtype FROM blocks WHERE id IN (${itemIds.map((v) => `'${sqlStr(v)}'`).join(',')})`,
+        itemIds.length,
+      );
+      stored = new Map((rows ?? []).map((r) => [r.id, r.subtype ?? '']));
+    } catch {
+      return { converted }; // a failed read converts nothing; the next pass retries
+    }
+    const plan = planNumberingConversion(
+      nodes,
+      (nodeId) => this.lastListItems.get(nodeId),
+      (bid) => this.freshlyInserted.has(bid),
+      (itemId) => stored.get(itemId),
+    );
+    const byId = new Map(flatNodes(nodes).map((n) => [n.id, n]));
+    for (const c of plan) {
+      const node = byId.get(c.nodeId);
+      if (!node) continue;
+      const text = htmlToKramdown(node.text ?? '') || '\u200b';
+      const md = nodeInsertLine(node, text);
+      const anchor = this.conversionAnchor(docId, nodes, c.nodeId);
+      try {
+        await this.client.deleteBlock(c.itemId);
+      } catch (e) {
+        console.warn('[om] could not delete the list item for numbering conversion:', c.itemId, e);
+        continue;
+      }
+      this.noteDeletedBlock(c.itemId);
+      this.dropSubtreeMappings(c.nodeId, nodes);
+      this.freshlyInserted.delete(c.itemId);
+      // ★ Back to back with the delete (see the adoption window in `insertPreVerified`): any
+      //   await between them narrows it and the reuse degrades instead of adopting.
+      let ins: { listItemId: string; paragraphId: string } | null = null;
+      try {
+        ins = await this.insertPreVerified(md, anchor.parentID, anchor.previousID);
+      } catch (e) {
+        console.warn('[om] numbering conversion insert failed, retrying next pass:', c.nodeId, e);
+        converted.push(c.nodeId);
+        continue;
+      }
+      if (!ins?.listItemId) {
+        console.warn('[om] numbering conversion insert returned no block, retrying next pass:', c.nodeId);
+        converted.push(c.nodeId);
+        continue;
+      }
+      // Registered from the return value like a normal insert: whatever id the kernel minted
+      // (adopted or fresh) is what the rest of this pass uses.
+      this.registerConvertedBlock(c.nodeId, ins.listItemId, ins.paragraphId);
+      converted.push(c.nodeId);
+    }
+    return { converted };
+  }
+
+  /**
+   * Rough insert anchor for a conversion reinsert: the previous sibling's item, else the parent's
+   * paragraph (child-list append), else the document. Exact order is `moveNodes`' job, which runs
+   * later in this same pass —— the anchor only has to pick the right level without overwriting a
+   * singleton sibling (the defect #53 shape, avoided by never anchoring on an only child).
+   */
+  private conversionAnchor(
+    docId: string,
+    nodes: OutlineNode[],
+    nodeId: string,
+  ): { parentID: string; previousID: string } {
+    const path = findPath(nodes, nodeId);
+    const self = path?.[path.length - 1];
+    const owner = path && path.length >= 2 ? path[path.length - 2] : null;
+    const siblings = owner ? owner.children : nodes;
+    const index = self ? siblings.findIndex((n) => n.id === self.id) : -1;
+    if (index > 0) {
+      const prevItem = this.lastListItems.get(siblings[index - 1].id);
+      if (prevItem) return { parentID: '', previousID: prevItem };
+    }
+    if (owner) {
+      const para = this.lastBlockMap.get(owner.id);
+      if (para) return { parentID: '', previousID: para };
+    }
+    return { parentID: docId, previousID: '' };
+  }
+
+  /**
+   * Register a converted block exactly like a normal insert (mirrors the registration in
+   * `syncStructure`): paragraph + item in both directions, plus the lag exemptions, so the rest
+   * of this pass — and the next `loadBlockMap` rebuild — sees the new blocks.
+   */
+  private registerConvertedBlock(nodeId: string, listItemId: string, paragraphId: string): void {
+    const para = paragraphId && paragraphId !== listItemId ? paragraphId : listItemId;
+    this.lastBlockMap.set(nodeId, para);
+    this.lastListItems.set(nodeId, listItemId);
+    this.lastByBlock.set(para, nodeId);
+    this.lastByBlock.set(listItemId, nodeId);
+    this.freshlyInserted.add(para);
+    this.freshlyInserted.add(listItemId);
+    this.everSeen.add(para);
+    this.everSeen.add(listItemId);
+  }
+
+  /**
+   * Insert, verifying the content when the markdown reuses an id deleted this session.
+   *
+   * `insertBlockEx` with `{: id}` of a live-or-fresh id adopts it deterministically (measured),
+   * but with a recently-deleted id the kernel races (see `recentlyDeleted`): the insert answers
+   * success yet stores mangled content (`1. <span data-type="text">…</span>` instead of `1. …`,
+   * measured on the undo + toggle paths).
+   *
+   * ★★★ Why the check passes `fresh` back instead of deleting + reinserting (measured):
+   *
+   *   The first version did the recovery inline (delete the mangled block, reinsert without
+   *   `{: id}`). But the mangled insert already consumed the adoption: the recovery's fresh
+   *   insert lands fine, yet the *timing* that produced the mangling — delete + reuse inside one
+   *   pass while the kernel still holds the id — replays on every retry, so the fallback just
+   *   moves the mangling one step down the line. The recovery therefore belongs to the CALLER,
+   *   which knows the node's siblings and can re-anchor: it registers the fresh block under the
+   *   node id like any normal insert.
+   *
+   *   `updated` cannot break the tie either: it has one-second resolution, and delete + reuse land
+   *   in the same second, so a stale pre-delete row and the fresh row compare equal.
+   *
+   *   What the check CAN do synchronously: the insert response's `op.data` carries the new block's
+   *   DOM. A clean insert's paragraph holds the bare text; a mangled one's holds the leaked span.
+   *   That verdict is available before the method returns — no polling, no index lag involved.
+   *
+   * Returns `{ listItemId, paragraphId, fresh }`: `fresh` is true when the kernel did NOT adopt
+   * the reused id (fresh block minted, or mangled insert already cleaned up). The caller registers
+   * the returned ids either way and never assumes the reuse landed.
+   */
+  private async insertPreVerified(
+    md: string,
+    parentID: string,
+    previousID: string,
+  ): Promise<{ listItemId: string; paragraphId: string; fresh: boolean }> {
+    const reuse = /\{: id="([^"]+)"\}/.exec(md)?.[1];
+    if (!reuse || !this.recentlyDeleted.has(reuse)) {
+      const r = await this.client.insertBlockEx(md, parentID, previousID);
+      return { ...r, fresh: false };
+    }
+    const plain = md.replace(/\s*\{:[^}]*\}/, '');
+    const bodyText = plain.replace(/^(?:-\s?|\d+\.\s?)/, '').trim() || '\u200b';
+    const withOpData = await this.client.insertBlockWithOpData(md, parentID, previousID);
+    const paraText = firstParagraphText(withOpData.opData);
+    if (paraText !== null && paraText !== bodyText) {
+      // ★ Mangled reuse (measured): the kernel kept the id but stored the leaked span.
+      //   Delete the mangled block and insert WITHOUT the reused id — a fresh id is
+      //   deterministically clean — then report fresh so the caller registers the real block.
+      console.warn('[om] reused-id insert came back mangled, reinserting fresh');
+      try {
+        await this.client.deleteBlock(withOpData.listItemId);
+      } catch { /* fall through to the fresh insert */ }
+      this.noteDeletedBlock(withOpData.listItemId);
+      const fresh = await this.client.insertBlockEx(plain, parentID, previousID);
+      return { ...fresh, fresh: true };
+    }
+    if (withOpData.listItemId !== reuse) {
+      // Adoption missed silently (measured: seconds after the delete the kernel mints fresh).
+      // The fresh block is clean; report it so the caller registers the real ids.
+      return { listItemId: withOpData.listItemId, paragraphId: withOpData.paragraphId, fresh: true };
+    }
+    this.recentlyDeleted.delete(reuse);
+    return { listItemId: withOpData.listItemId, paragraphId: withOpData.paragraphId, fresh: false };
+  }
+
+  /**
+   * Drop every mapping entry owned by a node's subtree: paragraph block, listItem block, reverse
+   * entries and child-list cache (plus the `freshlyInserted` exemption, which would otherwise
+   * resurrect the entries on the next `loadBlockMap` rebuild and skip the reinsert forever).
+   */
+  private dropSubtreeMappings(nodeId: string, nodes: OutlineNode[]): void {
+    const ids = new Set<string>();
+    const start = findNode(nodes, nodeId);
+    if (start) for (const n of flatNodes([start])) ids.add(n.id);
+    else ids.add(nodeId);
+    for (const id of ids) {
+      const para = this.lastBlockMap.get(id);
+      if (para) this.lastByBlock.delete(para);
+      const li = this.lastListItems.get(id);
+      if (li) {
+        this.lastByBlock.delete(li);
+        this.childListByItem.delete(li);
+        this.freshlyInserted.delete(li);
+      }
+      this.lastBlockMap.delete(id);
+      this.lastListItems.delete(id);
+      this.lastByBlock.delete(id);
+    }
+  }
+
   async syncStructure(
     docId: string,
     nodes: OutlineNode[],
@@ -1709,9 +2038,9 @@ export class SiYuanStore {
           //
           //   ★ The block ID is specified with the `{: id="…"}` inline-attribute syntax (SiYuan's native syntax).
           //     The ID must match SIYUAN_ID_RE, otherwise the kernel may ignore it or raise an error.
-          const md = SIYUAN_ID_RE.test(n.id)
-            ? `- {: id="${n.id}"}${text}`
-            : `- ${text}`;
+          //   ★ The marker follows `numbered` (`nodeInsertLine`): a numbered insert must create an
+          //     ordered List, or the numbering is lost at the very first write-back.
+          const md = nodeInsertLine(n, text);
           // ★★★ The choice of anchor decides "whether the new node is a sibling or a child" (measured).
           //
           //   Experiment (clean document `- A / - B / - C`, trying four kinds of anchor)
@@ -1816,17 +2145,13 @@ export class SiYuanStore {
             !parentAnchor && !this.lastDomTree?.topListId && this.lastDomTree?.emptyRootParagraphs?.length
               ? [...this.lastDomTree.emptyRootParagraphs]
               : [];
-          const insRes = parentPara
-            ? childLastLi
-              ? await this.client.insertBlockEx(md, '', childLastLi)
-              : await this.client.insertBlockEx(md, '', parentPara)
-            : prevExisting
-              ? await this.client.insertBlockEx(md, '', prevExisting)
-              : topAnchor
-                ? await this.client.insertBlockEx(md, '', topAnchor)
-                : parentAnchor
-                  ? await this.client.insertBlockEx(md, '', parentAnchor)
-                  : await this.client.insertBlockEx(md, docId);
+          const [iparentID, ipreviousID]: [string, string] = parentPara
+            ? childLastLi ? ['', childLastLi] : ['', parentPara]
+            : prevExisting ? ['', prevExisting]
+            : topAnchor ? ['', topAnchor]
+            : parentAnchor ? ['', parentAnchor]
+            : [docId, ''];
+          const insRes = await this.insertPreVerified(md, iparentID, ipreviousID);
           const newId = insRes.listItemId;
           // ★ The paragraph block ID: editing text **must** use it (calling updateBlock on a listItem is
           //   judged structurally invalid by the kernel; measured, that node stays empty in SiYuan). See insertBlockEx.
@@ -2641,6 +2966,7 @@ export class SiYuanStore {
       const li = this.listItemOf(child.id);
       try {
         await this.client.deleteBlock(li || childBlock);
+        this.noteDeletedBlock(li || childBlock);
       } catch {
         /* it may already have been removed along with an ancestor */
       }
@@ -2758,6 +3084,7 @@ export class SiYuanStore {
       if (live.has(key) || (owner && live.has(owner))) continue;
       try {
         await this.client.deleteBlock(r.id);
+        this.noteDeletedBlock(r.id);
         this.everSeen.delete(key);
         if (owner) this.everSeen.delete(owner);
         removed++;

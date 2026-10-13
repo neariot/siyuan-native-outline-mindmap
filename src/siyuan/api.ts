@@ -368,6 +368,21 @@ export class SiYuanClient {
     parentID: string,
     previousID = '',
   ): Promise<{ listItemId: string; paragraphId: string }> {
+    return this.insertBlockWithOpData(data, parentID, previousID);
+  }
+
+  /**
+   * Insert a block and return the resolved ids **plus the insert op's own DOM** (`op.data`).
+   *
+   * The op DOM is the kernel's synchronous verdict on what was stored — available before the
+   * method returns, with no index lag involved. Callers that reuse a recently-deleted id read
+   * the new paragraph's text out of it to catch a mangled reuse inline (see `insertPreVerified`).
+   */
+  async insertBlockWithOpData(
+    data: string,
+    parentID: string,
+    previousID = '',
+  ): Promise<{ listItemId: string; paragraphId: string; opData: string }> {
     const body: Record<string, unknown> = {
       dataType: 'markdown',
       data,
@@ -439,7 +454,7 @@ export class SiYuanClient {
     }
     if (!paragraphId) paragraphId = listItemId;
     if (!listItemId) listItemId = paragraphId;
-    return { listItemId, paragraphId };
+    return { listItemId, paragraphId, opData: String(op?.data ?? '') };
   }
 
   /** Delete a block (with its subtree). SiYuan has no separate "delete block" semantics, so the transaction endpoint is used. */

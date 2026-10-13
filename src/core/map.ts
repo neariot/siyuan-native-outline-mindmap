@@ -682,6 +682,32 @@ export function nodeToLine(n: OutlineNode): string {
 }
 
 /**
+ * The single line `syncStructure` inserts for a brand-new node, carrying the node's own ID so the
+ * kernel adopts it instead of assigning a fresh block ID (see the defect #54 note at the call site).
+ *
+ * ★ The marker follows `numbered`: `1. {: id="…"}text` creates an ordered List (`l/o`) with the ID
+ *   adopted (measured on the isolated instance), exactly like `- {: id="…"}text` does for unordered.
+ *   Kept as its own function (rather than reusing `nodeToLine`) because the insert deliberately omits
+ *   the task marker and heading form —— those go through their own conversion paths after the insert.
+ */
+export function nodeInsertLine(n: OutlineNode, text: string): string {
+  const marker = n.numbered ? '1.' : '-';
+  return SIYUAN_ID_RE.test(n.id) ? `${marker} {: id="${n.id}"}${text}` : `${marker} ${text}`;
+}
+
+/**
+ * One pasted plain-text line → display body + ordered flag.
+ *
+ * A pasted `1. x` line carries numbering as *syntax*: keeping the marker as text would show a
+ * literal "1. " in the node, while dropping it silently (as the old inline regex did) loses the
+ * numbering on the very first write-back. Mirrors the read side's marker rules (`-` / `1. `).
+ */
+export function pasteLineInfo(raw: string): { body: string; numbered: boolean } {
+  const m = /^(?:\s*)(?:[-*+]\s+|\d+[.)]\s+)?(.*)$/.exec(raw);
+  return { body: (m ? m[1] : raw).trim(), numbered: /^\s*\d+[.)]\s+/.test(raw) };
+}
+
+/**
  * Append one node and its subtree as Kramdown lines —— the walk `treeToKramdown` performs, shared
  * so that writing a **single** node back and exporting a whole document cannot drift apart.
  */

@@ -608,6 +608,11 @@ function OmTabApp({
           const structNow = structureFingerprint(tree);
           structChanged = lastStructureRef.current !== structNow;
           if (structChanged) {
+            // ★ Numbering conversion first: a node whose `numbered` disagrees with its list subtype
+            //   is deleted here and reinserted below with the right marker (the kernel has no in-place
+            //   conversion —— see `syncNumbering`). Dropped mappings read as new nodes, so the id
+            //   adoption window still holds when `syncStructure` reinserts them in this same pass.
+            await store.syncNumbering(docIdNow, tree);
             await store.syncStructure(docIdNow, tree, phs);
             await store.syncDeletions(docIdNow, tree);
             // The baseline advances only after the structure write succeeds; on failure it keeps the old value and the next run takes the full path again

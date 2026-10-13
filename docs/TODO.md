@@ -17,16 +17,24 @@ and the next work is the tooling gaps and the modularity list, which are the hon
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
 
-- **Numbering an already-synced node still does not reach SiYuan (new nodes do).** Toggling `numbered`
-  on a node whose block already exists is write-invisible: the kernel has no measured in-place `u`↔`o`
-  conversion —— `updateBlock` markdown on the item, on the parent list, and a faithful
-  getBlockDOM → flip-subtype → updateBlockDom round trip all answer `code: 0` and change nothing
-  (probed on the isolated instance; probe docs created and deleted). Fixed in this pass is the creation
-  path (`nodeToLine`/`walkNodesToLines` emit `1. `, verified live: our bytes create `l/o`), the two gates
-  that were blind to numbering (`serializeTree`, `structureFingerprint`), and the `1. [x]` task reader.
-  The remaining sketch is insert-`1.`-list + move-item + cleanup (the item id survives a move; SiYuan's
-  own frontend converts by moving items between lists, `app/src/protyle/wysiwyg/list.ts`). Needs its own
-  E2E (toggle → poll the document for `1.`) before it ships.
+**Resolved, verified, and removed from the queue (numbering pass):**
+
+- **Numbering a node never reached SiYuan.** The toolbar `1.` button and the `1. ` shortcut set
+  `numbered` with no text change, yet every write path emitted `- `. Fixed: `1. ` emission
+  (`nodeToLine`/`walkNodesToLines`/`nodeInsertLine`), `num` in both gates (`serializeTree`,
+  `structureFingerprint`), `\d+\.` in the task reader, `numbered` kept through multi-line paste
+  (`pasteLineInfo`). Unit red 0/4 → 4/4; live kernel bytes create `l/o`; E2E green.
+- **Toggling numbering on an already-synced node is converted in place.** The kernel has no
+  in-place `u`↔`o` conversion (four avenues probed, all silent no-ops), so `syncNumbering`
+  deletes + reinserts with the right marker in the same pass (`planNumberingConversion` skips
+  tasks/task-lists/unmapped/fresh/unknown, pinned by `numbering-plan.test.ts`). E2E green.
+- **Reuse-id inserts are verified against the insert response's own DOM.** Reusing a
+  recently-deleted id races (clean back-to-back, mangled `1. <span…>` mid-window, fresh id late,
+  once `-1`): `insertPreVerified` reads the new paragraph out of `op.data` synchronously and
+  reinserts fresh on a mangled verdict (`insert-verdict.test.ts`, red-proofed).
+- **A just-inserted block is not rewritten by the same pass's text sync.** `saveNodesIncremental`
+  rewrote index-unknown blocks via the DOM path, downgrading `<span>乙</span>` to
+  `<span data-type="text">乙</span>` on every reuse-insert (`no-rewrite-fresh.test.ts`, red-proofed).
 
 **Resolved, verified, and removed from the queue:**
 

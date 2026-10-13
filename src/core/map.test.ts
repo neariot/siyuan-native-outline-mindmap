@@ -3,7 +3,7 @@
 //   node --experimental-strip-types src/core/map.test.ts   (Node 22+)
 // or run it through rsbuild/tsx.
 
-import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, makeSiyuanId, SIYUAN_ID_RE, takeTitleParagraphs, nodeToLine, taskStateOfKramdownLine } from './map';
+import { treeToKramdown, kramdownToTree, htmlToKramdown, kramdownToHtml, htmlToSiyuanDom, makeSiyuanId, SIYUAN_ID_RE, takeTitleParagraphs, nodeToLine, nodeInsertLine, pasteLineInfo, taskStateOfKramdownLine } from './map';
 import { htmlToText } from '../model/tree';
 import type { OutlineNode } from '../model/types';
 
@@ -1280,6 +1280,41 @@ console.log('=== blank-line rules ===');
     '★★ a numbered task keeps both halves through the round trip',
     backTask[0]?.numbered === true && backTask[0]?.taskStatus === 2,
     kdTask,
+  );
+
+  // the insert line `syncStructure` sends for a brand-new node (carries the node ID for adoption)
+  const goodId = '20261013000000-abc1234';
+  check(
+    '★ a numbered insert carries the ordered marker with the ID',
+    nodeInsertLine(num({ id: goodId, numbered: true }), '任务') === `1. {: id="${goodId}"}任务`,
+    nodeInsertLine(num({ id: goodId, numbered: true }), '任务'),
+  );
+  check(
+    '★ a plain insert still carries the unordered marker with the ID',
+    nodeInsertLine(num({ id: goodId }), '任务') === `- {: id="${goodId}"}任务`,
+    nodeInsertLine(num({ id: goodId }), '任务'),
+  );
+  check(
+    '★ an insert without a valid ID carries no attribute',
+    nodeInsertLine(num({ id: '', numbered: true }), '任务') === '1. 任务',
+    nodeInsertLine(num({ id: '', numbered: true }), '任务'),
+  );
+
+  // pasted plain-text lines: the marker is syntax, not text
+  check(
+    '★ a pasted "1. x" line keeps its numbering without the literal marker',
+    JSON.stringify(pasteLineInfo('1. 待办')) === JSON.stringify({ body: '待办', numbered: true }),
+    JSON.stringify(pasteLineInfo('1. 待办')),
+  );
+  check(
+    '★ a pasted "- x" line stays plain',
+    JSON.stringify(pasteLineInfo('- 待办')) === JSON.stringify({ body: '待办', numbered: false }),
+    JSON.stringify(pasteLineInfo('- 待办')),
+  );
+  check(
+    '★ a pasted bare line stays plain',
+    JSON.stringify(pasteLineInfo('待办')) === JSON.stringify({ body: '待办', numbered: false }),
+    JSON.stringify(pasteLineInfo('待办')),
   );
 }
 

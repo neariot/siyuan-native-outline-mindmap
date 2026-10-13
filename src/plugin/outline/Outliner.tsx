@@ -25,7 +25,7 @@ import { shouldRollBackScroll } from './auto-scroll';
 import { MOBILE_MAX_WIDTH } from '../../core/layout';
 
 import { genId, now } from '../../model/ids';
-import { makeSiyuanId } from '../../core/map';
+import { makeSiyuanId, pasteLineInfo } from '../../core/map';
 import { putImage, getImageUrl } from './images';
 import { TaskBox } from './RichContent';
 import { renderFormula } from './katex';
@@ -1849,8 +1849,7 @@ export default function Outliner(props: OutlinerProps) {
       const roots: OutlineNode[] = [];
       const stack: { n: OutlineNode; d: number }[] = [];
       for (const raw of lines) {
-        const m = /^(?:\s*)(?:[-*+]\s+|\d+[.)]\s+)?(.*)$/.exec(raw);
-        const body = (m ? m[1] : raw).trim();
+        const { body, numbered } = pasteLineInfo(raw);
         if (!body && raw.trim() === '') continue;
         const indent = raw.match(/^(\s*)/)?.[1] || '';
         const depth = Math.floor(indent.replace(/\t/g, '  ').length / 2);
@@ -1860,6 +1859,7 @@ export default function Outliner(props: OutlinerProps) {
           text: `<span>${escapeHtml(body)}</span>`,
           children: [],
         };
+        if (numbered) nn.numbered = true;
         while (stack.length > 0 && stack[stack.length - 1].d >= depth) stack.pop();
         if (stack.length === 0) roots.push(nn);
         else stack[stack.length - 1].n.children.push(nn);
