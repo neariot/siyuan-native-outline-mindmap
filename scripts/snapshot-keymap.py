@@ -52,8 +52,10 @@ EXPR = r"""
       const val = obj[key];
       if (!val || typeof val !== 'object') continue;
       if ('default' in val || 'custom' in val) {
-        // A user customization wins; with none, use the default. Both empty means "no key bound".
-        const hk = (val.custom || val.default || '').trim();
+        // ★ Built-ins only: `default` wins over `custom`. A customized machine would otherwise
+        //   write its personal bindings into the tracked fixture that the collision test treats
+        //   as SiYuan's built-in table. Both empty means "no key bound".
+        const hk = (val.default || '').trim();
         if (hk) {
           // Keep all of them when one key is occupied by several commands, to make troubleshooting easier
           const prev = out[hk];

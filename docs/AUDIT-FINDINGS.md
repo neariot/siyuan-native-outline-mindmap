@@ -192,8 +192,9 @@ conclusion to draw from a complete-looking list of findings.
 
 ### i18n-consistency
 
-- **medium · dead-code** `scripts/check-i18n-keys.py:125`  
-  The i18n gate reports 'ok (every entry is used)' while six catalogue entries are dead text: its referenced() fallback accepts ANY run of two or more CJK characters of an entry's zh value found anywhere in e2e/ or docs/, so unrelated prose - and a different key's value - rescues entries no code names.
+- ~~**medium · dead-code** `scripts/check-i18n-keys.py:125`~~ **stale — already fixed before this pass**
+  The fallback requires the whole zh value (or the key itself) in consumer text; the
+  measured-coincidence comment above it records the old shape. Verified by read.
 - ~~**medium · bug** `src/plugin/i18n/zh_CN.json:127`~~ **refuted in writing**
   The summary feature (and its `msgSummaryHint` / `msgSummaryTopLevel` keys) was removed entirely
   in `9d06fda`; both catalogues hold identical key sets today and a same-class encoding scan finds
@@ -273,12 +274,14 @@ conclusion to draw from a complete-looking list of findings.
   exception is carried on the result dict (the real CDP shape puts `exceptionDetails` top-level,
   which `ev` would otherwise strip before seeing it — caught by the selftest, not by reasoning).
   Pinned by `python3 scripts/cdp.py --selftest` (5 cases, fake websocket, no browser).
-- **medium · bug** `scripts/env.py:69`  
-  A quoted value followed by an inline comment keeps its quote characters, so the configured path is silently wrong -- the exact silent-wrong-target failure AGENTS 5.1 forbids -- while the docstring claims quotes and comments are supported.
+- ~~**medium · bug** `scripts/env.py:69`~~ **stale — already fixed before this pass**
+  The parser strips matched quotes and treats `#` inside quotes as data (verified by read at
+  lines 68-76); the docstring matches.
 - **medium · dead-code** `scripts/env.py:160`  
   The entire SIYUAN_SRC feature is dead: no code reads siyuan_src, require_siyuan_src, SIYUAN_SRC_MARKERS or the SIYUAN_SRC default, yet .env.example documents the key and promises that checks needing the source 'skip and say why'.
-- **medium · dead-code** `scripts/verify-host-style.py:1`  
-  Nothing invokes this script and its body is a second implementation of the UI-TC-02 criterion that already exists in verify-live.py, so the two have drifted and no gate covers either copy.
+- ~~**medium · dead-code** `scripts/verify-host-style.py:1`~~ **fixed**
+  The uninvoked duplicate is deleted; UI-TC-02 lives only in `verify-live.py`'s
+  `run_host_isolation` (gated by the verify flow).
 - **medium · test-quality** `scripts/verify-pkg.py:6`  
   The package check compares only version strings and file names, so it blesses whatever package.zip happens to be lying there -- today it reports 'Checks passed, ready to release' for a zip that is not the current build.
 
@@ -452,8 +455,8 @@ conclusion to draw from a complete-looking list of findings.
   name list whose 丙/丁 entries this fixture never holds.
 - **low · docs** `e2e/export.spec.ts:230`  
   The comment above the determinism case allows variation the assertion forbids: it says a little variation (timestamps and the like) is acceptable while the criterion is exact string equality.
-- **low · type-escape** `e2e/interactions.spec.ts:1`  
-  `type Page` is imported from `./fixtures`, which does not export it (TS2459); the import is erased at runtime, so nothing complains and the specs' helper signatures are typed by a symbol that does not exist.
+- ~~**low · type-escape** `e2e/interactions.spec.ts:1`~~ **stale — already fixed before this pass**
+  `fixtures.ts` re-exports `type { Page }` (verified lines 3/7); e2e typecheck is a gate.
 - **low · test-quality** `e2e/interactions.spec.ts:146`  
   The fit case's bounds check passes vacuously when no node was measured: the accumulators stay at `Infinity`/`-Infinity`, which satisfy both comparisons (the 0-satisfies-toBeLessThan(N) family this repo records as more dangerous than a false failure).
 - **low · fallback** `e2e/mobile.spec.ts:46`  
@@ -561,8 +564,8 @@ conclusion to draw from a complete-looking list of findings.
   missing `modified` added, and the cannot-fail hand-walk third case is deleted.
 - **low · test-quality** `src/plugin/node-id-block-id.test.ts:78`  
   The single-child-list regression is asserted against a literal that the test itself declares one line above, so it can never fail.
-- **low · dead-code** `src/plugin/stale-mapping.test.ts:72`  
-  Unused locals left behind by removed assertions (four instances in scope).
+- ~~**low · dead-code** `src/plugin/stale-mapping.test.ts:72`~~ **stale — already fixed before this pass**
+  Lines 68-76 hold live assertions on `deadMappingSuspects` (verified by read); no unused locals.
 - ~~**low · docs** `src/plugin/tree-ops.test.ts:8`~~ **fixed**
   The Run line points at the sanctioned runner (`python3 scripts/run-tests.py tree-ops`).
 - **low · test-quality** `src/plugin/zoom-title-sync.test.ts:38`  
@@ -622,10 +625,10 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · dead-code** `scripts/env.py:357`~~ **fixed**
   `test_build_url()` had zero callers (verified by grep across py/ts). Deleted; `build_url()`
   (4 callers) stays.
-- **low · test-quality** `scripts/verify-host-style.py:36`  
-  The readiness condition is vacuous and the real precondition (the plugin's <style> block) is never awaited; the script instead burns a fixed 120 s wait plus an 8 s sleep, against cdp.py's own measurement that the page is ready in about a second.
-- **low · docs** `scripts/verify-host-style.py:4`  
-  The docstring says SiYuan attaches the plugin CSS to the host page with <link>, while the script removes and restores the text of a <style> element -- which is what the kernel actually does, so the comment misleads anyone who tries to keep the doc and the code consistent.
+- ~~**low · test-quality** `scripts/verify-host-style.py:36`~~ **moot — script deleted**
+  The file is gone (duplicate of `verify-live.py`'s UI-TC-02); nothing to fix in it.
+- ~~**low · docs** `scripts/verify-host-style.py:4`~~ **moot — script deleted**
+  Same deletion as above; the docstring is gone with the file.
 - ~~**low · bug** `scripts/verify-pkg.py:22`~~ **fixed**
   Paths resolved from the cwd instead of `__file__`. All four anchored at `ROOT` (verified: runs
   green from `/tmp`).
@@ -646,8 +649,9 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · dead-code** `scripts/record-demo.py:47`~~ **fixed**
   The orphaned second docstring (contradicting the real timer mechanism) and its duplicated
   import block are removed; the surviving header documents the timer correctly.
-- **low · bug** `scripts/snapshot-keymap.py:56`  
-  The snapshot records the instance's effective keymap (custom bindings first), taken from the user's own running instance, so a machine whose hotkeys are customized writes those personal bindings into the tracked fixture that the collision test treats as SiYuan's built-in table.
+- ~~**low · bug** `scripts/snapshot-keymap.py:56`~~ **fixed**
+  The walk prefers `default` over `custom`, so personal bindings never enter the built-in fixture
+  (collision test still green).
 - ~~**low · fallback** `scripts/test-instance.py:233`~~ **fixed**
   A missing digest now logs a loud skip warning instead of silently trusting the transfer.
 - ~~**low · bug** `scripts/test-instance.py:468`~~ **fixed**
@@ -661,12 +665,13 @@ conclusion to draw from a complete-looking list of findings.
   The usage example passes a file path to the screenshot option, but -o/--output-dir is a directory and the file name is hardcoded, so the documented command writes .../shot.png/manual_shot.png.
 - **low · dead-code** `scripts/verify-android.py:193`  
   AndroidBridge.input_key() and AndroidBridge.tap() have no caller anywhere in the repository, so the keycode table in their docstrings documents code nothing runs.
-- **low · test-quality** `scripts/verify-live.py:90`  
-  The icon check passes when the page contains no svg[fill="none"] at all, so it cannot distinguish 'the rule works' from 'there was nothing to check'.
+- ~~**low · test-quality** `scripts/verify-live.py:90`~~ **fixed**
+  The icon check now fails when zero `svg[fill="none"]` exist (`total == 0` is a failure, not a pass).
 - ~~**low · bug** `scripts/verify-live.py:410`~~ **fixed**
   The tab opens on a readiness expression instead of a fixed 30s sleep.
-- **low · bug** `scripts/verify-live.py:289`  
-  The theme attributes the check writes are restored only when the host theme really changed, so a run in which the stylesheet swap had no effect leaves data-theme-mode="dark" on the user's live page while the light stylesheet is loaded.
+- ~~**low · bug** `scripts/verify-live.py:289`~~ **fixed**
+  Theme state is captured before the swap and restored (stylesheet, attribute, modeOS) in a
+  `finally` on every path.
 
 ### siyuan
 

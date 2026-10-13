@@ -104,6 +104,8 @@ def run_css(tab):
 
     # ② Icons must not be painted into solid squares by SiYuan's `svg { fill: currentColor }`.
     #    `.om-mm-host svg[fill="none"]` must explicitly push it back.
+    #    ★ The check fails when there is nothing to check: with zero svg[fill="none"] on the page,
+    #    `bad == 0` would pass vacuously ("the rule works" indistinguishable from "nothing to check").
     r = tab.ev("""(() => {
       const host = document.querySelector('.om-mm-host');
       if (!host) return 'no host';
@@ -112,7 +114,7 @@ def run_css(tab):
       const total = host.querySelectorAll('svg[fill="none"]').length;
       return JSON.stringify({bad, total});
     })()""")
-    check("icon fill:none takes effect", r and '"bad":0' in r.replace(" ", ""), r or "no result")
+    check("icon fill:none takes effect (and icons exist to check)", r and '"bad":0' in r.replace(" ", "") and '"total":0' not in r.replace(" ", ""), r or "no result")
 
     # ③ Content width must follow the panel and must not stick at a fixed value.
     #    It once hardcoded max-width:860px, so content stopped growing after the panel was dragged wider.
@@ -295,6 +297,19 @@ def run_theme_isolation(tab):
                                 ".getPropertyValue('--bg')").strip(),
         }
 
+    # ★ Capture the preconditions BEFORE swapping: the swap-back below must restore what was
+    #   found (including modeOS), not assume light. A run that leaves data-theme-mode="dark" on a
+    #   light-stylesheet page — or clears 'follow the system' — mutates the user's live page.
+    orig = tab.ev("""(() => {
+      const l = [...document.querySelectorAll('link[rel=stylesheet]')]
+        .find(x => x.href.includes('theme'));
+      return JSON.stringify({
+        href: l ? l.href : null,
+        mode: document.documentElement.getAttribute('data-theme-mode'),
+        modeOS: window.siyuan?.config?.appearance?.modeOS ?? null,
+      });
+    })()""")
+
     before = theme_state()
 
     # Swap theme.css's target + change the attribute (SiYuan's real theme-switching action)
@@ -306,22 +321,28 @@ def run_theme_isolation(tab):
       document.documentElement.setAttribute('data-theme-mode', 'dark');
       return 'switched';
     })()""")
-    time.sleep(4)
-    after = theme_state()
+    try:
+        time.sleep(4)
+        after = theme_state()
 
-    host_changed = before["host_bg"] != after["host_bg"]
-    check("the host theme really switched (otherwise the plugin's response cannot be discussed)", host_changed,
-          f"{before['host_bg']} → {after['host_bg']}")
-    if host_changed:
-        check("plugin --bg follows the host variable", after["plugin_bg"] == after["host_bg"],
-              f"host {after['host_bg']} / plugin {after['plugin_bg']}")
-        # Switch back to light so later checks are not affected
-        tab.ev("""(() => {
+        host_changed = before["host_bg"] != after["host_bg"]
+        check("the host theme really switched (otherwise the plugin's response cannot be discussed)", host_changed,
+              f"{before['host_bg']} → {after['host_bg']}")
+        if host_changed:
+            check("plugin --bg follows the host variable", after["plugin_bg"] == after["host_bg"],
+                  f"host {after['host_bg']} / plugin {after['plugin_bg']}")
+    finally:
+        # ★ Restore what was found on every path — stylesheet AND attribute AND modeOS flag.
+        tab.ev("""((orig) => {
+          const o = JSON.parse(orig || '{}');
           const l = [...document.querySelectorAll('link[rel=stylesheet]')]
             .find(x => x.href.includes('theme'));
-          if (l) l.href = l.href.replace('/midnight/', '/daylight/');
-          document.documentElement.setAttribute('data-theme-mode', 'light');
-        })()""")
+          if (l && o.href) l.href = o.href;
+          if (o.mode) document.documentElement.setAttribute('data-theme-mode', o.mode);
+          else document.documentElement.removeAttribute('data-theme-mode');
+          if (window.siyuan?.config?.appearance && o.modeOS !== null && o.modeOS !== undefined)
+            window.siyuan.config.appearance.modeOS = o.modeOS;
+        })(%s)""" % json.dumps(orig or '{}'))
         time.sleep(3.5)
 
     # ② :root dirtied variables
@@ -332,10 +353,14 @@ def run_theme_isolation(tab):
     })())"""
     tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
            " s.dataset.__omSv=s.textContent; s.textContent=''; })()")
-    time.sleep(1.2)
-    without = json.loads(tab.ev(dump))
-    tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
-           " s.textContent=s.dataset.__omSv||''; })()")
+    try:
+        time.sleep(1.2)
+        without = json.loads(tab.ev(dump))
+    finally:
+        # ★ Same restore-on-every-path as the host-isolation check above: a failure here used to
+        #   leave the plugin CSS removed from the user's live page.
+        tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
+               " s.textContent=s.dataset.__omSv||''; })()")
     time.sleep(1.2)
     with_ = json.loads(tab.ev(dump))
 
