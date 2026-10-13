@@ -255,8 +255,9 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · test-quality** `src/plugin/empty-node-echo.test.ts:52`~~ **fixed**
   The pasted `plainNodeText` copy (already drifted from the product) is deleted; the test imports
   `visibleText` — the function `mount.ts`'s measure delegates to — so drift breaks the suite.
-- **medium · test-quality** `src/plugin/kernel-side-effects.test.ts:31`  
-  The file is a set of assertions about mock functions and object literals defined inside the same block, so no check can go red; one check even invents a hypothesis string and asserts it contains a substring of itself.
+- ~~**medium · test-quality** `src/plugin/kernel-side-effects.test.ts:31`~~ **stale — rewritten to source assertions**
+  The file asserts structural properties of `store.ts` via `fnBody` (verified by read); the
+  mock-literal shape the entry names is gone.
 
 ### plugin-tests-b
 
@@ -310,8 +311,9 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · dead-code** `scripts/verify-host-style.py:1`~~ **fixed**
   The uninvoked duplicate is deleted; UI-TC-02 lives only in `verify-live.py`'s
   `run_host_isolation` (gated by the verify flow).
-- **medium · test-quality** `scripts/verify-pkg.py:6`  
-  The package check compares only version strings and file names, so it blesses whatever package.zip happens to be lying there -- today it reports 'Checks passed, ready to release' for a zip that is not the current build.
+- ~~**medium · test-quality** `scripts/verify-pkg.py:6`~~ **stale — compares byte-for-byte now**
+  The check compares packaged entries against built `dist-plugin/index.js`/`index.css` byte for
+  byte plus three-way version agreement (verified by read); a stale zip fails instead of passing.
 
 ### scripts-live
 
