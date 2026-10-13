@@ -14,10 +14,17 @@ order inside this file; the `6.x` ones were moved here from the old "engineering
 
 | Purpose | Format | Example |
 |---|---|---|
-| `i18n/` file name | BCP47 (hyphen) | `zh-CN.json` |
+| `i18n/` file name | **either**; the kernel tries both | `zh_CN.json` or `zh-CN.json` |
 | `plugin.json`'s `displayName` locale key | underscore | `zh_CN` |
 
-Using `zh-CN` from the official sample "does run", but only the underscore gets parsed correctly.
+★ **Both file-name forms are read.** `kernel/model/plugin.go` (v3.8.6) builds its candidate list as
+`Conf.Lang`, `LangToLegacy(Conf.Lang)`, then `en`, `zh_CN`, then `zh-CN` —— so a hyphenated name and an
+underscored one are both found, and this repository ships the underscore form. An earlier version of this
+table said the file name **must** be BCP47 hyphenated, which would have sent a reader to rename a file that
+already works.
+
+The `displayName` **key** in `plugin.json` is a different thing and really is underscore-only:
+`"displayName": {"zh_CN": "原生大纲导图"}`.
 
 How to decide: query `/api/bazaar/getInstalledPlugin` and look at the localisation the kernel actually returns.
 

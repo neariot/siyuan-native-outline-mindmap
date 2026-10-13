@@ -55,6 +55,7 @@ Compared with the "export to an image / private format" approach, map content st
 **searchable**, there is no second copy, and the document remains readable after
 uninstalling. All of this is **verifiable yourself**: create a document, edit a few
 nodes, then query the `attributes` table.
+
 - **Safe by design**: incremental write-back (never a whole-document replacement, which
   would rebuild block IDs and destroy references / backlinks), deletion gate,
   echo suppression, conflict baseline, and one-click recovery

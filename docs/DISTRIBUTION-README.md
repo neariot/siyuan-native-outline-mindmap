@@ -7,8 +7,14 @@ and stores everything in SiYuan's own carriers. No side files, no invented attri
 ## Install
 
 Download `package.zip` from the [latest release](https://github.com/neariot/siyuan-native-outline-mindmap/releases/latest)
-and add it in SiYuan under **Settings → Marketplace → Install from package**, or unzip it into
+and add it in SiYuan under **Settings → Marketplace → the download icon in the toolbar** (its tooltip is
+**Install local package**, `installLocalBazaarPackage` in SiYuan's own strings), or unzip it into
 `<workspace>/data/plugins/`.
+
+★ The button has no visible text —— it is an icon with an `aria-label`/tooltip, so a document that names a
+label the user can read on screen ("Install from package") sends them looking for something that is not
+there. The name above is the one SiYuan's catalogue carries, read from `app/appearance/langs/en.json` at
+the released tag.
 
 ## What it does
 

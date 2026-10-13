@@ -37,7 +37,10 @@ This version has **no breaking changes to the public API** and no default config
 2. **Right-click menu kept inside the viewport**
    - A right-click menu near an edge is automatically pulled into the viewport and is no longer cut off by the window or sidebar boundary.
 3. **View state persistence**
-   - Switching views or refreshing the panel no longer loses the mind map's zoom and layout settings.
+   - The mind map's **display preferences** (structure, theme, line style, node shape) survive a view
+     switch or a panel refresh. ★ **Zoom and pan are deliberately not persisted** —— a map that reopens
+     at a stale scale can open on empty space, so every reopen starts fitted. The release note above
+     said "zoom and layout settings", which the code never did.
 4. **Responsive narrow columns and containers**
    - The settings bar now wraps adaptively in a narrow sidebar instead of pushing controls out of the viewport; several `@media` rules became `@container` rules, so sizes follow the host container strictly.
 5. **Deduplicated text when expanding into a child document**

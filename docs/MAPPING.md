@@ -326,7 +326,11 @@ the SQL `sort` column not being unique, and `appendBlock` putting the paragraph 
 
 ### 3.2 Images ✅ implemented
 
-Uploaded to SiYuan assets via `/api/file/put`, and synced along with the document.
+Uploaded to SiYuan assets via **`/api/file/putFile`** (multipart: `path` / `isDir` / `file`), and synced
+along with the document. ★ The path passed must be workspace-relative under **`data/assets/`** ——
+`assets/...` returns `code: 0` and lands the file in `<workspace>/assets/`, where SiYuan does not look.
+(The endpoint was written here as `/api/file/put`, which is not a route in the kernel: `kernel/api/router.go`
+registers `putFile`, `copyFile`, `removeFile`, `renameFile` and so on, and no bare `put`.)
 
 > ⚠️ An `<img>` that has only an alt and no usable address **must never** produce an empty link `![alt]()`;
 > in SiYuan that is a broken image. It should degrade to plain text.
@@ -352,11 +356,16 @@ The plugin keeps no extra ID mapping table — the block ID is the identity.
 ## 5. How it is verified
 
 ```bash
-# type check
-./node_modules/.bin/tsc --noEmit
+# type check (both programs: src and e2e)
+npm run typecheck
 
-# unit tests (covering the mapping layer and the plugin layer)
+# unit tests (offline; covers the mapping layer and the plugin layer)
+npm test
 ```
+
+★ The block above used to say "# unit tests (covering the mapping layer and the plugin layer)" and give no
+command —— a heading with nothing under it. The commands are the ones `package.json` defines; `npm test`
+runs `scripts/run-tests.py`, which discovers `src/**/*.test.ts(x)`.
 
 Real-kernel E2E conclusions (v3.8.6): h1~h6 levels, to-dos, attachment paragraphs (including empty paragraphs), nesting levels,
 and inline rich text (color/background/font size/underline/superscript and subscript/highlight) are **all preserved exactly**;

@@ -39,15 +39,19 @@ The plugin UI lives in the **right dock**; you do not need to open a new tab.
 
 ### You can also use the command palette
 
-`Alt+Ctrl+P` (on macOS `⌥⌘P`) opens the command palette; type "Mindmap" (on a Chinese UI: 导图).
+`Alt+Shift+P` (on macOS `⌥⇧P`) opens the command palette; type "Mindmap" (on a Chinese UI: 导图).
 
-The plugin registers three entries; they show up under `Settings → Keymap → plugin`:
+★ That is SiYuan's own binding for the command panel (`keymap.general.commandPanel`); this plugin does
+not change it. An earlier version of this page said `Alt+Ctrl+P` / `⌥⌘P`, which is bound to nothing.
+
+The plugin registers **two** entries; they show up under `Settings → Keymap → plugin`:
 
 | Entry | Default key (Win/Linux) | macOS | What it does |
 |---|---|---|---|
 | **Open mindmap** | `Alt+Ctrl+O` | `⌥⌘O` | Opens a new "Mindmap" tab |
 | **Insert mirror block** | `Alt+Ctrl+I` | `⌥⌘I` | Embeds the mindmap **at the end of the document body** |
-| Open panel | (unbound) | | Same as clicking the right-dock icon |
+
+> The dock icon (right sidebar) opens the same panel; it is not a command, so it has no keymap entry.
 
 > On Windows / Linux SiYuan shows `⌘` as `Ctrl+` and `⌥` as `Alt+`,
 > so the same combination appears in Settings as `Alt+Ctrl+O` — the order differs, the keys are the same.

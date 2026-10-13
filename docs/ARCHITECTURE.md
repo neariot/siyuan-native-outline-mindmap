@@ -164,7 +164,6 @@ NodeDocument (d) ──> NodeList (l) ──> NodeListItem (i) ──> NodeParag
 | Node identity | The `listItem`'s own block ID | ✅ Preserved |
 | Node note | **Multiple paragraphs** under the listItem | ✅ Shown directly below the node |
 | Todo | `- [ ]` / `- [x]` (`taskStatus`) | ✅ Native checkbox |
-| Heading | Native h1~h6 | ✅ Native heading |
 | Mirror / Ref | Native embed `{{(( docId ))}}` | ✅ Rendered directly |
 | Rich text | Native inline markers + inline styles | ✅ Native typography |
 
@@ -246,7 +245,6 @@ The test suite enforces multi-tier defense:
 | Topic hierarchy | Native `NodeList` / `NodeListItem` | Indent / outdent / reparent / reorder |
 | Body & Notes | Native `NodeParagraph` | First paragraph = title; subsequent = attached paragraphs |
 | To-do checkboxes | Native task list marker (`- [ ]`, `- [x]`) | Checked state toggleable from both views |
-| Headings | Native heading levels (h1~h6) | Rendered with visual hierarchy |
 | Math formulas | Native KaTeX syntax | Formula edit modal with live preview |
 | Images | SiYuan asset storage (`assets/`) | Inline base64 pasted images automatically migrated |
 | Summary / Link lines | Removed from model | SiYuan has no native block carrier; removed to prevent data loss |

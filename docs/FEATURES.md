@@ -46,12 +46,12 @@
 
 | Feature | Entry point | Notes |
 |---|---|---|
-| Open the mind map | Command palette / document-tree context menu / dock / slash menu | Opens by document ID; reuses the tab for the same document |
+| Open the mind map | Command palette / dock / tab | Opens by document ID; reuses the tab for the same document |
 | Inline node editing | Double-click / `F2` / context menu | `Enter` saves, `Esc` cancels |
 | Add a child node | `Tab` / context menu | Inserted at a precise position, **existing block IDs preserved** |
 | Add a sibling node | `Enter` / context menu | Same as above |
 | Delete a node | `Delete` / `Backspace` / context menu | Removes the subtree too; a confirmation dialog reports the child count |
-| **Expand into a sub-document** | Context menu | Creates a native sub-document + a `((id 'title'))` reference + a backlink attribute; child nodes are **moved** there |
+| **Expand into a sub-document** | Context menu | Creates a native sub-document and replaces the node's text with a `((id 'title'))` reference; child nodes are **moved** there. No private attribute is written —— a backlink attribute was removed because SiYuan has no native carrier for it |
 | **Drag a block into the map** | Drag a block from the body onto the canvas | Dropping on a node makes it a child; dropping on empty space makes it top level |
 | Live two-way sync | Automatic | SiYuan changes → the view changes; the view changes → SiYuan changes |
 | Conflict handling | Automatic + a banner | Keeps the view's content and reports it; "trust SiYuan (reload)" resolves it in one click |

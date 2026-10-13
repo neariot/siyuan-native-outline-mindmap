@@ -716,8 +716,17 @@ export class SiYuanStore {
     }
     // ★ Restore entries that "were in the previous table but this SQL did not return" (blocks just inserted, index not caught up).
     //   The check uses `has`: whatever SQL already has wins (it reflects the kernel's true state).
+    //
+    // ★★ ...**and the same ownership rule the DOM branch uses** (`isUnseenButOurs`), not `!map.has` alone.
+    //    The two branches had different retention semantics: the preferred `getBlockDOM` path retained an
+    //    entry only when this session had inserted that block, while this fallback retained **any** entry
+    //    the read did not report —— so on a kernel where `getBlockDOM` is unavailable, a mapping to a block
+    //    that was destroyed externally (or a foreign block the index merely lagged on) stayed in the table
+    //    forever, and `syncStructure` believed "we already have it" while nothing existed in SiYuan.
+    //    That is the dead-mapping failure `docs/pitfalls/data.md` §1.6 records, and which branch runs must
+    //    not decide whether it happens. Both now ask one function.
     for (const [nodeId, blockId] of prevMap) {
-      if (!map.has(nodeId) && blockId) {
+      if (blockId && isUnseenButOurs(map, nodeId, blockId, this.freshlyInserted)) {
         map.set(nodeId, blockId);
         const li = prevListItems.get(nodeId);
         if (li) this.lastListItems.set(nodeId, li);
@@ -728,7 +737,9 @@ export class SiYuanStore {
     for (const [bid, nodeId] of prevByBlock) {
       // ⚠️ Only restore the byBlock (block→node) reverse lookup, **do not** push listItems back into map as keys ——
       //    that would mix "block IDs" and "node IDs" into one namespace and let them overwrite each other.
-      if (!this.lastByBlock.has(bid)) this.lastByBlock.set(bid, nodeId);
+      if (!this.lastByBlock.has(bid) && this.freshlyInserted.has(bid)) {
+        this.lastByBlock.set(bid, nodeId);
+      }
     }
     // cache this result inside the write-back transaction for the two later calls in the same transaction
     if (this.writeEpochOpen) {

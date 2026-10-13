@@ -587,7 +587,8 @@ environment (not the subject) is what is broken.
 The working case above (a listItem anchor) is what proved the environment itself was fine. This collection does not
 otherwise record the endpoint's anchor rules -- those are kernel behaviour and live in
 [`kernel-api.md`](../kernel-api.md) 7.1; the debugging detour around the same anchor is
-[`debug.md`](debug.md) 6.14.
+[`debug.md`](debug.md) 6.20 (`previousID can not be the ID of a document` is returned for three
+different causes, only one of which is a document ID).
 
 ### 6.17 What the kernel adopts is the id: node ID === block ID, and kramdown shows it inline
 

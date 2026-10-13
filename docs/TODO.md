@@ -130,6 +130,36 @@ section is a fact worth stating rather than a section to delete and re-invent.
   the first sibling —— indent is then a legitimate no-op, so the assertion failed on a correct product.
   Fixed to select siblings (rows 0,2) and to assert both the row that moves and the row that must not;
   outline suite 26/26 green. Recorded in `docs/pitfalls/testing.md`.
+- **The audit queue is empty: 34 open → 0, and the tool now handles that state.** The remaining entries
+  were prose-only `cannot-judge` docs findings, worked through by reading each one against the product and
+  the released tag. 26 were real and fixed: the CI E2E job removed (it could never run —— no kernel on the
+  runner, and `run-e2e.py` overwrites its two secrets from a `.env` CI never creates); the command-palette
+  key corrected to `Alt+Shift+P`/`⌥⇧P` (read from `keymap.general.commandPanel` on a running instance and
+  pinned in the hotkey fixture); SHORTCUTS no longer promises single-click-jumps-to-outline or
+  double-click-focuses-branch (measured: click selects and focuses the canvas, double click edits); the
+  sub-document entry no longer claims a backlink attribute; `/api/file/put` corrected to `/api/file/putFile`;
+  the i18n file-name rule corrected (the kernel reads both `zh_CN.json` and `zh-CN.json`); the "no
+  browser-local storage" claim scoped to document content (the UI keeps view state in `localStorage`); the
+  allowlist paragraph de-restated (four contradictory copies of a number a tool prints on every run); plus
+  the tier table, the `cp file file.bak` instruction, the dangling `debug.md` 6.14 reference, the 7-vs-8
+  class count, the "sees the script below" row with no script, and the `.env.example` case history and
+  dates. Eight were refuted in writing (already fixed, or a line that had drifted). ★ Two real product
+  defects came out of it: the docs' "Known boundaries" table still advertised **headings** after the
+  feature was removed, and `store.ts`'s **two retention branches disagreed** —— see below.
+- **Two retention branches in `loadBlockMap` now ask the same rule (`store.ts`).** The preferred
+  `getBlockDOM` path retained a previous entry only when this session had inserted its block
+  (`isUnseenButOurs`), while the SQL fallback retained **any** entry the read did not report (`!map.has`).
+  Which branch ran therefore decided whether a mapping to a destroyed block survived —— on a kernel without
+  `getBlockDOM`, `syncStructure` would believe "we already have it" while nothing existed in SiYuan
+  (`docs/pitfalls/data.md` §1.6). Both branches call `isUnseenButOurs` now, and the reverse-table fallback
+  checks `freshlyInserted` as well. The existing assertion counts call sites and caught the divergence
+  immediately; updated to **4** (3 DOM tables + the SQL fallback) plus a case pinning the reverse-table
+  ownership check. Red-proofed by restoring the old fallback (2 cases red).
+- **`check-audit-findings.py` handles an empty queue.** It treated "zero open findings" and "the parse
+  broke" as the same error, so the day the queue emptied it refused to run. The two are told apart by
+  counting entry lines (a struck entry is still an entry line): no entry lines at all is the broken-parse
+  case and still fails, while all-struck falls through to the header tally —— which is what catches "the
+  entries were all struck and the header still says 34 open". Four selftest cases pin the distinction.
 - **Twenty-three files cited a gitignored diary as their authority (`check-citations.py`).** Every
   one of `src/plugin/*.test.ts` named `.logs/API-GOTCHAS.md §NN`, and the perf tests named
   `.logs/perf-test-design.md` —— both gitignored, so the measured facts behind those assertions

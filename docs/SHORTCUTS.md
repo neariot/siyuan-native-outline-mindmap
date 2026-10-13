@@ -53,10 +53,10 @@ While editing, `$latex$ + space` turns into a formula block automatically.
 
 - **Outline bullet**: **a single click focuses into it (Zoom-in)**; `Alt+click` collapses / expands the whole branch recursively; **a double click also focuses**; drag the bullet to move the node (top / middle / bottom drop zones).
   Clicking an already-focused bullet again goes back to the parent level (Zoom-out).
-- **Mindmap**: a single click jumps back to the outline and locates the node; **a double click on a node focuses that branch**; click "← Back to full map" (返回全图) to reset.
+- **Mindmap**: a single click **selects** the node and gives the canvas keyboard focus (it does not switch views); **a double click enters inline editing** (in read-only mode it focuses that branch instead); right-click anywhere on a node opens the context menu; click "← Back to full map" (返回全图) to reset.
 - **Breadcrumb navigation**: clicking any ancestor node at the top jumps straight to that level.
 
 ## Other
 
-`Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y` undo / redo (keystrokes within 1.5s of each other merge into one step);
+`Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y` undo / redo (keystrokes within 1.2s of each other merge into one step, and only for text edits —— `UNDO_MERGE_MS` in `src/core/undo-window.ts`);
 `Ctrl+F` find and replace; `Ctrl+B/I/U` bold, italic and underline; `Ctrl+Enter` strikethrough.

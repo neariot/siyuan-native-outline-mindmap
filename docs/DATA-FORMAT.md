@@ -69,6 +69,11 @@ See [MAPPING.md](MAPPING.md).
 
 ## Images
 
-Uploaded to SiYuan's `assets/`, synced along with the document. No browser-local
-storage is used (neither a `localStorage` document store nor an `indexedDB`
-image blob).
+Uploaded to SiYuan's `assets/`, synced along with the document.
+
+**Document content is never kept in browser-local storage** —— neither a `localStorage` document store nor
+an `indexedDB` image blob. ★ The **UI's own view state** is a different matter and *is* kept in
+`localStorage` (structure / theme / line style / node shape under `om-mm-prefs`, the collapsed set under
+`om-mm-collapsed:<docId>`, the settings-bar open flag under `om-mm-bar-open`) —— it is a display
+preference, not data, and losing it costs a click. An earlier version of this section said "no
+browser-local storage is used" without that distinction, which was false as written.

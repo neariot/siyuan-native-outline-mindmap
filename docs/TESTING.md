@@ -374,15 +374,21 @@ first look for a definite precondition that can simply be waited out.
 
 ### CI
 
-`.github/workflows/ci.yml` has two jobs:
+`.github/workflows/ci.yml` has **one** job:
 
 | job | When it runs | Contents |
 |---|---|---|
-| `check` | push / PR | types, offline unit tests, build, CSS scoping, package validation |
-| `e2e` | **manual only** (`workflow_dispatch` + checkbox) | browser E2E |
+| `check` | push / PR / manual dispatch | types, offline unit tests, build, CSS scoping, package validation |
 
-E2E needs a machine running SiYuan (the GitHub-hosted runners do not have one),
-so do **not** put it into every push: it would become a permanent red cross and in time nobody would look at CI.
+★ There is deliberately **no E2E job**, and the file says why at the end. One used to exist, behind a
+manual dispatch checkbox, and it could never run: it asked for `runs-on: ubuntu-latest`, where there is
+no SiYuan kernel; `scripts/run-e2e.py` takes its target from `.env` (which the workflow never creates)
+and *overwrites* the `SIYUAN_URL`/`SIYUAN_TOKEN` step environment from it, so the two repository secrets
+it wired reached nothing; and `scripts/deploy.py` reads `PLUGIN_DIRS` from `.env` as well, so the deploy
+step had no target either. A job that cannot run reads as coverage while providing none —— and a manual
+trigger that fails at the first step teaches people to ignore the run.
+
+E2E needs a machine running SiYuan. Run it there: `python3 scripts/run-e2e.py <suite>` (see §④ above).
 
 ### The drag drop target has **three regions** (measured, not guessed from the code)
 
@@ -522,8 +528,12 @@ npm test richtext       # only files whose name contains richtext
 
 `scripts/run-tests.py` discovers `src/**/*.test.ts(x)` automatically and hands them to `tsx` to run directly.
 
-**It uses `tsx` + `node --test`** -- the same setup as SiYuan's own frontend tests
-(the `test` script in `app/package.json` is exactly `node --import tsx --test "src/**/*.test.ts"`).
+**It uses `tsx` + `node --test`** -- the same setup as SiYuan's own frontend tests: `app/package.json`'s
+`test` script is `node --import tsx --test --test-concurrency=1` over four globs (`src/**/*.test.ts`,
+`tests/**/*.test.js`, `electron/**/*.test.js`, `scripts/**/*.test.js`) at v3.8.6. Ours covers one of them,
+`src/**/*.test.ts(x)`, because that is all this repository has; the toolchain is what matches, not the glob
+list. ★ The claim here used to be "exactly `node --import tsx --test "src/**/*.test.ts"`", which upstream had
+already outgrown.
 TS runs directly, which saves the detour of "compile to a temp directory with tsc, then run the output with node"
 (that detour not only waits for the compilation, the output path also has to be guessed with `find`).
 
@@ -680,7 +690,11 @@ now fails on that shape.
 | Batch move wait | `src/siyuan/move-nodes-latency.test.ts` | 20 nodes 7.4s → 1.4s |
 | Undo stack memory | `src/plugin/undo-memory.test.ts` | T3, 50 snapshots, 29.5MB |
 | everSeen shrinking | `src/siyuan/ever-seen-shrink.test.ts` | 9100→100, zero live blocks lost |
-| Detached DOM | see the script below | 6 toggle rounds, no leak |
+
+★ There is no row for a "detached DOM" measurement. One used to say `see the script below` and no script
+followed —— neither in this document nor anywhere in the repository, and no deleted file ever carried it
+(`git log -S` over `e2e/` and `scripts/`). A row pointing at nothing is worse than an absent row: it reads
+as coverage. If that measurement is wanted, it needs an artifact first.
 
 ### Assert the "ratio", not the absolute time
 
@@ -798,20 +812,25 @@ gone — and what replaced it is stricter: a Chinese literal in code is reported
 
 ★ **What a clean run does and does not mean.** Allowlist tokens excuse their text in *any* file and any
 *kind*, deliberately: the CJK they cover is catalogue or fixture content quoted by an English comment, an
-assertion message or a doc line. The tool therefore prints what it excused, by kind (measured
-2026-10-10: `comment 479, string 1426, assertion 30, doc-prose 116, code 6`). Read that line: a pass means
-"no CJK text is unaccounted for", **not** "every comment is English". `path:line` entries are the only
-mechanism restricted to one line, and they are the wrong tool for prose (they break when the file is
-edited above them).
+assertion message or a doc line. The tool therefore prints what it excused, by kind. Read that line: a pass
+means "no CJK text is unaccounted for", **not** "every comment is English".
+
+The allowlist itself is **10 tokens** (4 `fixture:`, 6 `kernel:`) and **no `path:line` entries** —— it
+shrank to that from 391 as the test fixtures were rewritten and the i18n catalogue grew its own exemption,
+which is the point of the rule below. ★ The count is deliberately not restated here as a fact to maintain:
+`python3 scripts/audit-language.py` prints it on every run, and this paragraph used to carry four different
+stale versions of it (391 tokens, "186 fixture / 164 i18n / 41 kernel", "12 tokens", and a set of excused-by-kind
+figures) because a number copied into prose has no way to go red. Read the tool's own output.
+
+`path:line` entries would be the only mechanism restricted to one line, and they are the wrong tool for
+prose (they break when the file is edited above them) —— which is why the file has none.
 
 What the tool still cannot see, printed on every run: files with no parser (`.yml`, `.env.example`,
 `.gitignore`, `LICENSE`), binary/media files, the i18n catalogues and `*.zh-CN.md` (allowed by policy),
-and CJK outside every comment or string token (`code`, currently 6 occurrences) or inside a regex
-literal (25, kernel/UI strings matched verbatim).
+and CJK outside every comment or string token or inside a regex literal (kernel/UI strings matched verbatim).
 
-The remaining allowlist is 391 tokens (186 `fixture:`, 164 `i18n:`, 41 `kernel:`) plus 5 `path:line`
-entries, and it self-cleans: an entry that no longer covers anything is reported as `ALLOWLIST-STALE`
-and fails the run, which is how the 186 obsolete ones were found and removed.
+The allowlist self-cleans: an entry that no longer covers anything is reported as `ALLOWLIST-STALE` and
+fails the run, which is how the obsolete ones were found and removed.
 
 ## A test that models the product defends nothing
 
@@ -891,5 +910,7 @@ skips it with a stated reason when there is no package to compare (nothing to re
 ### Build / test related
 
 - **`tsc --outDir` preserves the source directory structure**, so the output path cannot be assembled by hand; you have to `find` it.
-- **Back up before changing code**: `cp file file.bak`, and system configuration backups go in `.tmp/`.
+- **Back up before changing code**: into `.tmp/<task>/`, **never the project root** (AGENTS.md §1) ——
+  a `.tmp` copy is gitignored and cannot be mistaken for a source file; `git commit` is the better
+  backup for anything already tracked, and the copy goes once the commit exists.
 - **`.tmp/` is gitignored** -- do not park useful tools there, they get lost. Anything reusable goes in `scripts/`.

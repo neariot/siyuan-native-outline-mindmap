@@ -251,6 +251,20 @@ def selftest() -> int:
     check('a well-formed entry parses', len(parsed), 1)
     check('the citation is split', (parsed[0]['file'], parsed[0]['line']), ('a.ts', 1) if parsed else None)
 
+    # ★ Zero **open** entries (every finding resolved) must be distinguishable from a broken parse.
+    #   A struck entry is still an entry line, so the two are told apart by counting entry lines rather
+    #   than open ones —— otherwise the day the queue empties the tool refuses to run, and a format change
+    #   that hides every entry looks identical.
+    all_struck = ('- ~~**low · docs** `a.ts:1`~~ **fixed**\n  d\n'
+                  '- ~~**medium · bug** `a.ts:2`~~ **fixed**\n  d\n')
+    check('an all-struck ledger yields no open entries', len(parse_ledger(all_struck)), 0)
+    check('an all-struck ledger still holds entry lines',
+          len(re.findall(r'^- (?:~~)?\*\*(?:high|medium|low) · ', all_struck, re.M)), 2)
+    check('the header tally of an all-struck ledger is (2 struck, 0 open)',
+          (tally([], all_struck)['struck'], tally([], all_struck)['open']), (2, 0))
+    check('a ledger with no entry lines at all is the broken-parse case',
+          len(re.findall(r'^- (?:~~)?\*\*(?:high|medium|low) · ', 'prose only\n', re.M)), 0)
+
     # ★ The header tally check, both directions —— a check that cannot go red is not a check.
     hdr = (
         '| entries in this file | **2** (1 struck, 1 open) |\n'
@@ -318,10 +332,23 @@ def main() -> int:
                 print(f'  line {n}: {line[:110]}', file=sys.stderr)
         return 2
     if not entries:
-        print('check-audit-findings: the ledger parsed to ZERO findings —— the format changed, and a tool '
-              'that reports "nothing stale" because it found nothing is the vacuous pass this repository '
-              'keeps warning about.', file=sys.stderr)
-        return 2
+        # ★ Zero **open** entries is a legitimate state (every finding resolved) and must not be confused
+        #   with a broken parse —— the first version treated both as an error, so the day the queue emptied
+        #   the tool refused to run. The two are told apart by whether the file still contains entry lines
+        #   at all: a struck entry is still an entry line, so a parse that finds *nothing* while the file
+        #   has 193 of them is the failure this guard exists for.
+        #
+        # ★★ The header tally is still verified below —— it is the one thing that catches "the entries were
+        #    all struck and the header still says 34 open", which is exactly the state this branch reaches.
+        all_lines = len(re.findall(r'^- (?:~~)?\*\*(?:high|medium|low) · ', text, re.M))
+        if all_lines == 0:
+            print('check-audit-findings: the ledger parsed to ZERO findings and holds no entry lines at '
+                  'all —— the format changed, and a tool that reports "nothing stale" because it found '
+                  'nothing is the vacuous pass this repository keeps warning about.', file=sys.stderr)
+            return 2
+        print(f'check-audit-findings: no OPEN findings —— all {all_lines} entry line(s) are struck. '
+              'Nothing left to check, and that is a real state, not a parse failure.')
+        entries = []   # fall through to the header check with an empty open set
 
     results = [classify(e) for e in entries]
     counts: dict[str, int] = {}

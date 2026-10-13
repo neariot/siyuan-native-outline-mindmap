@@ -13,7 +13,7 @@ table below is the original run's tally and is kept as the record of what that r
 
 | | now |
 |---|---|
-| entries in this file | **193** (159 struck, 34 open) |
+| entries in this file | **193** (193 struck, 0 open) |
 | severity | 125 low, 68 medium |
 | by category | test-quality 52, docs 50, bug 34, dead-code 33, fallback 8, type-escape 7, language 5, ux 4 |
 
@@ -61,13 +61,20 @@ conclusion to draw from a complete-looking list of findings.
 
 ### test-suite
 
-- **medium · docs** `.github/workflows/ci.yml:75`  
-  The manual E2E job cannot run as committed and its dispatch input contradicts the entry point: run-e2e.py takes the target from .env (cfg.siyuan_test / cfg.test_token() / cfg.chromium_path), and the job never creates a .env and never calls setup-python, while the input still claims SIYUAN_URL is what selects the instance.
-- **medium · docs** `README.zh-CN.md:74`  
-  The Chinese README still documents a build flag that no longer exists (TARGET=plugin) and a dev server port that is not configured anywhere — the dev server in fact binds :3000 — and this stale text is shipped to users, because the build copies both READMEs into the package.
+- ~~**medium · docs** `.github/workflows/ci.yml:75`~~ **fixed**
+  The manual E2E job could never run, and its dispatch input contradicted the entry point: `run-e2e.py`
+  takes the target from `.env` (`cfg.siyuan_test` / `cfg.test_token()` / `cfg.chromium_path`) and
+  **overwrites** `SIYUAN_URL`/`SIYUAN_TOKEN` from it, so the two repository secrets reached nothing; the job
+  never created a `.env` and never called `setup-python`; `deploy.py` reads `PLUGIN_DIRS` from `.env` as
+  well, so the deploy step had no target either; and `runs-on: ubuntu-latest` has no SiYuan kernel. The job
+  and the now-dead `workflow_dispatch` input are gone, with the reasoning recorded in the workflow file and
+  in `docs/TESTING.md` §CI. E2E runs where a kernel exists: `python3 scripts/run-e2e.py <suite>`.
+- ~~**medium · docs** `README.zh-CN.md:74`~~ **fixed**
+  Refuted by reading it: the section now says "**没有 target 开关** —— 构建就是构建插件本身" and gives
+  `npm run build` with no dev-server port. The `TARGET=plugin` text the finding quotes is not in the file.
 - ~~**medium · type-escape** `tsconfig.json:15`~~ **stale — already fixed before this pass**
-  `npm run typecheck` runs both `tsc --noEmit` (src) and `tsc --noEmit -p tsconfig.e2e.json`
-  (e2e); the e2e config's header records the 42-error measurement. Verified in package.json.
+  Same file, second citation of the same stale claim: e2e has its own tsconfig and gate
+  (see above). No uncompiled scope remains.
 
 ### core
 
@@ -97,25 +104,45 @@ conclusion to draw from a complete-looking list of findings.
 
 ### docs-core
 
-- **medium · docs** `docs/ARCHITECTURE.md:211`  
+- ~~**medium · docs** `docs/ARCHITECTURE.md:211`~~ **fixed**
+  Refuted: the row it names (`| Plugin name | Still a placeholder, cannot be installed |`) existed only in
+  the single-commit history and is not in the file; §8 is now a real supported-scope table. ★ Reviewing it
+  did turn up a stale row of the same kind —— **Headings** was listed as supported after the feature was
+  removed (the kernel forbids `NodeList > NodeHeading`, so a node can never be a heading). Removed from
+  both tables.
   The 'Known boundaries' table still says the plugin name is a placeholder and the plugin cannot be installed; both were resolved.
-- **medium · docs** `docs/FEATURES.md:46`  
-  The 'Open the mind map' entry-point list is wrong twice: the slash menu inserts a mirror block instead of opening the map, and no document-tree context menu entry exists.
-- **medium · docs** `docs/FEATURES.md:51`  
-  'Expand into a sub-document ... + a backlink attribute' claims a private attribute that the implementation deliberately does not write.
-- **medium · docs** `docs/TESTING.md:568`  
+- ~~**medium · docs** `docs/FEATURES.md:46`~~ **fixed**
+  The entry-point list now names **Command palette / dock / tab** only. It had claimed a document-tree
+  context menu (no such menu is registered —— no `addMenuItem` call exists) and the slash menu (which
+  inserts a mirror block into the document, it does not open the map).
+- ~~**medium · docs** `docs/FEATURES.md:51`~~ **fixed**
+  The sub-document row no longer claims a backlink attribute; it says the node text is replaced with a
+  native `((id 'title'))` reference and that no private attribute is written, which is what
+  `store.nodeToSubDoc` does.
+- ~~**medium · docs** `docs/TESTING.md:568`~~ **fixed**
+  All four copies of this passage (they differed from each other) replaced by one: the allowlist is 10
+  tokens (4 `fixture:`, 6 `kernel:`) with no `path:line` entries, and ★ the paragraph no longer restates a
+  number as a fact to maintain —— `audit-language.py` prints the real figures on every run, which is the
+  only version that cannot go stale. The old excused-by-kind line was measured on 2026-10-10 and had drifted.
   The allowlist inventory contradicts both scripts/language-allowlist.txt and the same document twenty lines above it.
-- **medium · docs** `docs/TESTING.md:603`  
-  The backup instruction in the doc still says `cp file file.bak` in the project root, which the current AGENTS.md section 1 hard rule forbids.
+- ~~**medium · docs** `docs/TESTING.md:603`~~ **fixed**
+  The backup instruction now says into `.tmp/<task>/`, never the project root (AGENTS.md §1), and names
+  `git commit` as the better backup for a tracked file.
 
 ### docs-ledger
 
-- **medium · docs** `docs/GETTING-STARTED.md:42`  
-  The command-palette key quoted in both language versions does not exist: SiYuan binds the command panel to ⌥⇧P, i.e. Alt+Shift+P on Windows/Linux, not Alt+Ctrl+P / ⌥⌘P.
-- **medium · docs** `docs/RELEASE-0.1.4.md:40`  
-  The release note promises that refreshing/switching no longer loses the map's zoom; zoom is in fact deliberately not persisted, which the project records as a design decision elsewhere.
-- **medium · docs** `docs/SHORTCUTS.md:52`  
-  The documented mindmap interactions do not exist: a single click does not jump back to the outline, and a double click does not focus a branch -- it starts inline editing.
+- ~~**medium · docs** `docs/GETTING-STARTED.md:42`~~ **fixed**
+  The command pane is bound to `Alt+Shift+P` (`⌥⇧P`), read from `keymap.general.commandPanel` on a running
+  instance and pinned in `src/plugin/__fixtures__/siyuan-keymap.json`. Both language versions corrected,
+  and the same section already-registered this fact so it cannot drift again (§CI reasoning aside, it now
+  states SiYuan owns the binding).
+- ~~**medium · docs** `docs/RELEASE-0.1.4.md:40`~~ **fixed**
+  The note now says the **display preferences** survive (structure / theme / line style / shape) and that
+  zoom and pan are deliberately not persisted, which is what `Mindmap.tsx` does.
+- ~~**medium · docs** `docs/SHORTCUTS.md:52`~~ **fixed**
+  Both language versions corrected to the measured behaviour: a single click selects the node and hands
+  the canvas keyboard focus (no view switch), a double click enters inline editing (read-only mode focuses
+  the branch instead). See `Mindmap.tsx` `onClick` / `onDoubleClick`.
 - ~~**medium · test-quality** `docs/pitfalls/editor.md:450`~~ **fixed**
   The practice 6.9bb prescribes is now implemented: `src/plugin/shortcut-table.test.ts` asserts the table's
   group and entry counts (5 / 26, measured 2026-10-12, recorded as a dated measurement rather than a constant),
@@ -250,8 +277,17 @@ conclusion to draw from a complete-looking list of findings.
   The stub (`attrsToWrite` returning `{}` by construction) and its checks are deleted; the
   behavioral memo round-trip in ④ carries the coverage. A source grep would violate the
   check-source-text-tests gate, so no replacement stub was introduced.
-- **medium · test-quality** `src/plugin/blockmap-namespace.test.ts:46`  
-  MapModel re-implements SiYuanStore.loadBlockMap and the file mirrors only one of its two retention branches; the preferred getBlockDOM branch has different retention semantics, so the headline claims are not invariants of the shipped method.
+- ~~**medium · test-quality** `src/plugin/blockmap-namespace.test.ts:46`~~ **fixed**
+  The mirror (`class MapModel`) is gone —— the file drives the real `loadBlockMap` over a fake client
+  whose `getBlockDOM` returns a `treeToBlockDom` fixture. ★ Its second half was still true and is the
+  real defect: the two retention branches disagreed. The preferred `getBlockDOM` path retained an entry
+  only when this session had inserted its block (`isUnseenButOurs`), while the SQL fallback retained
+  **any** entry the read did not report (`!map.has`) —— so on a kernel without `getBlockDOM`, a mapping
+  to a destroyed block survived forever and `syncStructure` believed "we already have it" while nothing
+  existed in SiYuan (`docs/pitfalls/data.md` §1.6). Both branches now call the same rule, and the
+  assertion that caught the divergence counts **4** call sites (3 DOM tables + the SQL fallback) with a
+  second case pinning the reverse-table fallback's ownership check. Red-proofed by restoring the old
+  fallback (2 cases red).
 - ~~**medium · test-quality** `src/plugin/empty-node-echo.test.ts:52`~~ **fixed**
   The pasted `plainNodeText` copy (already drifted from the product) is deleted; the test imports
   `visibleText` — the function `mount.ts`'s measure delegates to — so drift breaks the suite.
@@ -377,18 +413,23 @@ conclusion to draw from a complete-looking list of findings.
 
 ### config
 
-- **low · docs** `.env.example:36`  
-  The committed template carries narrative case history and dates, which AGENTS section 7 says belong in the commit message or docs/, and one of its cross-references is off by eight lines — the file grows on every incident instead of staying a key list.
-- **low · docs** `README.md:58`  
-  A feature bullet is attached to the end of the preceding paragraph with no blank line, so a user-facing feature item renders as part of the sentence above it (the rest of the README never does this, and the Chinese sibling has the same content as a proper bullet).
+- ~~**low · docs** `.env.example:36`~~ **fixed**
+  The narrative case history and the 2026-10-08 / 2026-10-10 dates are gone; each passage now states the
+  rule and why. ★ The review also found the `PLUGIN_DIRS` comment describing a `--include-reference-instance`
+  flag that does not exist and the **opposite** behaviour from `deploy.py` (which always adds the instance
+  the user works in; only `--test-only` narrows): rewritten to say what the code does.
+- ~~**low · docs** `README.md:58`~~ **fixed**
+  The bullet now has a blank line before it, so it renders as a feature item rather than as part of the
+  paragraph above.
 - ~~**low · docs** `scripts/env.py:27`~~ **stale — docstring matches code**
   The class docstring states two sources plus machine-independent DEFAULTS (verified lines 78-95);
   no third tier is promised.
 
 ### core
 
-- **low · docs** `docs/ARCHITECTURE.md:146`  
-  The architecture doc still documents the markdown-by-default / DOM-when-styled decision tree; the code has routed everything through the DOM path for a while.
+- ~~**low · docs** `docs/ARCHITECTURE.md:146`~~ **fixed**
+  Refuted: §5 states the DOM path as the strategy (`` updateBlockDom(htmlToSiyuanDom(html)) ``) and there
+  is no markdown-by-default decision tree in the file.
 - ~~**low · dead-code** `src/core/blockdom.ts:164`~~ **fixed**
   The dead export is gone and the five hand-written copies of the paragraph fragment now call one
   `paragraphBlockFragment()` in `core/blockdom.ts`. `empty-span.test.ts` also stopped reproducing the
@@ -415,36 +456,59 @@ conclusion to draw from a complete-looking list of findings.
 
 ### docs-core
 
-- **low · docs** `docs/ARCHITECTURE.md:53`  
+- ~~**low · docs** `docs/ARCHITECTURE.md:53`~~ **fixed**
+  Refuted: the `| Lines |` column it describes is not in the module table (which lists File / Area /
+  Responsibility). Nothing to correct.
   The 'Lines' column of the module table is stale for 12 of the 13 files it lists.
-- **low · docs** `docs/DATA-FORMAT.md:72`  
+- ~~**low · docs** `docs/DATA-FORMAT.md:72`~~ **fixed**
+  Rewritten: document content is never kept in browser-local storage, while the UI's view state is
+  (`om-mm-prefs`, `om-mm-collapsed:<docId>`, `om-mm-bar-open`), which is a display preference and not data.
   'No browser-local storage is used' is false as written: the shipped UI keeps its view state in localStorage.
-- **low · docs** `docs/MAPPING.md:282`  
+- ~~**low · docs** `docs/MAPPING.md:282`~~ **fixed**
+  The endpoint is `/api/file/putFile` with the multipart `path` / `isDir` / `file` fields, and the path
+  must be `data/assets/...` (a bare `assets/` returns `code: 0` and writes where SiYuan does not look).
+  `/api/file/put` is not a route in the kernel.
   The asset upload is documented against an endpoint that does not exist in the kernel.
-- **low · docs** `docs/MAPPING.md:310`  
+- ~~**low · docs** `docs/MAPPING.md:310`~~ **fixed**
+  The block now gives the commands it promises: `npm run typecheck` and `npm test`.
   The 'How it is verified' block promises a unit-test command and gives none.
 - ~~**low · docs** `docs/TESTING.md:32`~~ **already fixed before this pass**
-  The doc names `CHROMIUM_PATH` from `.env` (verified line 191); no `/usr/bin` path remains.
-- **low · docs** `docs/TESTING.md:298`  
+  Same `/usr/bin/chromium` staleness as above, fixed by the same doc edit (verified line 191).
+- ~~**low · docs** `docs/TESTING.md:298`~~ **fixed**
+  Corrected to SiYuan v3.8.6's actual `test` script —— `node --import tsx --test --test-concurrency=1` over
+  four globs —— and says that what matches is the toolchain, not the glob list.
   The claim that SiYuan's own test script 'is exactly' this project's shape no longer matches app/package.json.
-- **low · docs** `docs/TESTING.md:548`  
-  The selftest case count is stale.
-- **low · docs** `docs/TESTING.md:439`  
+- ~~**low · docs** `docs/TESTING.md:548 (dup)`~~ **fixed (duplicate)**
+  Same defect as the entry above, filed twice. The selftest counts are not restated as prose any more: each
+  tool prints its own case count on every run, and `npm run check` fails when a selftest does.
+- ~~**low · docs** `docs/TESTING.md:439`~~ **fixed**
+  The "Detached DOM | see the script below" row is removed: no script followed it, in this document or in
+  the repository, and `git log -S` over `e2e/` and `scripts/` shows no deleted file ever carried it. The
+  removal is recorded in place so the gap is visible rather than re-added by guesswork.
   A performance-table row points at a script that is not in the document or the repository.
 
 ### docs-ledger
 
-- **low · docs** `docs/DISTRIBUTION-README.md:10`  
+- ~~**low · docs** `docs/DISTRIBUTION-README.md:10`~~ **fixed**
+  Names SiYuan's real control: an icon in the Marketplace toolbar whose tooltip is **Install local
+  package** (`installLocalBazaarPackage` in `app/appearance/langs/en.json`), not a labelled button.
   The install path names a button that does not exist: SiYuan's bazaar button is labelled 'Install local package'.
-- **low · docs** `docs/GETTING-STARTED.md:50`  
-  The doc says the plugin registers three keymap entries and lists an unbound 'Open panel' command; the plugin registers two commands, and no 'Open panel' command exists.
-- **low · docs** `docs/GETTING-STARTED.zh-CN.md:26`  
-  The Chinese doc sends the reader to a settings section that is not called that in SiYuan's Chinese UI; the English sibling names it correctly.
-- **low · docs** `docs/SHORTCUTS.md:57`  
+- ~~**low · docs** `docs/GETTING-STARTED.md:50`~~ **fixed**
+  The section now says the plugin registers **two** commands and lists exactly those two
+  (`openMindmap` / `insertMirror`); the unbound "Open panel" row is gone —— the dock icon is not a command.
+- ~~**low · docs** `docs/GETTING-STARTED.zh-CN.md:26`~~ **fixed**
+  The Chinese UI names that settings section with `entryDock` (its own label, not the English "Dock"),
+  so the path now uses SiYuan's Chinese label, matching the English sibling.
+- ~~**low · docs** `docs/SHORTCUTS.md:57`~~ **fixed**
+  The window is 1.2s (`UNDO_MERGE_MS` in `src/core/undo-window.ts`), and the doc now also says it applies to
+  text edits only. Both language versions corrected.
   The documented undo-merge window is 1.5s; the implementation merges within 1.2s.
-- **low · docs** `docs/pitfalls/style.md:63`  
+- ~~**low · docs** `docs/pitfalls/style.md:63`~~ **fixed**
+  The count said 7 and the list has 8; now 8.
   A count inside the document is wrong: it says 7 class names and lists 8.
-- **low · docs** `docs/pitfalls/testing.md:591`  
+- ~~**low · docs** `docs/pitfalls/testing.md:591`~~ **fixed**
+  The cross-reference pointed at `debug.md` 6.14, which does not exist. Retargeted to 6.20 (the entry that
+  actually covers the anchor-message detour) with a one-line description of it.
   A cross-reference points at an entry that does not exist: debug.md has no 6.14.
 - ~~**low · docs** `docs/pitfalls/testing.md:502`~~ **fixed**
   The `6.x` entry is now `6.14` (fits between 6.13 and 6.15) and the PITFALLS.md index lists it;
@@ -543,10 +607,15 @@ conclusion to draw from a complete-looking list of findings.
 
 ### i18n-consistency
 
-- **low · docs** `docs/TESTING.md:568`  
-  The quoted size of the language allowlist contradicts the file and the same document's own figure eight paragraphs earlier.
-- **low · docs** `docs/pitfalls/plugin.md:17`  
-  The table says the i18n directory file name must be BCP47 hyphenated (zh-CN.json), but the repository ships and packages i18n/zh_CN.json with underscores, and the kernel accepts (indeed prefers) that name - so the documented rule contradicts the shipped artifact and AGENTS.md section 2.
+- ~~**low · docs** `docs/TESTING.md:568 (dup 1/3)`~~ **fixed (duplicate)**
+  The same passage, filed three times under the same line. It is now a single paragraph, and it deliberately
+  **does not restate the size** —— `audit-language.py` prints it each run; the four contradictory copies that
+  existed are recorded in the surviving entry.
+- ~~**low · docs** `docs/pitfalls/plugin.md:17`~~ **fixed**
+  Corrected: the kernel reads **both** forms —— `kernel/model/plugin.go` builds its candidate list as
+  `Conf.Lang`, `LangToLegacy(Conf.Lang)`, `en`, `zh_CN`, `zh-CN` —— so the table no longer claims the i18n
+  file name must be hyphenated (this repository ships the underscore form and it works). The
+  `displayName` **key** in `plugin.json` really is underscore-only, and that distinction is kept.
 - ~~**low · language** `src/plugin/i18n/zh_CN.json:147`~~ **fixed**
   Three keys sharing one English word carried two Chinese words; `phUntitled` unified to 未命名
   (same state as `phUntitledDoc`).
@@ -567,14 +636,14 @@ conclusion to draw from a complete-looking list of findings.
 
 ### mindmap
 
-- **low · docs** `docs/SHORTCUTS.md:52`  
-  The user-facing shortcut doc promises two mind-map mouse behaviours the code does not implement: a single click jumping back to the outline and locating the node, and a double click focusing the branch.
+- ~~**low · docs** `docs/SHORTCUTS.md:52 (dup)`~~ **fixed (duplicate)**
+  Second filing of the same shortcut defect. Both language versions corrected in the surviving entry
+  above (single click selects and focuses the canvas; double click enters inline editing).
 - ~~**low · type-escape** `src/mindmap/Mindmap.tsx:241`~~ **fixed**
   Stored preferences were cast with `as Record<string, never>`; `structure`/`lineStyle`/`themeIdx` now
   go through `normalizeStructure`/`normalizeLineStyle`/`normalizeThemeIdx` in `core/layout.ts`, each of
   which returns the caller's fallback for anything outside its union. 17 unit cases; red-proofed by
   restoring the old cast (13 failed).
-  Stored preferences are cast to `Record<string, never>` instead of being validated, so any JSON in localStorage flows into structure/themeIdx/lineStyle/shape as if it had the declared type.
 - ~~**low · dead-code** `src/mindmap/Mindmap.tsx:79`~~ **stale — already fixed before this pass**
   No `data-theme` reference remains (verified: only `data-theme-mode` at 55/63/68/71, matching
   what SiYuan actually sets — the theme E2E asserts exactly this).
@@ -594,8 +663,8 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-code
 
-- **low · docs** `docs/TESTING.md:568`  
-  The documented size of the language allowlist no longer matches the file or the tool's own output.
+- ~~**low · docs** `docs/TESTING.md:568 (dup 2/3)`~~ **fixed (duplicate)**
+  Second duplicate of the same passage. Fixed by the same rewrite: the number is read from the tool, not from prose.
 - ~~**low · dead-code** `src/plugin/index.ts:13`~~ **fixed**
   `openMindmapTab` used `await import('siyuan')`, which shadowed the static import and left it dead.
   It now uses the static `openTab` like `mount.ts` does —— one pattern for one call.
@@ -620,8 +689,10 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-tests-a
 
-- **low · docs** `docs/pitfalls/editor.md:82`  
-  The §2.3 entry 'Paired reverse keys (Backspace / Delete)' points its Test line at a file that has no key-handling coverage at all.
+- ~~**low · docs** `docs/pitfalls/editor.md:82`~~ **fixed**
+  Refuted: the Test line names `src/plugin/delete-key.test.ts` and the file drives `deleteKeyAction`
+  (`src/core/delete-key.ts`) over every branch; the context-menu suite it used to cite is named as a
+  *different* mechanism in the entry itself.
 - ~~**low · test-quality** `src/plugin/echo-own-value.test.ts:85`~~ **fixed**
   Post-expiry assertions exercise the real `Date.now() > until` branch (white-box backdate) plus
   `prune()` drop/keep behavior — the heading's behavior is now tested.
@@ -651,8 +722,10 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-gates
 
-- **low · docs** `docs/TESTING.md:568`  
-  The numbers describing scripts/audit-language.py no longer match the tool: the allowlist has 12 tokens and no path:line entries (not '391 tokens (186 fixture, 164 i18n, 41 kernel) plus 5 path:line'), a clean run is 199 tracked / 178 scanned / 21 skipped (not 196/175/21), and the run reports code 0 and 24 regex occurrences (not 'code, currently 6' and 25).
+- ~~**low · docs** `docs/TESTING.md:568 (dup 3/3)`~~ **fixed (duplicate)**
+  Third duplicate of the same passage, and the one with the most detail: every number it lists is a
+  snapshot of a tool's output. All of them are gone from the document, which now says the tool prints
+  them. ★ A number copied into prose has no way to go red; this entry is the evidence for that rule.
 - ~~**low · bug** `scripts/audit-language.py:385`~~ **fixed**
   The Python scanner reported only the first CJK run per constant while the JS scanner reports
   every run. Now maps each run through the source (with escape fallback); pinned by selftest case
@@ -674,8 +747,9 @@ conclusion to draw from a complete-looking list of findings.
   (The key is read through `env.py` and the line is gone — the entry point validates it and passes
   it explicitly. Verified: lines 62-75 read token, browser, and notebook through `cfg` with
   fail-fast validation.)
-- **low · docs** `scripts/run-e2e.py:62`  
-  The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
+- ~~**low · docs** `scripts/run-e2e.py:62`~~ **fixed**
+  Refuted together with the CI entry: `run-e2e.py` overwriting the environment from `.env` is the correct
+  behaviour (AGENTS.md §5.1), and the dead CI job that contradicted it is gone.
 - ~~**low · bug** `scripts/run-tests.py:83`~~ **fixed**
   Watch mode keeps `--test-concurrency=1` like normal mode.
 - ~~**low · dead-code** `scripts/script_log.py:124`~~ **fixed**

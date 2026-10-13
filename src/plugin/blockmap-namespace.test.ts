@@ -100,13 +100,29 @@ async function main(): Promise<void> {
       isUnseenButOurs(current, 'node-d', 'blk-d', new Set()) === false);
   }
 
-  console.log('\n=== all three tables ask that one rule ===');
+  console.log('\n=== every retention branch asks that one rule ===');
   {
-    // ★ Precondition of the cases above: a rule nothing calls defends nothing. Three tables, three calls ——
-    //   and the third one passes the key as the block ID (the reverse table is block → node).
+    // ★ Precondition of the cases above: a rule nothing calls defends nothing.
+    //
+    // ★★ The count is **4**, not 3, and the fourth is the point. There are two retention branches in
+    //    `loadBlockMap` —— the preferred `getBlockDOM` read and the SQL fallback —— and they used to
+    //    disagree: the DOM branch retained an entry only when this session inserted its block
+    //    (`isUnseenButOurs`), while the SQL fallback retained **any** entry the read did not report
+    //    (`!map.has`). Which branch ran therefore decided whether a mapping to a destroyed block survived,
+    //    which is the dead-mapping failure `docs/pitfalls/data.md` §1.6 records. Both now call the same
+    //    function, and this assertion is what keeps a future edit from reintroducing a private rule.
+    //    The three DOM-branch calls pass `(map|lastListItems|lastByBlock)`; the fourth is the SQL
+    //    fallback's.
     const src = fs.readFileSync(path.join(__dirname, '..', 'siyuan', 'store.ts'), 'utf8');
     const calls = callSites(src, /^isUnseenButOurs$/);
-    check('★★ the three tables share the retention rule (3 call sites)', calls.length === 3, calls.join(', '));
+    check('★★ both retention branches share the rule (4 call sites: 3 DOM tables + the SQL fallback)',
+      calls.length === 4, calls.join(', '));
+    // ★ And the reverse table's own fallback must ask ownership too, not just `has` —— it restores by
+    //   block ID, so `isUnseenButOurs`'s key argument does not fit; the equivalent check is
+    //   `freshlyInserted.has`.
+    check('★ the SQL reverse-table fallback also requires ownership',
+      /this\.lastByBlock\.has\(bid\)\s*&&\s*this\.freshlyInserted\.has\(bid\)/.test(src),
+      'the byBlock fallback no longer checks freshlyInserted');
   }
   // ★ The summary belongs **inside** the async body: at the top level it would print (and exit 0) before
   //   the awaited cases had run, which is a test that reports success without having checked anything.

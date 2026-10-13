@@ -60,7 +60,7 @@ outside .outliner-title -> max-width: none <- not matched ✅
 The exception is the "scope base" rules (things like `box-sizing`, `font: inherit`),
 which are meant to express "everything inside the plugin container" anyway; writing them by hand is clearer.
 
-**Historical ledger**: the 7 class names this project has collided with --
+**Historical ledger**: the 8 class names this project has collided with --
 `.toolbar` `.bullet` `.findbar` `.outline` `.outline-wrap` `.h1` `.h2` `.h3`.
 The fix at the time was to **rename** them (add the `om-` prefix); but that only treated the symptom --
 the next newly written bare class name would slip through just the same, so it was later changed to uniform build-time scoping + a build-output gate.
