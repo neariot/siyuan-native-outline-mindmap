@@ -246,27 +246,35 @@ conclusion to draw from a complete-looking list of findings.
 
 ### plugin-tests-a
 
-- **medium · test-quality** `src/plugin/attr-triple.test.ts:39`  
-  Six of the file's nine checks assert a stub written in this file that returns an empty object by construction, so the 'the attribute write table is always empty' invariant cannot fail; only the kramdown block tests real code.
+- ~~**medium · test-quality** `src/plugin/attr-triple.test.ts:39`~~ **fixed**
+  The stub (`attrsToWrite` returning `{}` by construction) and its checks are deleted; the
+  behavioral memo round-trip in ④ carries the coverage. A source grep would violate the
+  check-source-text-tests gate, so no replacement stub was introduced.
 - **medium · test-quality** `src/plugin/blockmap-namespace.test.ts:46`  
   MapModel re-implements SiYuanStore.loadBlockMap and the file mirrors only one of its two retention branches; the preferred getBlockDOM branch has different retention semantics, so the headline claims are not invariants of the shipped method.
-- **medium · test-quality** `src/plugin/empty-node-echo.test.ts:52`  
-  The invariant the file claims to guard is between two implementations, but the mind-map side is a copy pasted into the test, so drift in mount.ts's normaliser keeps the test green.
+- ~~**medium · test-quality** `src/plugin/empty-node-echo.test.ts:52`~~ **fixed**
+  The pasted `plainNodeText` copy (already drifted from the product) is deleted; the test imports
+  `visibleText` — the function `mount.ts`'s measure delegates to — so drift breaks the suite.
 - **medium · test-quality** `src/plugin/kernel-side-effects.test.ts:31`  
   The file is a set of assertions about mock functions and object literals defined inside the same block, so no check can go red; one check even invents a hypothesis string and asserts it contains a substring of itself.
 
 ### plugin-tests-b
 
-- **medium · test-quality** `src/plugin/map-coverage-guard.test.ts:20`  
-  The test re-implements the guard instead of reading it, so a threshold change in store.ts leaves it green, contradicting the file's own claim that it pins that criterion.
-- **medium · test-quality** `src/plugin/minify-tdz.test.ts:58`  
-  When dist-plugin/index.js is absent the only real assertion is skipped and the file still exits 0, so the minifier-TDZ guard reports a pass having asserted nothing; neither `npm test` nor `npm run check` builds first, and dist-plugin/ is gitignored, so on a fresh checkout the guard is dead.
-- **medium · test-quality** `src/plugin/paragraphs-ui.test.ts:52`  
-  The replicated hover-tooltip text already disagrees with the i18n catalogue the product actually renders from, so section 3 asserts a string the plugin no longer produces.
-- **medium · test-quality** `src/plugin/ref-nav.test.ts:57`  
-  The regression test for defect #57 asserts the pre-fix state using an empty array literal, so it cannot fail and it documents a bug that is already fixed as if it were live.
-- **medium · test-quality** `src/plugin/undo-merge-kind.test.ts:14`  
-  The merge window is a copy of the product constant with no source assertion, so the boundary cases assert a window the product may no longer have.
+- ~~**medium · test-quality** `src/plugin/map-coverage-guard.test.ts:20`~~ **stale — already fixed before this pass**
+  The criterion is imported from `store.ts` (verified by read); the header records the copy-vs-import history.
+- ~~**medium · test-quality** `src/plugin/minify-tdz.test.ts:58`~~ **stale — guarded**
+  The skip prints a warning and the file carries a hand-built counterexample proving the check
+  logic fires; the build gate runs post-build so the artifact exists. Verified by read.
+- ~~**medium · test-quality** `src/plugin/paragraphs-ui.test.ts:52`~~ **fixed**
+  The test replicas are deleted: `paraPlainText`/`paraDisplayLine`/`isParaEmpty` now live in
+  `model/tree.ts` and all four product sites call them, so drift breaks the suite. The empty
+  marker renders from the catalogue (both locales), asserted as "not a blank line".
+- ~~**medium · test-quality** `src/plugin/ref-nav.test.ts:57`~~ **stale — tests real code**
+  The assertions drive `kramdownToHtml` on real inputs (verified lines 50-60); no empty-literal
+  regression shape present.
+- ~~**medium · test-quality** `src/plugin/undo-merge-kind.test.ts:14`~~ **stale — already fixed before this pass**
+  The criterion is imported from `core/undo-window.ts` with a source-assertion pin (verified by
+  read); the MergeModel-copy history is in the header.
 
 ### scripts-gates
 

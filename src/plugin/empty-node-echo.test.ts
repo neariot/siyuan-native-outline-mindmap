@@ -32,6 +32,14 @@ export {};
 
 import { htmlFragmentToText, visibleText } from './sync';
 
+/**
+ * The mind-map side measure is `mount.ts`'s `plainNodeText`, which is `visibleText` itself
+ * (verified: `plainNodeText = (html) => visibleText(html ?? '')` at mount.ts:61).
+ * Imported — never copied: a pasted copy drifts while the test stays green (it did: the copy
+ * below missed the `&nbsp;`/`<br>` handling the product has).
+ */
+const plainNodeText = (html: string | undefined): string => visibleText(html ?? '');
+
 let pass = 0;
 let fail = 0;
 const failures: string[] = [];
@@ -44,18 +52,6 @@ function check(name: string, cond: boolean, extra = '') {
     failures.push(`${name} ${extra}`);
   }
 }
-
-/**
- * Replicates `mount.ts`'s `plainNodeText` (the measure used on the mind map side).
- * The two must agree -- that is exactly the invariant this test guards.
- */
-const plainNodeText = (html: string | undefined): string =>
-  (html ?? '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/\u200b/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 console.log('the various forms of an empty node should normalise to the same value:');
 {

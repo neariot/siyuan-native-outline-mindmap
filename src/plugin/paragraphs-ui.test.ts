@@ -16,7 +16,7 @@ export {};
 
 import { treeToKramdown } from '../core/map';
 import type { OutlineNode } from '../model/types';
-import { htmlToText } from '../model/tree';
+import { isParaEmpty, paraDisplayLine, paraPlainText } from '../model/tree';
 
 let pass = 0;
 let fail = 0;
@@ -29,7 +29,9 @@ function check(name: string, cond: boolean, extra = '') {
 }
 
 // ---------------------------------------------------------------- logic under test
-// Replicates the indicator and popover criteria in Mindmap.tsx (kept in sync with the render code).
+// The display helpers now live in `model/tree.ts` and are imported — never replicated: the old
+// copies drifted from the product (the tooltip's empty marker disagreed with the catalogue).
+// `showParaBadge` stays: visibility is a one-line rule with no product twin.
 
 /** Whether to show the attached-paragraph indicator */
 function showParaBadge(n: Pick<OutlineNode, 'paragraphs'>): boolean {
@@ -38,17 +40,14 @@ function showParaBadge(n: Pick<OutlineNode, 'paragraphs'>): boolean {
 
 /** Display text of each line in the popover; an empty paragraph must have an explicit placeholder, otherwise the user thinks the data was lost */
 function paraLineText(html: string): { plain: string; isEmpty: boolean } {
-  // The zero-width placeholder ​ is written by the serializer; trim() does not remove it, so it must be stripped explicitly
-  const plain = htmlToText(html).replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
-  return { plain, isEmpty: !plain };
+  const plain = paraPlainText(html);
+  return { plain, isEmpty: isParaEmpty(html) };
 }
 
 /** hover tooltip text */
 function paraTitle(n: Pick<OutlineNode, 'paragraphs'>): string {
   const list = n.paragraphs ?? [];
-  const lines = list
-    .map((p, i) => `${i + 1}. ${htmlToText(p).replace(/\u200b/g, '').replace(/\s+/g, ' ').trim() || '(empty)'}`)
-    .join('\n');
+  const lines = list.map((p, i) => paraDisplayLine(p, i)).join('\n');
   return `${list.length} attached paragraph(s) (click to view the full text)\n${lines}`;
 }
 
@@ -88,10 +87,12 @@ console.log('=== hover tooltip ===');
   check('numbered line by line', t.includes('1. 第一段') && t.includes('2. 第二段'), t);
 
   const t2 = paraTitle({ paragraphs: [''] });
-  check('★ an empty paragraph is shown as (empty), not as a blank line', t2.includes('1. (empty)'), JSON.stringify(t2));
+  // ★ The empty marker renders from the catalogue (`lblEmptyParaShort`: `(empty)` / `（空）`) —
+  //   the product locale decides the exact text, so assert "not a blank line" rather than pinning one.
+  check('★ an empty paragraph is shown as a marker, not as a blank line', /1\. \S/.test(t2), JSON.stringify(t2));
 
   const t3 = paraTitle({ paragraphs: ['', '内容一'] });
-  check('empty and non-empty paragraphs mixed', t3.includes('1. (empty)') && t3.includes('2. 内容一'), t3);
+  check('empty and non-empty paragraphs mixed', /1\. \S/.test(t3) && t3.includes('2. 内容一'), t3);
 }
 
 // ---------------------------------------------------------------- ④ order preserved

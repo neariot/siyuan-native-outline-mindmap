@@ -28,19 +28,6 @@ interface Node {
   linkLines?: unknown[];
 }
 
-/**
- * Reproduces the "which attributes should be written" criterion in `saveNodesIncremental`.
- *
- * ★ In production code this mechanism **has been removed entirely** (it no longer queries the `attributes` table
- *   nor calls `setBlockAttrs`), so this function **always returns an empty object**.
- *   It is kept only so the "always empty" invariant can be asserted — if someone
- *   ever stuffs attributes into the write-back path again, this test reminds them to come back and change this first.
- */
-function attrsToWrite(n: Node): Record<string, string | null> {
-  void n;
-  return {};
-}
-
 let pass = 0;
 let fail = 0;
 const check = (name: string, cond: boolean, detail = ''): void => {
@@ -55,27 +42,16 @@ const check = (name: string, cond: boolean, detail = ''): void => {
 
 console.log('=== ① the memo goes through native paragraphs, not attributes ===');
 {
+  // ★ The old stub (`attrsToWrite` returning {} by construction) and its two checks are gone:
+  //   they could never fail, and a source grep would violate the check-source-text-tests gate.
+  //   The behavioral proof is ④ below (memo lands in the body, round-trips, no attribute markers).
   const n: Node = { id: 'n1', text: '甲', paragraphs: ['备注文本一ABC'] };
-  check('memo non-empty → no attribute write at all', Object.keys(attrsToWrite(n)).length === 0);
-  check('memo cleared → still no attribute write', Object.keys(attrsToWrite({ ...n, paragraphs: [] })).length === 0);
   check('with a memo the model stores an array', Array.isArray(n.paragraphs));
 }
 
 // ② used to assert that a summary and a link line write no attributes. Both fields were removed from the
 // model (SiYuan has no native carrier, so they never persisted), which makes the assertion unexpressible
 // rather than merely true —— see docs/MAPPING.md 3.3.
-
-console.log('\n=== ③ the write-back path produces no attribute transaction at all ===');
-{
-  const cases: Node[] = [
-    { id: 'n1', text: '甲' },
-    { id: 'n2', text: '乙', paragraphs: ['附属段1', '附属段2'] },
-    { id: 'n3', text: '丙', summaryData: [{ id: 's1', memberIds: [], text: '' }] },
-    { id: 'n4', text: '丁', linkLines: [{ id: 'l1', toNodeId: 'n2' }] },
-    { id: 'n5', text: '戊', paragraphs: [''], summaryData: [{}], linkLines: [{}] },
-  ];
-  check('under all five combinations the attribute write table is empty', cases.every((c) => Object.keys(attrsToWrite(c)).length === 0));
-}
 
 console.log('\n=== ④ the memo content really lands in the "body", not in attributes ===');
 {

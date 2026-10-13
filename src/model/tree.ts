@@ -180,6 +180,21 @@ function unescapeAttr(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/** One attached paragraph as display text: tags stripped, zero-width placeholder gone. */
+export function paraPlainText(p: string): string {
+  return htmlToText(p).replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** One attached paragraph as a numbered display line (`1. text`, empty shown via the catalogue). */
+export function paraDisplayLine(p: string, index: number): string {
+  return `${index + 1}. ${paraPlainText(p) || t('lblEmptyParaShort')}`;
+}
+
+/** Whether an attached paragraph counts as empty (placeholder-only is empty, not blank). */
+export function isParaEmpty(p: string): boolean {
+  return !paraPlainText(p);
+}
+
 export function countWords(nodes: OutlineNode[]): number {
   let total = 0;
   const walk = (list: OutlineNode[]) => {

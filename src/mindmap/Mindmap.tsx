@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { OutlineNode } from '../model/types';
-import { findNode, htmlToText } from '../model/tree';
+import { findNode, htmlToText, paraDisplayLine, paraPlainText } from '../model/tree';
 import { htmlToRuns, type RichRun } from '../core/richtext';
 import { escapeHtml } from '../model/html-escape';
 import { RichText } from './RichText';
@@ -865,9 +865,7 @@ export default function Mindmap({
   /** Enter edit mode: turn the existing paragraphs into a plain-text draft with one paragraph per line */
   const startParagraphEdit = (): void => {
     if (!paraView || !onEditParagraphs) return;
-    const lines = (paraView.node.paragraphs ?? []).map((p) =>
-      htmlToText(p).replace(/\u200b/g, '').trim(),
-    );
+    const lines = (paraView.node.paragraphs ?? []).map((p) => paraPlainText(p));
     setParaDraft(lines.join('\n'));
     setParaEditing(true);
   };
@@ -1580,9 +1578,7 @@ export default function Mindmap({
                     {b.label}
                     {b.node.paragraphs?.length
                       ? (() => {
-                          const lines = b.node.paragraphs
-                            .map((p) => htmlToText(p).replace(/\u200b/g, '').trim())
-                            .filter(Boolean);
+                          const lines = b.node.paragraphs.map((p) => paraPlainText(p)).filter(Boolean);
                           return lines.length ? '\n' + lines.join('\n') : '';
                         })()
                       : ''}
@@ -1629,9 +1625,7 @@ export default function Mindmap({
                       ))}
                       <title>
                         {t('tipParaBadge', { n: b.node.paragraphs!.length }) + '\n' +
-                          b.node.paragraphs!
-                            .map((p, i) => `${i + 1}. ${htmlToText(p).replace(/\u200b/g, '').replace(/\s+/g, ' ').trim() || t('lblEmptyParaShort')}`)
-                            .join('\n')}
+                          b.node.paragraphs!.map((p, i) => paraDisplayLine(p, i)).join('\n')}
                       </title>
                     </g>
                   )}
@@ -1758,10 +1752,10 @@ export default function Mindmap({
             </div>
             <div className="mm-para-list">
               {(paraView.node.paragraphs ?? []).map((p, i) => {
-                // ★ The zero-width placeholder \u200b must also count as empty:
+                // ★ The zero-width placeholder \u200b must also count as empty (see isParaEmpty):
                 //   it is written by the serialization side (empty-paragraph protection) and String.trim() does not remove it,
                 //   otherwise an empty paragraph would render as an invisible blank line and the user would think the data was lost.
-                const plain = htmlToText(p).replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+                const plain = paraPlainText(p);
                 return (
                   <div className="mm-para-item" key={i}>
                     <span className="mm-para-idx">{i + 1}</span>
