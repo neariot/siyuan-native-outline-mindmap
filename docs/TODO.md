@@ -79,6 +79,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Test-quality batch.** Find-bar toggle restores focus; indent.test shadow copy removed;
   touch-longpress vacuous block deleted; mobile-swipe renders with real props; tree-ops Run line
   fixed; css-scope keyframe cases + guard.
+- **Wait-hygiene batch.** perf-probe and verify-live open tabs on readiness expressions instead of
+  fixed 120s/30s sleeps; mindmap-shot's `\u` label verified visible to the language gate (refuted);
+  its `Session.ev` shares the raise-on-error contract.
 
 **Resolved, verified, and removed from the queue:**
 
