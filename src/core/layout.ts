@@ -906,11 +906,11 @@ export function exportFreemind(
   const esc = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const rootBody = (titleParagraphs ?? [])
-    .map((p) => htmlToText(p))
+    .map((p) => esc(htmlToText(p)))
     .filter((t) => t.trim())
     .join('<br>');
   const rootNote = rootBody
-    ? `<richcontent TYPE="NOTE"><html><head></head><body>${esc(rootBody)}</body></html></richcontent>`
+    ? `<richcontent TYPE="NOTE"><html><head></head><body>${rootBody}</body></html></richcontent>`
     : '';
   const walk = (ns: OutlineNode[]): string =>
     ns
@@ -918,11 +918,11 @@ export function exportFreemind(
         // Attachment paragraphs → FreeMind's native `richcontent TYPE="NOTE"` (the node note area).
         // Multiple paragraphs are joined with `<br>`; after export they still hang under the node, so nothing is lost.
         const body = (n.paragraphs ?? [])
-          .map((p) => htmlToText(p))
+          .map((p) => esc(htmlToText(p)))
           .filter((t) => t.trim())
           .join('<br>');
         const note = body
-          ? `<richcontent TYPE="NOTE"><html><head></head><body>${esc(body)}</body></html></richcontent>`
+          ? `<richcontent TYPE="NOTE"><html><head></head><body>${body}</body></html></richcontent>`
           : '';
         return `<node TEXT="${esc(htmlToText(n.text) || untitled)}">${note}${walk(n.children)}</node>`;
       })

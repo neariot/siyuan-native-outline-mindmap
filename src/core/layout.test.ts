@@ -526,6 +526,21 @@ console.log('\n★ the export writes the product\'s wording, not an empty attrib
   const named = exportFreemind([N('a', '文本')], '标题', '(untitled)', 'Untitled');
   check('a real title and node text are exported unchanged',
     named.includes('TEXT="标题"') && named.includes('TEXT="文本"'), named);
+
+  // Attached paragraphs export to FreeMind note richcontent with unescaped <br> and escaped text
+  const withNotes = exportFreemind(
+    [{ ...N('a', '节点'), paragraphs: ['段落一', '段落二 <test>'] }],
+    '标题',
+    '(untitled)',
+    'Untitled',
+    ['文档段落一', '文档段落二 & extra'],
+  );
+  check('★ root note contains unescaped <br> and escaped text in richcontent',
+    withNotes.includes('文档段落一<br>文档段落二 &amp; extra'), withNotes);
+  check('★ node note contains unescaped <br> and escaped text in richcontent',
+    withNotes.includes('段落一<br>段落二 &lt;test&gt;'), withNotes);
+  check('★ richcontent does not contain literal &lt;br&gt;',
+    !withNotes.includes('&lt;br&gt;'), withNotes);
 }
 
 console.log('\n★ a formula keeps its own run (it is drawn whole, so it must not be merged away)');

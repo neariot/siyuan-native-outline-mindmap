@@ -661,6 +661,7 @@ export function serializeTree(tree: OutlineNode[]): string {
       //     this must switch to `paragraphs` as well —— otherwise the same truncation bug
       //     **replays unchanged** on attached paragraphs.
       parts.push(`${n.id}:paras=${JSON.stringify(n.paragraphs ?? [])}`);
+      parts.push(`${n.id}:task=${n.taskStatus ?? 0}`);
       if (n.children?.length) walk(n.children);
       parts.push(')');
     }

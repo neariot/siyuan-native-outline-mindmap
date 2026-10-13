@@ -118,6 +118,15 @@ const N = (id: string, text = id, children: OutlineNode[] = []): OutlineNode =>
     '★★ attached paragraphs are part of the serialization (the truncated-note bug)',
     serializeTree(p0) !== serializeTree(p2),
   );
+
+  // taskStatus toggle changes block structure / marker, so it must be part of the serialization
+  const k0 = [{ ...N('甲', '正文'), taskStatus: 0 } as OutlineNode];
+  const k1 = [{ ...N('甲', '正文'), taskStatus: 1 } as OutlineNode];
+  const k2 = [{ ...N('甲', '正文'), taskStatus: 2 } as OutlineNode];
+  check(
+    '★★ taskStatus is part of the serialization (todo toggle must trigger catch-up write)',
+    serializeTree(k0) !== serializeTree(k1) && serializeTree(k1) !== serializeTree(k2),
+  );
 }
 
 // ---------------------------------------------------------------- the shape the fix depends on

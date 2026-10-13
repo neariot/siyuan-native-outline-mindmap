@@ -280,11 +280,11 @@ export default function Mindmap({
   // The document ID is preferred as the document fingerprint (fallback to the first node's ID if docId is not supplied).
   // (The root node is the synthetic `__root__`, which cannot distinguish documents.)
   const docKey = docId || (nodes.length > 0 ? nodes[0].id : '');
-  const COLLAPSE_KEY = `om-mm-collapsed:${docKey}`;
+  const prevDocKeyRef = useRef<string>(docKey);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => {
     if (!docKey) return new Set();
     try {
-      const raw = localStorage.getItem(COLLAPSE_KEY);
+      const raw = localStorage.getItem(`om-mm-collapsed:${docKey}`);
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
     } catch {
       return new Set();
@@ -293,25 +293,30 @@ export default function Mindmap({
 
   // Re-read when the document changes (the component is not unmounted by a document change)
   useEffect(() => {
-    if (!docKey) return;
+    if (prevDocKeyRef.current === docKey) return;
+    prevDocKeyRef.current = docKey;
+    if (!docKey) {
+      setCollapsedIds(new Set());
+      return;
+    }
     try {
-      const raw = localStorage.getItem(COLLAPSE_KEY);
+      const raw = localStorage.getItem(`om-mm-collapsed:${docKey}`);
       setCollapsedIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set());
     } catch {
       setCollapsedIds(new Set());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);
 
   // Write back. Collapsing is pure view state; losing it raises no error but feels like "the click did nothing", so it is stored every time.
+  // ★ Guarded by `prevDocKeyRef.current === docKey`: when docKey changes, this write effect must not overwrite
+  //   the new document's storage with the previous document's stale collapsedIds during the transition render.
   useEffect(() => {
-    if (!docKey) return;
+    if (!docKey || prevDocKeyRef.current !== docKey) return;
     try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsedIds]));
+      localStorage.setItem(`om-mm-collapsed:${docKey}`, JSON.stringify([...collapsedIds]));
     } catch {
       /* unavailable storage does not affect functionality */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsedIds, docKey]);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [isDragging, setIsDragging] = useState(false);
@@ -629,11 +634,12 @@ export default function Mindmap({
   };
 
   useEffect(() => {
+    userAdjustedView.current = false;
     const timer = setTimeout(() => {
       fit();
     }, 60);
     return () => clearTimeout(timer);
-  }, [structure, zoomId, layout.boxes.length]);
+  }, [structure, zoomId, layout.boxes.length, docKey]);
 
   /**
    * Re-fit when the container resizes (new).
@@ -1208,6 +1214,8 @@ export default function Mindmap({
     });
   };
 
+  const isCtxRoot = ctxMenu?.id === '__root__';
+
   return (
     <div className="mm-wrap" ref={wrapRef}>
       <button
@@ -1416,10 +1424,15 @@ export default function Mindmap({
             addAndEdit(selectedId, 'child', selectedId);
           } else if (e.key === 'Enter') {
             e.preventDefault();
-            addAndEdit(selectedId, 'sibling', selectedId);
+            if (selectedId === '__root__') {
+              addAndEdit(selectedId, 'child', selectedId);
+            } else {
+              addAndEdit(selectedId, 'sibling', selectedId);
+            }
           } else if (
             deletable &&
             onDeleteNode &&
+            selectedId !== '__root__' &&
             (e.key === 'Delete' || e.key === 'Backspace')
           ) {
             // Delete/Backspace deletes the node — the caller handles the confirmation
@@ -1906,7 +1919,8 @@ export default function Mindmap({
                 {t('cmdAddChild')} <span className="mm-ctx-key">Tab</span>
               </div>
             )}
-            {editable && onAddNode && (
+            {/* Root node cannot have siblings, cannot be extracted as subdoc of itself, and cannot be deleted */}
+            {!isCtxRoot && editable && onAddNode && (
               <div
                 className="mm-ctx-item"
                 onClick={() => {
@@ -1918,7 +1932,7 @@ export default function Mindmap({
                 {t('cmdAddSibling')} <span className="mm-ctx-key">Enter</span>
               </div>
             )}
-            {onExtractSubDoc && (
+            {!isCtxRoot && onExtractSubDoc && (
               <div
                 className="mm-ctx-item"
                 onClick={() => {
@@ -1953,7 +1967,7 @@ export default function Mindmap({
             >
               {t('cmdBackToFullMap')}
             </div>
-            {deletable && onDeleteNode && (
+            {!isCtxRoot && deletable && onDeleteNode && (
               <>
                 <div className="mm-ctx-sep" />
                 <div

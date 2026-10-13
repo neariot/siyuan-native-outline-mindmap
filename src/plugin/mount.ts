@@ -1351,9 +1351,17 @@ function OmTabApp({
         //   Both places are still written here: if the heading block exists it is synced as well,
         //   so the user cannot see a stale title in the body, nor leave documents from older versions diverged.)
         const store = storeRef.current;
-        await store?.renameDoc(docId, name);
-        // The heading block is the one `loadDoc` falls back on, so it must take the new value
-        await store?.setHeadingTitle(docId, name);
+        if (!store) return;
+        await withEchoGuard(
+          guardRef.current,
+          () => [docId, ...blockToNodeRef.current.keys()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            await store?.renameDoc(docId, name);
+            // The heading block is the one `loadDoc` falls back on, so it must take the new value
+            await store?.setHeadingTitle(docId, name);
+          },
+        );
       } catch (e) {
         showMessage(t('errRenameFailed', { msg: (e as Error).message }), 5000, 'error');
       }
@@ -1404,7 +1412,7 @@ function OmTabApp({
         await withEchoGuard(
           guardRef.current,
           // The blocks involved, as a backstop for the short window after it ends (events may arrive late)
-          () => [...blockToNodeRef.current.values()],
+          () => [docId, ...blockToNodeRef.current.keys()],
           () => collectWrittenValues(nodesRef.current ?? []),
           async () => {
             // ★★★ The baseline is registered before the write-back (audit follow-up).
@@ -1461,7 +1469,14 @@ function OmTabApp({
         setSaving(true);
         setErr('');
         try {
-          await store.syncDocParagraphs(docId, html);
+          await withEchoGuard(
+            guardRef.current,
+            () => [docId, ...blockToNodeRef.current.keys()],
+            () => collectWrittenValues(nodesRef.current ?? []),
+            async () => {
+              await store.syncDocParagraphs(docId, html);
+            },
+          );
         } catch (e) {
           setErr(describeWriteError(e));
         } finally {
@@ -1503,7 +1518,7 @@ function OmTabApp({
       try {
         await withEchoGuard(
           guardRef.current,
-          () => [...blockToNodeRef.current.values()],
+          () => [docId, ...blockToNodeRef.current.keys()],
           () => collectWrittenValues(nodesRef.current ?? []),
           async () => {
             await writeLatest();
@@ -1534,7 +1549,14 @@ function OmTabApp({
       setSaving(true);
       setErr('');
       try {
-        await store.syncDocParagraphs(docId, paragraphs);
+        await withEchoGuard(
+          guardRef.current,
+          () => [docId, ...blockToNodeRef.current.keys()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            await store.syncDocParagraphs(docId, paragraphs);
+          },
+        );
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {
@@ -1615,7 +1637,7 @@ function OmTabApp({
         //   external change arriving in the short window afterwards was swallowed as our own echo.
         await withEchoGuard(
           guardRef.current,
-          () => [...blockToNodeRef.current.values()],
+          () => [docId, ...blockToNodeRef.current.keys()],
           () => collectWrittenValues(nodesRef.current ?? []),
           async () => {
             const del = await store.syncDeletions(docId, updated);
@@ -1681,53 +1703,74 @@ function OmTabApp({
       setErr('');
       // Declared outside the try so the baseline can advance after a successful write-back (catch/finally must see it too)
       let committed = base;
+      store.beginWrite(docId);
       try {
-        const subId = await store.nodeToSubDoc(docId, id, kids);
-        if (!subId) {
-          setErr(t('errCreateSubDocFailed'));
-          return;
-        }
-        // Local tree sync: keep the node (it is a document reference now) and clear its children
-        let updated = base.map(function walk(n): OutlineNode {
-          if (n.id === id) {
-            return {
-              ...n,
-              // ★★★ The reference must **replace** the original text, not be **appended** (the fix).
-              //
-              //   The original implementation was `${old text} <span data-noderef=…>title</span>`,
-              //   so the node became "Branch A Branch A" —— the old text was still there,
-              //   and the reference rendered the title a second time, **the same word appearing twice**.
-              //   store concatenated the same way when writing back to SiYuan:
-              //   `Branch A ((id 'Branch A'))`, so SiYuan showed two "Branch A" on one line as well.
-              //
-              //   Semantically it should be a replacement too: after expansion this node's identity is
-              //   "a reference to the new sub-document", and the original text is already carried by the sub-document's title.
-              text: `<span data-noderef="${subId}">${escapeHtml(label)}</span>`, 
-              children: [],
-              modified: Date.now(),
+        await withEchoGuard(
+          guardRef.current,
+          () => [docId, ...blockToNodeRef.current.keys()],
+          () => collectWrittenValues(nodesRef.current ?? []),
+          async () => {
+            const subId = await store.nodeToSubDoc(docId, id, kids);
+            if (!subId) {
+              setErr(t('errCreateSubDocFailed'));
+              return;
+            }
+            // Local tree sync: keep the node (it is a document reference now) and clear its children
+            let updated = base.map(function walk(n): OutlineNode {
+              if (n.id === id) {
+                return {
+                  ...n,
+                  // ★★★ The reference must **replace** the original text, not be **appended** (the fix).
+                  //
+                  //   The original implementation was `${old text} <span data-noderef=…>title</span>`,
+                  //   so the node became "Branch A Branch A" —— the old text was still there,
+                  //   and the reference rendered the title a second time, **the same word appearing twice**.
+                  //   store concatenated the same way when writing back to SiYuan:
+                  //   `Branch A ((id 'Branch A'))`, so SiYuan showed two "Branch A" on one line as well.
+                  //
+                  //   Semantically it should be a replacement too: after expansion this node's identity is
+                  //   "a reference to the new sub-document", and the original text is already carried by the sub-document's title.
+                  text: `<span data-noderef="${subId}">${escapeHtml(label)}</span>`, 
+                  children: [],
+                  modified: Date.now(),
+                };
+              }
+              if (n.children?.length) return { ...n, children: n.children.map(walk) };
+              return n;
+            });
+            pushUndo(prevTreeRef.current);
+            // The undo stack needs the tree "before the change", so it must be saved in sync with the change
+            prevTreeRef.current = nodesRef.current;
+            nodesRef.current = updated;
+            setNodes(updated);
+            committed = updated;
+            lastWrittenTreeRef.current = serializeTree(updated);
+            // Clean up any pending conflicts for the extracted child nodes that were moved away
+            const gone: string[] = [];
+            const collectGone = (l: OutlineNode[]): void => {
+              for (const x of l) {
+                gone.push(x.id);
+                if (x.children?.length) collectGone(x.children);
+              }
             };
-          }
-          if (n.children?.length) return { ...n, children: n.children.map(walk) };
-          return n;
-        });
-        pushUndo(prevTreeRef.current);
-        // The undo stack needs the tree "before the change", so it must be saved in sync with the change
-        prevTreeRef.current = nodesRef.current;
-        nodesRef.current = updated;
-        setNodes(updated);
-        committed = updated;
-        try {
-          const bmap = await store.loadBlockMap(docId);
-          // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
-          //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
-          blockToNodeRef.current = store.blockToNode();
-        } catch {
-          /* A failed reverse-table rebuild does not affect the main flow */
-        }
+            collectGone(kids);
+            conflictRef.current.forget(gone);
+            setConflictCount(conflictRef.current.list().length);
+          },
+        );
       } catch (e) {
         setErr(describeWriteError(e));
       } finally {
+        store.endWrite();
         setSaving(false);
+      }
+      try {
+        await store.loadBlockMap(docId);
+        // ★ Use store.blockToNode() —— it registers **both the paragraph block and the listItem** block IDs.
+        //   Reversing it by hand yields only the paragraph block, so "external delete" events fail to match (see the method comment).
+        blockToNodeRef.current = store.blockToNode();
+      } catch {
+        /* A failed reverse-table rebuild does not affect the main flow */
       }
       // ★ The baseline advances after a successful write-back (see the long comment in handleDeleteNode for why)
       lastCommittedRef.current = snapshot(committed);
@@ -1810,7 +1853,7 @@ function OmTabApp({
           //   external change was ignored silently (real external edits swallowed as echoes).
           await withEchoGuard(
             guardRef.current,
-            () => [...blockToNodeRef.current.values()],
+            () => [docId, ...blockToNodeRef.current.keys()],
             () => collectWrittenValues(nodesRef.current ?? []),
             async () => {
               // ★ Explicitly open one placeholder-collection window and pass the set down:
@@ -1918,7 +1961,7 @@ function OmTabApp({
             await withEchoGuard(
               guardRef.current,
               // The blocks involved, as a backstop for the short window after it ends (events may arrive late)
-              () => [...blockToNodeRef.current.values()],
+              () => [docId, ...blockToNodeRef.current.keys()],
               () => collectWrittenValues(nodesRef.current ?? []),
               async () => {
                 await writeLatest();
@@ -1930,7 +1973,7 @@ function OmTabApp({
                 // Keep the "did the addition really land on disk" warning: after write-back the new node should be findable in the reverse tables.
                 //   Not finding it means the block was never created (previously, when resolveListItem could not find a block,
                 //   the UI looked fine while SiYuan had nothing, and **no error was raised** —— measured, whole batches of nodes were lost).
-                if (!blockToNodeRef.current.has(newId)) {
+                if (store.blockIdsOf(newId).length === 0) {
                   setErr(t('errAddNodeNotWritten'));
                 }
               },
@@ -2097,6 +2140,10 @@ function OmTabApp({
       title: docTitle || t('mindmapTitle'),
       docParagraphs,
       onEditNode: (id: string, text: string) => {
+        if (id === '__root__') {
+          void handleTitleChange(text);
+          return;
+        }
         void handleEdit(id, text);
       },
       onEditParagraphs: (id: string, paragraphs: string[]) => {
@@ -2138,10 +2185,8 @@ function OmTabApp({
         onAddNode: (parentId: string, mode: 'child' | 'sibling', afterId: string): string | null => {
           const id = handleAddNodeSync(parentId, mode, afterId);
           if (!id) return null;
-          // Queue one write-back. A failure still calls setErr as usual and does not affect the id already returned synchronously.
-          void writeLatestRef.current().catch((e: unknown) => {
-            setErr(describeWriteError(e));
-          });
+          // Queue one write-back with echo guard and baseline tracking.
+          void flushWrite(nodesRef.current ?? []);
           return id;
         },
       selectedId,
@@ -2219,8 +2264,6 @@ function OmTabApp({
           if (n) grabbed.push({ ...n, modified: Date.now() });
         }
         if (!grabbed.length) return;
-        pushUndo(prevTreeRef.current);
-        prevTreeRef.current = nodesRef.current;
         let draft = base;
         for (const id of moving) {
           const next = removeNode(draft, id);
@@ -2233,16 +2276,8 @@ function OmTabApp({
           }
           return n.children?.length ? { ...n, children: n.children.map(attach) } : n;
         });
-        nodesRef.current = draft;
-        setNodes(draft);
-        // ★ `.catch`, not a bare `void`: `writeLatest` lets a failure propagate, so an unhandled rejection
-        //   here means a failed write-back reaches nobody —— the mind map shows the drop, SiYuan does not
-        //   have it, and the error bar stays empty. Every other write path surfaces the failure through
-        //   `setErr(describeWriteError(e))`; this call site is fired from a callback with no await, so the
-        //   rejection has to be handled here or it is lost.
-        void writeLatest().catch((e: unknown) => {
-          setErr(describeWriteError(e));
-        });
+        // Route through handleOutlineChange: structural change with undo step, EchoGuard, and save lifecycle.
+        void handleOutlineChange(draft, 'struct');
       },
       onFocusNode: (id: string) => {
         // For a later "mind map → SiYuan block" jump link
