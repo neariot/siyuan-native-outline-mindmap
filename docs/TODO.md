@@ -112,6 +112,24 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Ledger header is now checked, not remembered.** The header claimed its tally "cannot drift" while
   reading 206 against 193 entries; `check-audit-findings.py` recomputes the four rows and fails on a
   mismatch, with the red proof and self-test cases in the same script.
+- **Compat-layer data loss found and fixed (measured).** The task-marker fallback wrote only the
+  node's own line, and a marker-only markdown write **drops the node's children** —— measured on the
+  isolated instance: `updateTaskListItemMarker` 1→1 children, `updateBlock(subtree)` 1→1 (block ids
+  kept), `updateBlock(node line)` 1→**0**. `store.ts` documents the same measurement for the sibling
+  branch, which is why creation/clearing already carry the subtree; the fallback was the one write
+  that did not. It now rewrites the marker on the subtree's first line, refuses when no subtree is
+  given, and `store.ts` passes `nodeSubtreeToKramdown(n)`. Red-proofed.
+- **New gate: `check-unreachable-modules.ts`.** A shipped module only its own tests import —— the HAL
+  added four (~1000 lines) with an architecture doc presenting them as the data flow while no shipped
+  module imported any. `check-dead-methods.py` scans class methods and could not see them. The gate
+  prints the list, fails on an unrecorded one, and fails on a stale allowlist entry; in `npm run check`.
+- **ARCHITECTURE.md §2 annotated.** The 4-tier diagram now says the HAL tiers are the target
+  architecture and not yet the runtime path, so §2 cannot be read as describing the live data flow.
+- **Own-assertion defect found by the E2E suite.** A case I added earlier (`bc5be68`) selected a row
+  and its **own child** (rows 0,1 of `甲 > 节点一`), which `topLevelSelected` correctly filters, leaving
+  the first sibling —— indent is then a legitimate no-op, so the assertion failed on a correct product.
+  Fixed to select siblings (rows 0,2) and to assert both the row that moves and the row that must not;
+  outline suite 26/26 green. Recorded in `docs/pitfalls/testing.md`.
 - **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
   attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
   to `model/tree.ts` with all sites calling them.

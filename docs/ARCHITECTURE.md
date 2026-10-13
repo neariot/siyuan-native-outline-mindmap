@@ -25,6 +25,14 @@ So search, bidirectional links, outline view, Markdown export, and mobile viewin
 
 To guarantee resilience against SiYuan host updates and internal refactorings, the system is structured as a **4-tier decoupled hierarchy**:
 
+> **Status: the HAL tiers are the target architecture, not yet the runtime path.** Tier 1 and the
+> compatibility pieces of Tier 3 are live; the reconciler (Tier 2) and the two concrete drivers
+> (Tier 4) are built and unit-tested but **no shipped module imports them** — the write-back still
+> runs through `store.ts`'s own `syncStructure` / `syncDeletions` / `saveNodesIncremental`
+> (section 4). Read the tiers below as the design the code is converging on, and section 4 as what
+> runs today. The one place the runtime does negotiate a capability is the task-marker fallback
+> (`host-compat.ts`), which picks the marker API or a subtree markdown write.
+
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Tier 1: Domain & UI                             │

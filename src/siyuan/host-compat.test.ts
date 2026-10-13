@@ -92,7 +92,7 @@ test('updateTaskMarkerWithFallback uses primary updateTaskListItemMarker on succ
     },
   } as unknown as SiYuanClient;
 
-  await updateTaskMarkerWithFallback(mockClient, 'block-task-1', true, 'Task text');
+  await updateTaskMarkerWithFallback(mockClient, 'block-task-1', true, '- [ ] Task text\n');
   assert.equal(markerCalled, true);
   assert.equal(updateBlockCalled, false);
 });
@@ -112,10 +112,51 @@ test('updateTaskMarkerWithFallback degrades to markdown updateBlock when primary
     },
   } as unknown as SiYuanClient;
 
-  await updateTaskMarkerWithFallback(mockClient, 'block-task-2', false, 'Clean task content');
+  await updateTaskMarkerWithFallback(mockClient, 'block-task-2', false, '- [x] Clean task content\n');
   assert.equal(markerCalled, true);
   assert.ok(updateBlockCalledWith);
   const call = updateBlockCalledWith as { id: string; data: string };
   assert.equal(call.id, 'block-task-2');
-  assert.equal(call.data, '- [ ] Clean task content');
+  assert.equal(call.data, '- [ ] Clean task content\n');
+});
+
+test('★ the fallback carries the subtree, so toggling a to-do cannot drop its children', async () => {
+  // Measured on the isolated instance: a node-line-only write takes `- [ ] 父任务 / - 子节点`
+  // from 1 child to 0, while the subtree write keeps it (and its block ids).
+  let written = '';
+  const mockClient = {
+    updateTaskListItemMarker: async () => {
+      throw new Error('404 not found (an old kernel has no marker API)');
+    },
+    updateBlock: async (_id: string, data: string) => {
+      written = data;
+      return null;
+    },
+  } as unknown as SiYuanClient;
+
+  const subtree = '- [ ] 父任务\n  - 子节点\n';
+  await updateTaskMarkerWithFallback(mockClient, 'block-task-3', true, subtree);
+  assert.equal(written, '- [x] 父任务\n  - 子节点\n',
+    'the child line must survive the fallback, not just the node\'s own line');
+
+  // The other direction, so the marker rewrite is not one-way.
+  written = '';
+  await updateTaskMarkerWithFallback(mockClient, 'block-task-3', false, '- [x] 父任务\n  - 子节点\n');
+  assert.equal(written, '- [ ] 父任务\n  - 子节点\n');
+});
+
+test('★ the fallback refuses rather than writing a line that would drop children', async () => {
+  const mockClient = {
+    updateTaskListItemMarker: async () => {
+      throw new Error('404 not found');
+    },
+    updateBlock: async () => {
+      throw new Error('updateBlock must not be reached without a subtree');
+    },
+  } as unknown as SiYuanClient;
+
+  await assert.rejects(
+    () => updateTaskMarkerWithFallback(mockClient, 'block-task-4', true, ''),
+    /cannot rewrite the marker .* without its subtree/,
+  );
 });

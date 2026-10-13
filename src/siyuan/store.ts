@@ -1434,7 +1434,7 @@ export class SiYuanStore {
             //   exactly that, and it leaves the block's own content alone. (It cannot create a task — it
             //   answers `-1 block is not a task list item` on a plain list item, which is why creation and
             //   clearing take the markdown path instead.)
-            await updateTaskMarkerWithFallback(this.client, liId, wants === 2, n.text ?? '');
+            await updateTaskMarkerWithFallback(this.client, liId, wants === 2, nodeSubtreeToKramdown(n));
           } else {
             // ★ Creating a to-do (0 → task) and clearing one (task → 0) are both markdown-only: no other
             //   call can introduce or remove the task subtype. The markdown must carry the node's

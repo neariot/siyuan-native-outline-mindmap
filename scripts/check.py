@@ -244,6 +244,15 @@ GATES = [
         "why": "every optional callback prop a component invokes is supplied by a call site",
     },
     {
+        # ★ The layer above `dead-props` and `dead-css`: a whole module that only its own tests import.
+        #   Measured: the HAL added four modules (~1000 lines) and an architecture doc presenting them as
+        #   the data flow, while no shipped module imported any of them —— green suite, unreachable feature.
+        #   `check-dead-methods.py` scans class methods and cannot see free functions or interfaces.
+        "name": "unreachable-modules",
+        "command": "npx tsx scripts/check-unreachable-modules.ts",
+        "why": "no shipped module is reachable only from its own tests without a recorded reason",
+    },
+    {
         # Section 1's "never hardcode machine absolute paths". It was a rule enforced by remembering to look,
         # which is why an audit entry once claimed `.env.example` held a machine path and nothing could check
         # it either way. The tool prints how many lines it skipped as its own literal cases, and says what it

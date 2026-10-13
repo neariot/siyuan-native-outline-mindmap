@@ -966,15 +966,29 @@ test.describe('multi-select and batch operations', () => {
       const n = await rows.count();
       expect(n, 'the temporary document should have several rows').toBeGreaterThanOrEqual(2);
 
+      // ★★ Select two rows that are **siblings**, not a row and its own child.
+      //
+      //   The fixture is `甲 > 节点一` and `乙 > 节点八`, so the DOM order is
+      //   甲(0), 节点一(1), 乙(2), 节点八(3). Selecting rows 0 and 1 picks 甲 and 节点一 ——
+      //   its **descendant** —— and `topLevelSelected` correctly filters the descendant out, so the
+      //   selection reduces to 甲 alone, which is the first sibling and **cannot indent**. The
+      //   operation is a legitimate no-op, and an earlier version of this case asserted that the
+      //   rows moved anyway, so it failed against a correct product (measured: the x coordinate
+      //   stayed 876 both before and after).
+      //
+      //   Rows 0 and 2 are the siblings 甲 and 乙: 乙 indents under 甲, 甲 cannot. That is the
+      //   staircase this case is about (`indent.test.ts` pins the same rule: "the first sibling
+      //   cannot indent").
       await rows.nth(0).click({ modifiers: ['Control'] });
-      await rows.nth(1).click({ modifiers: ['Control'] });
+      await rows.nth(2).click({ modifiers: ['Control'] });
       await page.waitForTimeout(300);
-      await expect(page.locator('.selbar')).toHaveCount(1);
+      await expect(page.locator('.selbar'), 'selecting 2 siblings should bring up the batch toolbar').toHaveCount(1);
 
       const beforeRows = await outlineState(page).then((s) => s.rows);
+      // ★ The moved row is 乙, the one that had a previous sibling to attach to.
       const beforeX = await page.evaluate(() =>
         [...document.querySelectorAll('.om-outline-wrap .node-row:not(.node-row-empty) .node-text')]
-          .slice(0, 2).map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
+          .map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
       );
       await page.locator('.selbar button', { hasText: '缩进' }).first().click();
       await page.waitForTimeout(800);
@@ -985,20 +999,22 @@ test.describe('multi-select and batch operations', () => {
         await outlineState(page).then((s) => s.rows),
         'indent only changes the level, the row count should not change',
       ).toBe(beforeRows);
-      // ★ ...but the row count alone cannot see the level change (a no-op passes): the indented
-      //   rows must sit deeper, and the document must nest them.
+      // ★ ...but the row count alone cannot see the level change (a no-op passes): 乙 must sit
+      //   deeper. Its flat index is unchanged (2), so the x coordinate is the criterion that can
+      //   tell "indented" from "did nothing".
       const afterX = await page.evaluate(() =>
         [...document.querySelectorAll('.om-outline-wrap .node-row:not(.node-row-empty) .node-text')]
-          .slice(0, 2).map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
+          .map((e) => Math.round((e as HTMLElement).getBoundingClientRect().x)),
       );
-      expect(afterX[0], 'the first indented row must sit deeper than before').toBeGreaterThan(beforeX[0]);
-      expect(afterX[1], 'the second indented row must sit deeper than before').toBeGreaterThan(beforeX[1]);
+      expect(afterX[2], '乙 (row 2) must sit deeper after indenting under its sibling 甲').toBeGreaterThan(beforeX[2]);
+      // 甲 is the first sibling: it has no previous sibling, so it must **not** move.
+      expect(afterX[0], '甲 is the first sibling and cannot indent').toBe(beforeX[0]);
       await expect
         .poll(async () => {
           const res = await api.call('/api/export/exportMdContent', { id: docId });
           return String((res.data as { content?: string })?.content ?? '');
-        }, { message: 'indented rows must nest in the document, not only on screen', timeout: 15_000 })
-        .toMatch(/- 甲\s*\n\s+- /);
+        }, { message: 'the indented row must nest in the document, not only on screen', timeout: 15_000 })
+        .toMatch(/- 甲[\s\S]*\n\s+- 乙/);
     } finally {
       if (docId) await removeDoc(api, docId);
       await api.dispose();

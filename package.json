@@ -16,6 +16,7 @@
     "language": "python3 scripts/audit-language.py",
     "i18n": "python3 scripts/check-i18n-keys.py",
     "dead-props": "npx tsx scripts/check-dead-props.ts",
+    "unreachable-modules": "npx tsx scripts/check-unreachable-modules.ts",
     "privacy": "python3 scripts/audit-privacy.py",
     "redproof": "python3 scripts/redproof.py",
     "timings": "python3 scripts/script_log.py --report",

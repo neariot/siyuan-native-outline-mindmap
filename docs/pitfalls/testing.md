@@ -1188,3 +1188,39 @@ value" satisfies it and the pair is what makes it specific.
 - **`AGENTS.md` §7 already says this** ("before believing a red-proof, check the mutation is the one the
   criterion reads"). The trap is that here it was *my own* mutation and my own criterion, and the criterion was
   the thing that was blind —— which is why the red proof is not a formality to run after the test looks right.
+
+---
+
+## A new assertion about a no-op: selecting a row and its own child
+
+**Symptom.** A case for "batch indent moves the selected rows down one level" went red on a **correct**
+product, with the most convincing possible numbers: `Expected: > 876 / Received: 876` —— the x coordinate
+did not move by a single pixel, on both rows, on every run. It looked like indent had stopped working.
+
+**Cause.** the probe selected the **wrong rows**. The fixture is `甲 > 节点一` and `乙 > 节点八`, so the DOM
+order is 甲(0), 节点一(1), 乙(2), 节点八(3). Selecting rows **0 and 1** picks 甲 and *its own child* 节点一,
+and `topLevelSelected` correctly filters the descendant out (`indent.test.ts` pins exactly this: "when an
+ancestor is selected, its descendants are filtered out"). The selection therefore reduces to **甲 alone**,
+which is the **first sibling** and has no previous sibling to attach to —— so indent is a legitimate no-op,
+and `indentNodes` returns `0`.
+
+The measurement was honest; the question was wrong. Both symptoms of a real defect (nothing moved) and of a
+correct no-op (nothing *should* move) are the same number.
+
+**Practice.**
+
+- **Read the selection as the product reads it.** `topLevelSelected` is the thing that decides what indent
+  acts on; asking it (or reading its unit test) costs seconds and turns "indent is broken" into "this
+  selection cannot indent".
+- **Pick rows that are siblings**, and say in the comment why those rows: rows 0 and 2 are 甲 and 乙, so 乙
+  indents under 甲 while 甲 cannot —— the staircase the case is about. A case that names its rows by *role*
+  rather than by index is the one that survives the fixture changing.
+- **Assert the row that moves, and the row that must not.** `afterX[2] > beforeX[2]` (乙 indents) beside
+  `afterX[0] === beforeX[0]` (甲 is first and cannot) —— the second half is what makes a no-op
+  distinguishable from a fix.
+- ★ **A measurement that says "broken" is a claim about the probe as much as about the product.** This is
+  the same shape as the drag-zone probe above, the mind map's descent bug, and the dock helper: five times
+  now the criterion was wrong and the product was fine. Here it was worse —— the wrong criterion was added
+  *to an existing green case*, so it converted a working case into a red one, and the red run then cost a
+  stashed-baseline comparison to attribute. **Before adding an assertion to a passing case, ask what the
+  case's inputs actually are.**
