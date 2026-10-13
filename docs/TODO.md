@@ -11,11 +11,16 @@ being done, by being refuted in writing (with the reasoning, below), or by being
 ## Now
 
 Ordered by what a user would notice. These are verified against the code as it stands, not copied from a
-report. **Nothing is queued here right now** —— the five defects that stood here are all resolved (below),
-and the next work is the tooling gaps and the modularity list, which are the honest "what is left".
+report. **Nothing is queued here right now** —— the five defects that stood here are all resolved (below).
 
 The list is kept, empty, on purpose: the next defect that survives verification goes at the top, and an empty
 section is a fact worth stating rather than a section to delete and re-invent.
+
+★ **The two other queues are empty too, as of this pass**: "Known gaps in our own tooling" is entirely
+resolved (every entry struck or **done**), and the audit queue holds **0 open** of 193 entries. What remains
+is the **Modularity** list, which is a refactor programme rather than a defect queue —— its own text says
+each candidate is taken "the next time either file is touched" —— and the two items "Deferred on purpose"
+records with their reasons. Neither is work somebody should start because a list looked non-empty.
 
 **Resolved, verified, and removed from the queue (numbering pass + audit finding, measured):**
 
