@@ -442,9 +442,12 @@ duplication rather than moving lines.
     write-back ordering rules in `mount.ts`.
   - **The id-`Set` collector** —— two copies (`mount.ts` baseline ids, `store.ts` alive ids). Small, but
     the same shape; fold it in the next time either file is touched.
-  - **The state-carrying walks** (`store.ts:2027` carries `parentId`, `Outliner.tsx:1758` carries `depth`,
-    `core/layout.ts:954` builds a string). These are *not* the same function, so they stay until a third
-    caller wants the same extra state —— then the shared version takes the state as a callback.
+  - **The state-carrying walks** (`store.ts`'s `collect` in the move planner carries `parentId`,
+    `Outliner.tsx`'s `walk` in the export carries `depth`, `core/layout.ts`'s label builder builds a
+    string). These are *not* the same function, so they stay until a third caller wants the same extra
+    state —— then the shared version takes the state as a callback.
+    ★ Named by **symbol**, not by line: this entry used to say `store.ts:2027`, which pointed at an
+    unrelated block once the file grew.
 
 - **Done: the shared escape/decode module.** Five site-local variants across three files; consolidating
   them exposed a real defect —— `model/tree.ts` decoded `&amp;` before the entities it can create, so a
