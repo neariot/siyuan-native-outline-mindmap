@@ -253,6 +253,17 @@ GATES = [
         "why": "no shipped module is reachable only from its own tests without a recorded reason",
     },
     {
+        # ★ A version constant is a claim about **upstream**, and it was wrong: the marker API was
+        #   written as 3.1.0 and is actually v3.6.4, which decides whether the native call is even
+        #   attempted. Measured against the **official release tags**, read one file at a time out of
+        #   the clone (`git cat-file --batch`, ~0.03s for all 91) —— no checkout, no release download,
+        #   no kernel run. Skips with a stated reason when SIYUAN_SRC is unset.
+        "name": "version-floor",
+        "command": "python3 scripts/check-version-floor.py",
+        "why": "minAppVersion and the version constants agree with the official release tags",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-version-floor.py").is_file(),
+    },
+    {
         # Section 1's "never hardcode machine absolute paths". It was a rule enforced by remembering to look,
         # which is why an audit entry once claimed `.env.example` held a machine path and nothing could check
         # it either way. The tool prints how many lines it skipped as its own literal cases, and says what it

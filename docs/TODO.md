@@ -130,6 +130,15 @@ section is a fact worth stating rather than a section to delete and re-invent.
   the first sibling —— indent is then a legitimate no-op, so the assertion failed on a correct product.
   Fixed to select siblings (rows 0,2) and to assert both the row that moves and the row that must not;
   outline suite 26/26 green. Recorded in `docs/pitfalls/testing.md`.
+- **Version floor measured against official release tags (`check-version-floor.py`).** Two claims about
+  upstream were wrong and nothing checked them: `TASK_MARKER_API_MIN_VERSION` said `3.1.0` while
+  `/api/block/updateTaskListItemMarker` first appears in **v3.6.4**, and `minAppVersion` said `3.0.0`
+  while `renameDocByID` (v3.1.12) / `removeDocByID` (v3.1.14) are called unguarded. Both corrected;
+  the tool re-derives the floor from the tags, prints the full 21-endpoint × 91-release matrix, and
+  verifies the tags match the **official** repository (a fork's re-tag is not a release). Fast by
+  construction: one `git cat-file --batch` over `kernel/api/router.go` at every tag (~0.03s, 0.8s
+  total), no checkout, no release download, no kernel run. Red-proofed both ways (a stale constant,
+  and a removed guard declaration). In `npm run check`.
 - **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
   attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
   to `model/tree.ts` with all sites calling them.

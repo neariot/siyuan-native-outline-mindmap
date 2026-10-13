@@ -60,8 +60,21 @@ export function clearKernelVersionCache(): void {
   cachedKernelVersion = null;
 }
 
-/** The kernel release that introduced `/api/block/updateTaskListItemMarker`. */
-export const TASK_MARKER_API_MIN_VERSION = '3.1.0';
+/**
+ * The kernel release that introduced `/api/block/updateTaskListItemMarker`.
+ *
+ * ★ Measured against the **official** release tags (`git show <tag>:kernel/api/router.go`), not the
+ *   development checkout and not a fork: the route is absent in v3.6.2 / v3.6.3 and present from
+ *   **v3.6.4**. It was written as `3.1.0` from the plugin's own comment, and that was wrong by five
+ *   minor releases —— which matters because the value decides whether the native call is attempted
+ *   at all: a kernel in 3.1.0–3.6.3 was told "you have the endpoint", so every to-do toggle spent a
+ *   round trip on a 404 before taking the markdown path.
+ *
+ * ★★ The rule this encodes: a version constant is a **claim about upstream**, so it is measured
+ *    against upstream's released tags. `scripts/check-version-floor.py` re-derives it from the tags
+ *    on every run, so the number cannot drift back to a remembered value.
+ */
+export const TASK_MARKER_API_MIN_VERSION = '3.6.4';
 
 /**
  * Numeric version comparison: -1 / 0 / 1, or `null` when either side is not a dotted number.
