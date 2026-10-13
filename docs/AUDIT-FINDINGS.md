@@ -533,8 +533,8 @@ conclusion to draw from a complete-looking list of findings.
   children, and it belongs to the **outline's** menu —— `Mindmap.tsx` renders a menu with the same class
   names and no collapse entry, so a case written against the mind map found eight items on every node and
   would have proved nothing. The first attempt at the case did exactly that.
-- **low · test-quality** `src/plugin/paragraphs-ui.test.ts:52`  
-  The test that claims to lock down the attached-paragraph tooltip does not exercise the shipped renderer: it re-implements it and hardcodes catalogue text, and that copy has already drifted from the catalogue, so the check can stay green while the user-visible text is wrong.
+- ~~**low · test-quality** `src/plugin/paragraphs-ui.test.ts:52`~~ **duplicate of the medium entry above**
+  Same file, same claim (replica drift); covered by the same fix. Struck to keep one record.
 
 ### mindmap
 
