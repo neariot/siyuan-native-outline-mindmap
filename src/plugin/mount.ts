@@ -2288,6 +2288,10 @@ function OmTabApp({
         // For a later "mind map → SiYuan block" jump link
         void id;
       },
+      // ★ Export failures (PNG decode / over-large canvas) surface here instead of dying silent.
+      onError: (message: string) => {
+        showMessage(message, 5000, 'error');
+      },
     }),
   );
 }

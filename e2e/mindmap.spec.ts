@@ -932,8 +932,10 @@ test('the exported SVG embeds the plugin styles and its root node carries om-mm-
   });
 
   const dl = page.waitForEvent('download', { timeout: 30_000 });
-  await clickBarButton(page, '导出图片');
-  await dl;
+  // ★ Start waiting BEFORE the click, and await both together: creating the promise first and
+  //   awaiting it only after a failed click leaves an unhandled rejection 30s later on top of
+  //   the real error (same shape in the PNG case below).
+  await Promise.all([dl, clickBarButton(page, '导出图片')]);
 
   const svgs = await page.evaluate(() => (window as unknown as { __svgs?: string[] }).__svgs ?? []);
   expect(svgs.length, 'the exported SVG should be captured').toBeGreaterThan(0);
@@ -953,9 +955,12 @@ test('the exported SVG embeds the plugin styles and its root node carries om-mm-
 
 /** The exported PNG must be a valid image with content (guards against exporting a blank image). */
 test('the exported PNG is a valid image with content', async ({ page }) => {
-  const dl = page.waitForEvent('download', { timeout: 30_000 });
-  await clickBarButton(page, '导出图片');
-  const download = await dl;
+  // ★ Same Promise.all shape as the SVG case above: a failed click must reject the download
+  //   wait with it, not strand it into an unhandled rejection 30s later.
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30_000 }),
+    clickBarButton(page, '导出图片'),
+  ]);
   const path = await download.path();
   expect(path, 'the exported file should be obtained').toBeTruthy();
 

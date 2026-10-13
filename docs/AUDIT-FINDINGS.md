@@ -205,12 +205,14 @@ conclusion to draw from a complete-looking list of findings.
 
 ### mindmap
 
-- **medium · bug** `src/mindmap/Mindmap.tsx:1905`  
-  No context-menu close path gives focus back to .mm-canvas, so after any menu command (delete / focus this node / back to full map) the canvas keyboard — Tab, Enter, Delete, F2, Ctrl+Z — is dead until the user clicks a node again.
+- ~~**medium · bug** `src/mindmap/Mindmap.tsx:1905`~~ **already fixed before this pass**
+  Every context-menu close path calls `focusCanvas()` (`bc783d7`); keyboard E2E pins
+  `document.activeElement` after menu commands (`e2e/keyboard.spec.ts`).
 - **medium · fallback** `src/mindmap/Mindmap.tsx:654`  
   fit() substitutes the window size when the container measures 0 — the container→window stand-in this repository's own ledger calls its most repeated mistake (AGENTS 5.1 #2/#3: a path/size has exactly one legitimate source).
-- **medium · bug** `src/mindmap/Mindmap.tsx:553`  
-  The document title is interpolated raw into the root node's HTML, so a title containing < or > (plain text from blocks.content) is parsed as markup and the characters are lost in the root node and in the exported PNG.
+- ~~**medium · bug** `src/mindmap/Mindmap.tsx:553`~~ **already fixed before this pass**
+  The root title is escaped (`escapeHtml` at `Mindmap.tsx:574`); E2E pins `E2E-角度<T>-测试`
+  rendering exactly (`e2e/mindmap.spec.ts:1341`).
 - **medium · ux** `src/mindmap/Mindmap.tsx:273`  
   The per-document collapse state is keyed on the first node's id, so deleting or moving the first top-level node silently discards every collapsed branch of that document, and the abandoned keys are never cleaned up.
 
@@ -279,29 +281,33 @@ conclusion to draw from a complete-looking list of findings.
 
 - **medium · bug** `scripts/kernel-index-lag.py:119`  
   Probe blocks are deleted only on the happy path: both early returns - and any raised exception - leave the index_lag_probe_i paragraphs inside the target document.
-- **medium · bug** `scripts/kernel-mutation-throughput.py:131`  
-  `probe[i]` is indexed up to n-1 while `probe` may be shorter than n (failed inserts are filtered out), so a partial insert failure raises IndexError in the middle of the measurement.
+- ~~**medium · bug** `scripts/kernel-mutation-throughput.py:131`~~ **fixed**
+  Serial and concurrent loops indexed `probe[i]` to `n-1` while failed inserts shrink the list —
+  both now use `probe[i % len(probe)]`, matching the warm-up loop's existing guard.
 - **medium · language** `scripts/mindmap-shot.py:168`  
   The Chinese UI label the script matches on is hidden from the language gate by double escaping (a JS \u escape inside a Python string), so audit-language.py cannot report or excuse it - its 'no CJK text is unaccounted for' claim does not hold for this file.
-- **medium · bug** `scripts/mindmap-shot.py:62`  
-  The export injects a copy of the whole page stylesheet into the live <svg> element and never removes it, so the user's open page accumulates one extra <style> per run.
+- ~~**medium · bug** `scripts/mindmap-shot.py:62`~~ **fixed**
+  The injected `<style>` is removed from the live svg in a `finally` (plus blob-URL revocation);
+  verified by `node --check` on the extracted JS.
 - **medium · bug** `scripts/perf-probe.py:185`  
   The tab is opened with the deprecated fixed wait=120, which sleeps two minutes *after* the readiness condition has already been satisfied - pure waste on every run of a probe whose whole point is trustworthy timing.
 - ~~**medium · fallback** `scripts/perf-probe.py:182`~~ **fixed**
   The script assembled the build URL by hand with a `--port` override. Removed the flag; the URL
   now comes from `cfg.build_url()` like every other caller (verified: no remaining `--port`
   references outside an unrelated script's own flag).
-- **medium · bug** `scripts/record-demo.py:355`  
-  The 'a document id is required' guard is case-sensitive, so a missing --doc still builds '.../?id=None' and the recording starts against a page with no document instead of failing fast.
+- ~~**medium · bug** `scripts/record-demo.py:355`~~ **already fixed before this pass**
+  The guard tests the value (`if not doc and not args.url`), not a URL substring — the file's own
+  comment records both directions of the old mistake. Verified by read.
 - ~~**medium · bug** `scripts/record-demo.py:375`~~ **fixed**
   The repaint nudge timer and the screencast tab are now released in a `finally` (stop screencast,
   `NUDGE_OFF`, close — each guarded), so an exception inside the story cleans up instead of leaving
   a 12fps setInterval mutating the user's page after the script dies. The exception still propagates
   (a failed story must not build a video).
-- **medium · test-quality** `scripts/verify-live.py:389`  
-  An unrecognised selector argument runs no check at all and still reports a green run ('0/0 passed ✅', exit 0) - a typo in `npm run verify -- <name>` silently verifies nothing.
-- **medium · bug** `scripts/verify-live.py:307`  
-  To take a baseline the plugin's <style> block is emptied and restored outside any try/finally, so an exception or a None from tab.ev between the two calls leaves the user's live SiYuan page with all plugin CSS removed.
+- ~~**medium · test-quality** `scripts/verify-live.py:389`~~ **fixed**
+  Unknown check names now exit 2 with the valid list instead of reporting `0/0 passed ✅`.
+- ~~**medium · bug** `scripts/verify-live.py:307`~~ **fixed**
+  The style empty/measure/restore now runs in try/finally, so a failure restores the user's CSS
+  instead of leaving the page unstyled.
 
 ### siyuan
 
@@ -406,8 +412,9 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · fallback** `e2e/mindmap.spec.ts:61`  
   sidesByBranch identifies the root by 'the first node whose text does not start with a branch name' — not the criterion its own comment states — and the `?? info[0]` fallback hides a failed detection; it is correct today only because the layout happens to emit the root first.
-- **low · bug** `e2e/mindmap.spec.ts:888`  
-  The download promise is created before the click and left unawaited on the failure path, so a failed click becomes an unhandled rejection 30 s later on top of the real error (same shape in the PNG case).
+- ~~**low · bug** `e2e/mindmap.spec.ts:888`~~ **fixed**
+  Both download cases now `await Promise.all([waitForEvent, click])`, so a failed click rejects
+  the wait with it instead of stranding an unhandled rejection 30s later.
 - **low · test-quality** `e2e/outline.spec.ts:219`  
   The write-back probe queries the whole instance for a fixed marker, so any paragraph containing it anywhere satisfies the poll — including a temp document left behind by an earlier failed run — instead of the document under test.
 - **low · test-quality** `e2e/outline.spec.ts:107`  
@@ -478,10 +485,14 @@ conclusion to draw from a complete-looking list of findings.
   Stored preferences are cast to `Record<string, never>` instead of being validated, so any JSON in localStorage flows into structure/themeIdx/lineStyle/shape as if it had the declared type.
 - **low · dead-code** `src/mindmap/Mindmap.tsx:79`  
   The dark-mode probe also tests a `data-theme` attribute SiYuan never sets, in two places, and the MutationObserver watches for changes to it.
-- **low · bug** `src/mindmap/Mindmap.tsx:1621`  
-  The node's hover tooltip keeps zero-width-space-only paragraphs as blank lines, while the badge that lists the same paragraphs treats them as empty — the file's own "empty paragraph" rule is applied on one of the two paths.
-- **low · bug** `src/mindmap/Mindmap.tsx:968`  
-  A failed PNG export is silent: only img.onload is wired, so a decode failure (or a null toBlob, which is how an over-large canvas fails) produces no download and no message.
+- ~~**low · bug** `src/mindmap/Mindmap.tsx:1621`~~ **already fixed before this pass**
+  All four empty-paragraph paths strip `\u200b` before comparing (878, 1587, 1636, 1764) —
+  one rule on every path, verified by grep.
+- ~~**low · bug** `src/mindmap/Mindmap.tsx:968`~~ **fixed**
+  PNG export failures now report via an optional `onError` callback (null `toBlob` on over-large
+  canvas, `img.onerror`, missing 2d context), wired to `showMessage` in `mount.ts`; new `errExportPng`
+  key in both catalogues. A component-level toast would need new surface — the callback follows the
+  file's own optional-callback pattern and the dead-props gate covers it.
 - **low · dead-code** `src/mindmap/Mindmap.tsx:19`  
   The explicit re-export list is dead surface: nothing imports these names from this module, and `export * from '../core/layout'` on the line above already re-exports all of them.
 - **low · test-quality** `src/mindmap/structure-order.test.ts:192`  

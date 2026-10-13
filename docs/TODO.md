@@ -63,6 +63,12 @@ section is a fact worth stating rather than a section to delete and re-invent.
   misleading `plugin_dirs` docstring corrected; dead `test_build_url()` deleted; `verify-pkg.py`
   anchored at `__file__` (runs from `/tmp`); `perf-probe.py` `--port` removed in favour of
   `cfg.build_url()`.
+- **Second script batch.** Throughput probe indexes `probe[i % len]` in all three loops (was:
+  IndexError on partial insert failure); mindmap-shot removes its injected `<style>` in a `finally`
+  (+ blob-URL revocation); verify-live restores emptied CSS in try/finally and rejects unknown
+  check names with exit 2; PNG export failures report via `onError` → `showMessage` (new
+  `errExportPng` key); E2E download waits use `Promise.all`. Four more entries verified already
+  fixed (menu focus, title escape, doc guard, tooltip rule) and struck with evidence.
 
 **Resolved, verified, and removed from the queue:**
 

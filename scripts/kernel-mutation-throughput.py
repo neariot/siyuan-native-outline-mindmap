@@ -125,10 +125,13 @@ def _run(probe: list[str], n: int) -> int:
 
     print(f'\n  ── Serial vs concurrent ({n} blocks)')
     serial = []
+    # ★ Index modulo the blocks that actually exist: failed inserts are filtered out above, so
+    #   `probe` may be shorter than n — indexing it to n-1 raises IndexError mid-measurement
+    #   (the warm-up loop below already does `probe[i % len(probe)]` for the same reason).
     for _ in range(3):
         t0 = time.perf_counter()
         for i in range(n):
-            update(probe[i], f'serial_{i}')
+            update(probe[i % len(probe)], f'serial_{i}')
         serial.append((time.perf_counter() - t0) * 1000)
     s = p50(serial)
     print(f'     serial                   {s:7.1f} ms')
@@ -137,7 +140,7 @@ def _run(probe: list[str], n: int) -> int:
     for _ in range(3):
         t0 = time.perf_counter()
         with ThreadPoolExecutor(8) as ex:
-            list(ex.map(lambda i: update(probe[i], f'concurrent_{i}'), range(n)))
+            list(ex.map(lambda i: update(probe[i % len(probe)], f'concurrent_{i}'), range(n)))
         conc.append((time.perf_counter() - t0) * 1000)
     c = p50(conc)
     print(f'     concurrent, 8 threads     {c:7.1f} ms')

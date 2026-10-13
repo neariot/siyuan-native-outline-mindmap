@@ -60,6 +60,7 @@ EXPORT_JS = r"""
   const st = document.createElementNS('http://www.w3.org/2000/svg', 'style');
   st.textContent = css;
   svg.insertBefore(st, svg.firstChild);
+  try {
 
   const bb = g.getBBox();                    // ← ask g for the union, not a walk over the children
   const pad = 28;
@@ -92,7 +93,14 @@ EXPORT_JS = r"""
   const bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
   ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.scale(S, S); ctx.drawImage(img, 0, 0, W, H);
-  return cv.toDataURL('image/png');
+  const out = cv.toDataURL('image/png');
+  } finally {
+    // ★ The injected <style> served the clone only — remove it from the LIVE page on every path,
+    //   or each run accumulates one extra <style> in the user's open svg. Same for the blob URL.
+    if (typeof url !== 'undefined' && url) { try { URL.revokeObjectURL(url); } catch (e) {} }
+    if (st.parentNode) st.parentNode.removeChild(st);
+  }
+  return typeof out !== 'undefined' ? out : null;
 })()
 """
 

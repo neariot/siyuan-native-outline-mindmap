@@ -126,6 +126,7 @@ export default function Mindmap({
   onExtractSubDoc,
   onDropBlocks,
   onReparent,
+  onError,
 }: {
   nodes: OutlineNode[];
   title: string;
@@ -221,6 +222,11 @@ export default function Mindmap({
    *   showed no change at all).
    */
   onReparent?: (nodeIds: string[], targetId: string) => void;
+  /**
+   * Report a user-visible failure (e.g. PNG export decode failure). Optional like every other
+   * callback: the component itself shows no toast, the caller decides how to surface it.
+   */
+  onError?: (message: string) => void;
 }) {
   // ★★★ Mind-map preferences must survive **switching views / refreshing** (fix).
   //
@@ -960,6 +966,7 @@ export default function Mindmap({
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         URL.revokeObjectURL(url);
+        onError?.(t('errExportPng'));
         return;
       }
       ctx.fillStyle = theme.bg;
@@ -968,7 +975,11 @@ export default function Mindmap({
       ctx.drawImage(img, 0, 0, W, H);
       URL.revokeObjectURL(url);
       canvas.toBlob((b) => {
-        if (!b) return;
+        if (!b) {
+          // toBlob yields null on an over-large canvas — report instead of silently producing nothing.
+          onError?.(t('errExportPng'));
+          return;
+        }
         const a = document.createElement('a');
         a.href = URL.createObjectURL(b);
         a.download = `${title || 'mindmap'}.png`;
@@ -977,6 +988,7 @@ export default function Mindmap({
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
+      onError?.(t('errExportPng'));
     };
     img.src = url;
   };

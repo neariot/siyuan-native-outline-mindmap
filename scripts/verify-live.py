@@ -390,11 +390,14 @@ def run_host_isolation(tab):
 
     tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
            " s.dataset.__omSaved=s.textContent; s.textContent=''; })()")
-    time.sleep(1.2)
-    before = json.loads(tab.ev(snip))
-
-    tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
-           " s.textContent=s.dataset.__omSaved||''; })()")
+    try:
+        time.sleep(1.2)
+        before = json.loads(tab.ev(snip))
+    finally:
+        # ★ Restore on every path: an exception (or a None from tab.ev) between empty and
+        #   restore used to leave the user's live page with all plugin CSS removed.
+        tab.ev(f"(() => {{ const s=document.querySelectorAll('style')[{idx}];"
+               " s.textContent=s.dataset.__omSaved||''; })()")
     time.sleep(1.2)
     after = json.loads(tab.ev(snip))
 
@@ -461,6 +464,13 @@ def main():
     n = close_stale_tabs()
     if n:
         print(f"cleaned up {n} stale tabs")
+
+    # ★ Reject an unrecognised check name: it used to run zero checks and still report
+    #   '0/0 passed ✅' with exit 0, so a typo in `npm run verify -- <name>` silently verified nothing.
+    known = {"all", "css", "resize", "color", "host", "theme"}
+    if args.which not in known:
+        print(f"unknown check {args.which!r} (choose from: {', '.join(sorted(known))})", file=sys.stderr)
+        return 2
 
     url = cfg.build_url("desktop", doc)
     print(f"opening {url}")

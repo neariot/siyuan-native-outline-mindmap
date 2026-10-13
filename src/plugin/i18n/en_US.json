@@ -35,6 +35,7 @@
   "errCreateSubDocFailed": "Failed to create sub-document",
   "errDeleteNotWritten": "The deletion could not be written to SiYuan",
   "errDroppedBlocksNoText": "The dropped blocks contain no readable text",
+  "errExportPng": "PNG export failed (the image could not be rendered)",
   "errImageClientNotReady": "The SiYuan client is not ready yet; the image cannot be saved",
   "errInsertMirror": "Failed to insert mirror block: {msg}",
   "errJumpFailed": "Jump failed: {msg}",

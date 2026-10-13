@@ -35,6 +35,7 @@
   "errCreateSubDocFailed": "子文档创建失败",
   "errDeleteNotWritten": "删除未能写入思源",
   "errDroppedBlocksNoText": "拖入的块没有可读文本",
+  "errExportPng": "PNG 导出失败（图片未能渲染）",
   "errImageClientNotReady": "思源客户端尚未就绪，无法保存图片",
   "errInsertMirror": "插入镜像块失败：{msg}",
   "errJumpFailed": "跳转失败：{msg}",
