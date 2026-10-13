@@ -150,12 +150,27 @@ class Recorder:
         while True:
             r = json.loads(self.ws.recv())
             if r.get('id') == self.mid:
-                return r.get('result', {})
+                # ★ Same contract as scripts/cdp.py: a CDP-level error raises, never dissolves
+                #   into {} where callers would read it as empty data.
+                if 'error' in r:
+                    raise RuntimeError(f"CDP {method} failed: {r['error']}")
+                # ★ Carry a JS-side exception on the result (see cdp.py): `ev` reads only the
+                #   result dict, so top-level exceptionDetails would otherwise be stripped here.
+                res = r.get('result', {})
+                if 'exceptionDetails' in r and isinstance(res, dict):
+                    res = dict(res, exceptionDetails=r['exceptionDetails'])
+                return res
 
     def ev(self, expr):
-        return self.send("Runtime.evaluate",
-                         {"expression": expr, "returnByValue": True,
-                          "awaitPromise": True}).get('result', {}).get('value')
+        res = self.send("Runtime.evaluate",
+                        {"expression": expr, "returnByValue": True,
+                         "awaitPromise": True})
+        # ★ Same contract as scripts/cdp.py: a JS exception raises, never dissolves into None.
+        if 'exceptionDetails' in res:
+            text = res['exceptionDetails'].get('text', '')
+            desc = ((res.get('result') or {}).get('description') or '')
+            raise RuntimeError(f"JS evaluation failed [{text}]: {desc or expr[:120]}")
+        return res.get('result', {}).get('value')
 
     def rect(self, sel, nth=0):
         return self.ev(f"""(()=>{{

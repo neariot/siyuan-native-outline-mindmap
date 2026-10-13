@@ -167,20 +167,43 @@ class Tab:
 
     # ---- Low level ----
     def send(self, method, params=None):
-        """Send one CDP command and wait for its response (matched by id, skipping event pushes)."""
+        """Send one CDP command and wait for its response (matched by id, skipping event pushes).
+
+        ★ A CDP-level `error` member **raises** instead of dissolving into `{}`: an invalid call
+        used to come back as an empty dict, indistinguishable from a result that really is empty,
+        so caller sentinel checks passed on a broken probe.
+        """
         self._mid += 1
         self.ws.send(json.dumps({"id": self._mid, "method": method,
                                  "params": params or {}}))
         while True:
             r = json.loads(self.ws.recv())
             if r.get("id") == self._mid:
-                return r.get("result", {})
+                if "error" in r:
+                    raise RuntimeError(f"CDP {method} failed: {r['error']}")
+                # ★ Carry a JS-side exception on the result: `ev` reads only the result dict,
+                #   so exceptionDetails at the reply top level would otherwise be stripped here
+                #   and dissolve into None there. Surfacing it keeps one failure path, not two.
+                res = r.get("result", {})
+                if "exceptionDetails" in r and isinstance(res, dict):
+                    res = dict(res, exceptionDetails=r["exceptionDetails"])
+                return res
 
     def ev(self, expr):
-        """Evaluate in the page, returning the JS value (await supported)."""
-        return self.send("Runtime.evaluate", {
+        """Evaluate in the page, returning the JS value (await supported).
+
+        ★ A JS-side `exceptionDetails` **raises** instead of dissolving into None: an exception in
+        the probe used to come back exactly like a value that really is null, so `wait_for` polled
+        a broken expression until timeout and callers read None as data.
+        """
+        res = self.send("Runtime.evaluate", {
             "expression": expr, "returnByValue": True, "awaitPromise": True,
-        }).get("result", {}).get("value")
+        })
+        if "exceptionDetails" in res:
+            text = res["exceptionDetails"].get("text", "")
+            desc = ((res.get("result") or {}).get("description") or "")
+            raise RuntimeError(f"JS evaluation failed [{text}]: {desc or expr[:120]}")
+        return res.get("result", {}).get("value")
 
     def shot(self, path):
         """Screenshot into path (PNG)."""
@@ -234,3 +257,84 @@ class Tab:
     def __exit__(self, *exc):
         self.close()
         return False
+
+
+def selftest() -> int:
+    """Regression test: CDP errors and JS exceptions must raise, never dissolve into empty data.
+
+    Runs offline with a fake websocket — no browser needed. Each case feeds one canned CDP
+    response and asserts the outcome, so a reverted `send`/`ev` turns red instead of silently
+    passing callers None-as-data again.
+    """
+    import sys as _sys
+
+    class FakeWS:
+        def __init__(self, replies):
+            self.replies = list(replies)
+            self.sent = []
+
+        def send(self, payload):
+            self.sent.append(json.loads(payload))
+
+        def recv(self):
+            return json.dumps(self.replies.pop(0))
+
+        def close(self):
+            pass
+
+    def tab_with(reply):
+        t = Tab.__new__(Tab)
+        t._mid = 0
+        t.ws = FakeWS([reply])
+        return t
+
+    failures = []
+
+    def check(name, fn, want_raise=None, want=None):
+        try:
+            got = fn()
+        except Exception as e:  # noqa: BLE001
+            if want_raise and want_raise in type(e).__name__:
+                print(f"  ok: {name} (raised {type(e).__name__})")
+            else:
+                failures.append(name)
+                print(f"  FAIL: {name} raised unexpected {type(e).__name__}: {e}")
+            return
+        if want_raise:
+            failures.append(name)
+            print(f"  FAIL: {name} should have raised {want_raise}, returned {got!r}")
+        elif got == want:
+            print(f"  ok: {name}")
+        else:
+            failures.append(name)
+            print(f"  FAIL: {name}: got {got!r}, want {want!r}")
+
+    mid = 1
+    check("a CDP error member raises RuntimeError",
+          lambda: tab_with({"id": mid, "error": {"code": -32602, "message": "No such method"}}).send("Nope.nope"),
+          want_raise="RuntimeError")
+    check("a clean CDP result still returns",
+          lambda: tab_with({"id": mid, "result": {"data": "eA=="}}).send("Page.captureScreenshot"),
+          want={"data": "eA=="})
+    check("a JS exception raises RuntimeError (not None-as-data)",
+          lambda: tab_with({"id": mid, "result": {}, "exceptionDetails": {"text": "TypeError"}}).ev("null.x"),
+          want_raise="RuntimeError")
+    check("a null JS value still returns None (the legitimate case)",
+          lambda: tab_with({"id": mid, "result": {"result": {"type": "object", "subtype": "null", "value": None}}}).ev("null"),
+          want=None)
+    check("a real JS value still returns",
+          lambda: tab_with({"id": mid, "result": {"result": {"type": "number", "value": 3}}}).ev("1+2"),
+          want=3)
+
+    if failures:
+        print(f"cdp --selftest: {len(failures)} case(s) failed")
+        return 1
+    print("cdp --selftest: all cases pass")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys as _sys2
+    if "--selftest" in _sys2.argv:
+        _sys2.exit(selftest())
+    print("usage: python3 scripts/cdp.py --selftest  (offline regression test, no browser needed)")

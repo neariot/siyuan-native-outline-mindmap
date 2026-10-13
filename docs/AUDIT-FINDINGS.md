@@ -260,8 +260,12 @@ conclusion to draw from a complete-looking list of findings.
 
 ### scripts-infra
 
-- **medium · bug** `scripts/cdp.py:176`  
-  send() discards the CDP `error` member and ev() discards `exceptionDetails`, so an invalid CDP call or a JS exception in the probe comes back as None -- indistinguishable from a value that really is null -- which makes caller sentinel checks pass on a broken probe.
+- ~~**medium · bug** `scripts/cdp.py:176`~~ **fixed**
+  `send()` discarded the CDP `error` member and `ev()` discarded `exceptionDetails`. Fixed in
+  both `scripts/cdp.py` and the `record-demo.py` copy: CDP errors raise `RuntimeError`, and the
+  exception is carried on the result dict (the real CDP shape puts `exceptionDetails` top-level,
+  which `ev` would otherwise strip before seeing it — caught by the selftest, not by reasoning).
+  Pinned by `python3 scripts/cdp.py --selftest` (5 cases, fake websocket, no browser).
 - **medium · bug** `scripts/env.py:69`  
   A quoted value followed by an inline comment keeps its quote characters, so the configured path is silently wrong -- the exact silent-wrong-target failure AGENTS 5.1 forbids -- while the docstring claims quotes and comments are supported.
 - **medium · dead-code** `scripts/env.py:160`  

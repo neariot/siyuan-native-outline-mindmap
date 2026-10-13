@@ -51,6 +51,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
   mismatch died with the summary feature (`9d06fda`); catalogue key sets are identical and a
   same-class scan is clean. The neighbouring literal-tooltip finding on the same lines was live
   (`title="Emoji"`), fixed with `tipEmoji` in both catalogues.
+- **CDP errors dissolved into empty data.** `send()` dropped the CDP `error` member and `ev()`
+  dropped `exceptionDetails` (in `cdp.py` and the `record-demo.py` copy), so broken probes passed
+  caller sentinel checks as None. Both now raise; pinned by `cdp.py --selftest`.
 
 **Resolved, verified, and removed from the queue:**
 
