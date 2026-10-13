@@ -99,6 +99,8 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Assertion batch.** Twelve test-quality findings: stripped-text assertions, per-invariant
   accumulators, scoped probes, finally-cleanup, taskbox-only checks, throwing cleanup, swatch
   guards, post-expiry coverage, corrupt-vs-missing keymaps.
+- **Label-scope fix.** structure-order distinctness reads the five asserted labels, not the whole
+  parsed set (eight options) or the test literal — red-proofed.
 - **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
   attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
   to `model/tree.ts` with all sites calling them.
