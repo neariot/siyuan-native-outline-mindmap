@@ -96,6 +96,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
 - **Gate-port batch.** CSS scope gate ported to postcss (brace-in-string divergence demonstrated;
   same 305/305 on the real build); interactions fit case fails on empty measurement; stale-mapping
   entry verified already gone.
+- **Assertion batch.** Twelve test-quality findings: stripped-text assertions, per-invariant
+  accumulators, scoped probes, finally-cleanup, taskbox-only checks, throwing cleanup, swatch
+  guards, post-expiry coverage, corrupt-vs-missing keymaps.
 - **Copy-paste test batch.** Echo test imports the real measure (pasted copy had drifted);
   attribute-stub checks deleted (unfailable by construction); paragraph display helpers extracted
   to `model/tree.ts` with all sites calling them.
