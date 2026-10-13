@@ -4,7 +4,7 @@
   "private": true,
   "description": "A SiYuan plugin that edits native SiYuan blocks through outline / mindmap views: single source of data, no private copy, no custom attributes",
   "scripts": {
-    "build": "rsbuild build && python3 scripts/verify-css-scope.py",
+    "build": "rsbuild build && node scripts/verify-css-scope.mjs",
     "test": "python3 scripts/run-tests.py",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
@@ -22,7 +22,7 @@
     "package": "npm run build && cd dist-plugin && zip -r ../package.zip . -x '.*' && cd .. && npm run verify-css && npm run verify-pkg",
     "verify-pkg": "python3 scripts/verify-pkg.py",
     "deploy": "python3 scripts/deploy.py",
-    "verify-css": "python3 scripts/verify-css-scope.py",
+    "verify-css": "node scripts/verify-css-scope.mjs",
     "snapshot-keymap": "python3 scripts/snapshot-keymap.py",
     "test:e2e": "python3 scripts/run-e2e.py",
     "test:e2e:ui": "python3 scripts/run-e2e.py --ui",

@@ -277,7 +277,7 @@ GATES = [
     },
     {
         "name": "css-scope",
-        "command": "python3 scripts/verify-css-scope.py",
+        "command": "node scripts/verify-css-scope.mjs",
         "why": "no unscoped bare selector survived the build",
         "requires": lambda: (REPO_ROOT / "dist-plugin" / "index.css").is_file(),
     },

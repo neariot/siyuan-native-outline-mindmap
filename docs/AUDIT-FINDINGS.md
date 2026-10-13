@@ -267,8 +267,11 @@ conclusion to draw from a complete-looking list of findings.
   The selftest case named 'the same id in product code is not excused' does not test the excusal boundary at all: it asserts that src/siyuan/store.ts contains no id-shaped literal, which is true both when the file is missing (read_lines returns []) and when the excusal rule is deleted - and the `product` result it computes is thrown away.
 - **medium · test-quality** `scripts/check-docs-index.py:36`  
   Range expansion never fires: LONG_RANGE expects '1.1-1.10' inside ONE backtick span, but docs/PITFALLS.md writes ranges as `1.1`-`1.10` (the en dash between two spans), so expand() only ever sees the two endpoints and the middle of every advertised numeric range is never verified.
-- **medium · test-quality** `scripts/verify-css-scope.py:50`  
-  The release gate that forbids unscoped selectors parses CSS with a regex comment stripper plus a brace counter, so a '/*' or a '{' inside a CSS string can delete real rules from the input (an unscoped selector then passes) or invent a selector that is not one - the hand-rolled analysis AGENTS.md section 7 forbids, where postcss is already a devDependency.
+- ~~**medium · test-quality** `scripts/verify-css-scope.py:50`~~ **fixed by port**
+  The gate is now `scripts/verify-css-scope.mjs`, parsing with postcss (the parser the build
+  already uses) instead of a regex comment stripper + brace counter. Demonstrated: a `{` inside a
+  CSS string invents a 4th selector under the old parser while postcss counts 3. Same verdicts on
+  the real build (305/305 both); `build`, `verify-css`, and `check` all call the .mjs.
 
 ### scripts-infra
 
