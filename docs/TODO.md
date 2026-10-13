@@ -93,6 +93,9 @@ section is a fact worth stating rather than a section to delete and re-invent.
   in try/finally, theme state captured and restored (stylesheet + attribute + modeOS); keymap
   snapshot prefers built-in defaults; deleted the uninvoked verify-host-style duplicate; five more
   entries verified already fixed and struck.
+- **Gate-port batch.** CSS scope gate ported to postcss (brace-in-string divergence demonstrated;
+  same 305/305 on the real build); interactions fit case fails on empty measurement; stale-mapping
+  entry verified already gone.
 
 **Resolved, verified, and removed from the queue:**
 
