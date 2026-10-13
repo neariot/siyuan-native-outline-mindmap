@@ -77,10 +77,12 @@ def main():
         print("tsx is missing, run npm install first")
         return 1
 
-    # --test-concurrency=1: the tests share paths such as .tmp, so serial is more stable
+    # --test-concurrency=1: the tests share paths such as .tmp, so serial is more stable.
+    # ★ Watch mode keeps it too: dropping the flag here reintroduces exactly the concurrency
+    #   the normal mode avoids (the comment above is the reason, not decoration).
     cmd = [TSX, "--test", "--test-concurrency=1"] + tests
     if watch:
-        cmd = [TSX, "watch", "--test"] + tests
+        cmd = [TSX, "watch", "--test", "--test-concurrency=1"] + tests
 
     print(f"Running {len(tests)} test suites" + (" (watch)" if watch else "") + "\n")
     return subprocess.run(cmd, cwd=ROOT).returncode

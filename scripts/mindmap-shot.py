@@ -133,17 +133,34 @@ def _connect(prefer_mindmap: bool = True):
         sys.exit("No open SiYuan page found —— open a SiYuan window by hand first.")
 
     fallback = None
+    opened = []  # every probed connection, so rejects can be closed instead of leaked
     for t in pages:
         try:
             conn = create_connection(t["webSocketDebuggerUrl"], timeout=30)
         except Exception:
             continue
+        opened.append(conn)
         try:
             if _probe(conn, "!!document.querySelector('.mm-canvas')"):
+                # ★ Close the rejects: every probed tab that is NOT picked used to leak its
+                #   websocket, accumulating connections against the CDP endpoint run after run.
+                for c in opened:
+                    if c is not conn:
+                        try:
+                            c.close()
+                        except Exception:
+                            pass
                 return conn
         except Exception:
             pass
         fallback = fallback or conn
+    # ★ Same cleanup on the fallback path: keep one, close the rest.
+    for c in opened:
+        if c is not fallback:
+            try:
+                c.close()
+            except Exception:
+                pass
     return fallback
 
 

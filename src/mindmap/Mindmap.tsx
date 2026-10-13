@@ -17,21 +17,6 @@ import { t } from '../plugin/i18n';
 const SUMMARY_WRAP_W = 220;
 
 export * from '../core/layout';
-export {
-  normalizeShape,
-  MM_SHAPE_LABELS,
-  MM_THEMES,
-  MM_BRANCH_PALETTES,
-  layoutOrg,
-  layoutHorizontal,
-  edgePath,
-  exportFreemind,
-  label,
-  widthOf,
-  calcSplitIndex,
-  LINE_HEIGHT,
-  wrapForWidth,
-} from '../core/layout';
 export type {
   MmStructure,
   MmLineStyle,

@@ -44,29 +44,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import script_log  # noqa: E402
 from env import cfg  # noqa: E402
 
-"""Record plugin operation demos (desktop).
-
-★★ Two key pitfalls (each hit once):
-
-1. **Interaction must use CDP's `Input.dispatchMouseEvent` (real mouse events).**
-   Events synthesized by JS `dispatchEvent` cannot enter React's synthetic event system —— the click does nothing.
-   Otherwise not one of the 9 actions takes effect.
-
-2. **You must actively produce repaints, or the screencast emits no frames.**
-   `Page.startScreencast` only emits frames when the page **repaints**; when purely static, 2 seconds yield only 4 frames.
-   The approach that measured effective: keep changing a useless CSS variable on `document.documentElement`
-   (`--om-rec-nudge`), through `requestAnimationFrame`,
-   which pulls the frame rate from ~2fps up to ~27fps. Neither the plugin nor SiYuan uses this variable; it is a pure side effect.
-
-There is no real desktop on this machine (DISPLAY is empty), and the browser runs on headless Chromium,
-so the CDP route is the only option.
-"""
 import base64
 import json
-import os
 import subprocess
-import time
-import urllib.request
 
 import websocket
 

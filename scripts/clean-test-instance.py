@@ -30,7 +30,7 @@ Deletion goes through `/api/filetree/removeDocByID` (the older `removeDoc` panic
 
 SiYuan keeps its open and recently-closed tabs in `<workspace>/data/storage/local.json`, and that file
 survives the document. A stale entry is not inert: on the next page load the kernel is asked for the
-block, answers `未找到 ID 为 … 的内容块`, and the workspace opens the **empty splash instead of a document**
+missing block and the workspace opens the **empty splash instead of a document**
 —— so the next E2E case fails somewhere else entirely (measured: a case that counts rows failed with
 "0 < 0", and the screenshot showed the splash plus the toast). This script therefore prunes the dangling
 references too, which needs the kernel stopped: it holds that file in memory and would write its own copy

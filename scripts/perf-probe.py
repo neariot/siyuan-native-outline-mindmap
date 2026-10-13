@@ -37,7 +37,9 @@ import os
 import sys
 import time
 
-sys.path.insert(0, 'scripts')
+# ★ Importable from anywhere: resolve the scripts dir from this file, not the cwd
+#   (sys.path.insert(0, 'scripts') dies with ModuleNotFoundError outside the repo root).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cdp import Tab, close_stale_tabs  # noqa: E402
 from env import cfg  # noqa: E402

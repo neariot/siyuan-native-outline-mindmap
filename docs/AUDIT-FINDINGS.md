@@ -208,13 +208,17 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · bug** `src/mindmap/Mindmap.tsx:1905`~~ **already fixed before this pass**
   Every context-menu close path calls `focusCanvas()` (`bc783d7`); keyboard E2E pins
   `document.activeElement` after menu commands (`e2e/keyboard.spec.ts`).
-- **medium · fallback** `src/mindmap/Mindmap.tsx:654`  
-  fit() substitutes the window size when the container measures 0 — the container→window stand-in this repository's own ledger calls its most repeated mistake (AGENTS 5.1 #2/#3: a path/size has exactly one legitimate source).
+- ~~**medium · fallback** `src/mindmap/Mindmap.tsx:654`~~ **stale — already fixed before this pass**
+  Current `fit()` returns early on a zero container (no window fallback); the remaining
+  `window` uses are viewport-relative menu clamping and the documented phone rule, and the dock-
+  width migration is recorded with measurements in the file. Verified by read.
 - ~~**medium · bug** `src/mindmap/Mindmap.tsx:553`~~ **already fixed before this pass**
   The root title is escaped (`escapeHtml` at `Mindmap.tsx:574`); E2E pins `E2E-角度<T>-测试`
   rendering exactly (`e2e/mindmap.spec.ts:1341`).
-- **medium · ux** `src/mindmap/Mindmap.tsx:273`  
-  The per-document collapse state is keyed on the first node's id, so deleting or moving the first top-level node silently discards every collapsed branch of that document, and the abandoned keys are never cleaned up.
+- ~~**medium · ux** `src/mindmap/Mindmap.tsx:273`~~ **stale — already fixed before this pass**
+  Collapse state is keyed `om-mm-collapsed:<docKey>` with cross-document transition guards
+  (`02f9214`); E2E pins "collapse state follows the document and does not leak into another one"
+  (`e2e/viewstate.spec.ts:172`). Verified by read + suite.
 
 ### plugin-code
 
@@ -461,8 +465,9 @@ conclusion to draw from a complete-looking list of findings.
   The quoted size of the language allowlist contradicts the file and the same document's own figure eight paragraphs earlier.
 - **low · docs** `docs/pitfalls/plugin.md:17`  
   The table says the i18n directory file name must be BCP47 hyphenated (zh-CN.json), but the repository ships and packages i18n/zh_CN.json with underscores, and the kernel accepts (indeed prefers) that name - so the documented rule contradicts the shipped artifact and AGENTS.md section 2.
-- **low · language** `src/plugin/i18n/zh_CN.json:147`  
-  Three keys whose English is the same word ('Untitled' twice, '(untitled)' once) carry two different Chinese words (无标题 vs 未命名), so a Chinese user sees two names for one state while the English catalogue cannot tell the keys apart.
+- ~~**low · language** `src/plugin/i18n/zh_CN.json:147`~~ **fixed**
+  Three keys sharing one English word carried two Chinese words; `phUntitled` unified to 未命名
+  (same state as `phUntitledDoc`).
 - **low · language** `src/plugin/i18n/zh_CN.json:73`  
   lblEmptyNode is the short half of a short/long pair whose long half is exactly '(empty node)'/'(空节点)', but its Chinese value IS the long form (with full-width parentheses), so English shows '(empty)' and Chinese '（空节点）' in the same slot and the two zh entries differ only in parenthesis width.
 - ~~**low · ux** `src/plugin/outline/Outliner.tsx:4524`~~ **fixed**
@@ -483,8 +488,9 @@ conclusion to draw from a complete-looking list of findings.
   The user-facing shortcut doc promises two mind-map mouse behaviours the code does not implement: a single click jumping back to the outline and locating the node, and a double click focusing the branch.
 - **low · type-escape** `src/mindmap/Mindmap.tsx:241`  
   Stored preferences are cast to `Record<string, never>` instead of being validated, so any JSON in localStorage flows into structure/themeIdx/lineStyle/shape as if it had the declared type.
-- **low · dead-code** `src/mindmap/Mindmap.tsx:79`  
-  The dark-mode probe also tests a `data-theme` attribute SiYuan never sets, in two places, and the MutationObserver watches for changes to it.
+- ~~**low · dead-code** `src/mindmap/Mindmap.tsx:79`~~ **stale — already fixed before this pass**
+  No `data-theme` reference remains (verified: only `data-theme-mode` at 55/63/68/71, matching
+  what SiYuan actually sets — the theme E2E asserts exactly this).
 - ~~**low · bug** `src/mindmap/Mindmap.tsx:1621`~~ **already fixed before this pass**
   All four empty-paragraph paths strip `\u200b` before comparing (878, 1587, 1636, 1764) —
   one rule on every path, verified by grep.
@@ -493,8 +499,9 @@ conclusion to draw from a complete-looking list of findings.
   canvas, `img.onerror`, missing 2d context), wired to `showMessage` in `mount.ts`; new `errExportPng`
   key in both catalogues. A component-level toast would need new surface — the callback follows the
   file's own optional-callback pattern and the dead-props gate covers it.
-- **low · dead-code** `src/mindmap/Mindmap.tsx:19`  
-  The explicit re-export list is dead surface: nothing imports these names from this module, and `export * from '../core/layout'` on the line above already re-exports all of them.
+- ~~**low · dead-code** `src/mindmap/Mindmap.tsx:19`~~ **fixed**
+  The named re-export list duplicated `export *` with zero importers (verified: only the default
+  import is used). Deleted.
 - **low · test-quality** `src/mindmap/structure-order.test.ts:192`  
   The "five labels are pairwise distinct" check reads the test's own literal instead of the labels parsed out of the source and the catalogue, so it is always true and can never go red.
 
@@ -546,8 +553,11 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/TESTING.md:568`  
   The numbers describing scripts/audit-language.py no longer match the tool: the allowlist has 12 tokens and no path:line entries (not '391 tokens (186 fixture, 164 i18n, 41 kernel) plus 5 path:line'), a clean run is 199 tracked / 178 scanned / 21 skipped (not 196/175/21), and the run reports code 0 and 24 regex occurrences (not 'code, currently 6' and 25).
-- **low · bug** `scripts/audit-language.py:385`  
-  The python scanner reports only the FIRST CJK run of each string constant, so a second Chinese run in the same Python string is never reported (and an allowlist token naming it would be called stale), while the JS scanner reports every run - the summary's 'no CJK text is unaccounted for' therefore does not hold for .py files.
+- ~~**low · bug** `scripts/audit-language.py:385`~~ **fixed**
+  The Python scanner reported only the first CJK run per constant while the JS scanner reports
+  every run. Now maps each run through the source (with escape fallback); pinned by selftest case
+  36, which discriminates old vs new logic. The fix surfaced 2 real second-runs, both resolved
+  (ledger wording reworded, unverifiable kernel quote removed).
 - **low · dead-code** `scripts/audit-privacy.py:171`  
   check_patterns(paths, label) never reads `label` - the body has no reference to it - yet all four call sites pass a scope name, which suggests the summary distinguishes scopes when it does not.
 - **low · docs** `scripts/audit-privacy.py:156`  
@@ -560,8 +570,8 @@ conclusion to draw from a complete-looking list of findings.
   (Fixed: the key is read through `env.py` and the line is gone -- the entry point validates it and passes it explicitly.)
 - **low · docs** `scripts/run-e2e.py:62`  
   The CI E2E job passes the address and a credential as job inputs, but this entry point overwrites both from .env's isolated instance and CI never creates a .env, so the job cannot run as written and those two secrets are dead configuration.
-- **low · bug** `scripts/run-tests.py:83`  
-  The --watch branch silently drops --test-concurrency=1, which the comment two lines above says is needed because the tests share paths such as .tmp - so watch mode reintroduces exactly the concurrency the normal mode avoids.
+- ~~**low · bug** `scripts/run-tests.py:83`~~ **fixed**
+  Watch mode keeps `--test-concurrency=1` like normal mode.
 - **low · dead-code** `scripts/script_log.py:124`  
   `if callable(owner)` can never be true, because previous[signum] is only ever assigned signal.SIG_DFL - the guard refuses to install the handler when another one exists - so the 'the previous handler still runs' path promised by the docstring is unreachable.
 - **low · test-quality** `src/plugin/css-scope.test.ts:22`  
@@ -600,12 +610,13 @@ conclusion to draw from a complete-looking list of findings.
   The leftover-document cleaner is reachable from nothing: there is no npm script, no reference in docs/TESTING.md's command cheat sheet and no call from any other script, so the problem it exists to solve is only discoverable by reading the file.
 - **low · fallback** `scripts/mindmap-shot.py:33`  
   The CDP base URL is assembled by hand although env.py already derives it (cfg.cdp_http, which the sibling script uses).
-- **low · bug** `scripts/mindmap-shot.py:130`  
-  Every probed tab that is rejected leaves its websocket connection open (only the winner or the first fallback is kept and closed), so repeated runs accumulate connections against the same CDP endpoint.
-- **low · bug** `scripts/perf-probe.py:40`  
-  sys.path.insert(0, 'scripts') makes the import depend on the working directory, so the script cannot be started from anywhere but the repository root (it dies with ModuleNotFoundError before running).
-- **low · dead-code** `scripts/record-demo.py:47`  
-  An orphaned second module-level string (a leftover docstring) plus its duplicated import block are dead code, and the text contradicts the implementation: it says the repaint nudge runs through requestAnimationFrame while NUDGE_ON uses a setInterval precisely because rAF floods the screencast queue.
+- ~~**low · bug** `scripts/mindmap-shot.py:130`~~ **fixed**
+  Rejected probe connections are collected and closed (winner + fallback paths).
+- ~~**low · bug** `scripts/perf-probe.py:40`~~ **fixed**
+  Imports resolve from `__file__`, not the cwd (verified: `--help` runs from `/tmp`).
+- ~~**low · dead-code** `scripts/record-demo.py:47`~~ **fixed**
+  The orphaned second docstring (contradicting the real timer mechanism) and its duplicated
+  import block are removed; the surviving header documents the timer correctly.
 - **low · bug** `scripts/snapshot-keymap.py:56`  
   The snapshot records the instance's effective keymap (custom bindings first), taken from the user's own running instance, so a machine whose hotkeys are customized writes those personal bindings into the tracked fixture that the collision test treats as SiYuan's built-in table.
 - **low · fallback** `scripts/test-instance.py:233`  

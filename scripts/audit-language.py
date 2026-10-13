@@ -379,12 +379,23 @@ def scan_python(path, text):
         else:
             kind = "string"
         segment = ast.get_source_segment(text, node) or ""
-        line = node.lineno
-        in_source = CJK_ANY.search(segment)
-        if in_source:  # an escaped `\u4e2d` has no CJK in the source; the node's line is all we have
-            line += segment[: in_source.start()].count("\n")
-        run = CJK_RUN.search(node.value).group(0)
-        findings.append(Finding(path, line, kind, run))
+        # ★ Report EVERY CJK run in the constant, not just the first: a second Chinese run in the
+        #   same Python string was never reported (and an allowlist token naming it was called stale),
+        #   while the comment scanner above reports every run via finditer.
+        #
+        #   Matches index the *decoded* value but lines come from the *source*, and escapes shift the
+        #   two apart — so map runs through the source segment only when it holds the same run count
+        #   (the common literal case). Otherwise (e.g. `\uXXXX` escapes) fall back to the node's own
+        #   line, which is all the source offers.
+        seg_runs = list(CJK_RUN.finditer(segment))
+        val_runs = list(CJK_RUN.finditer(node.value))
+        if seg_runs and len(seg_runs) == len(val_runs):
+            seg_base = source.offset(node.lineno, node.col_offset)
+            for match in seg_runs:
+                source.report_run(match, kind, path, findings, seg_base)
+        else:
+            for match in val_runs:
+                findings.append(Finding(path, node.lineno, kind, match.group(0)))
 
     _uncovered(source, intervals, path, findings, notes)
     return ScanResult(findings, notes)
@@ -1459,6 +1470,17 @@ def _selftest_cases():
         except ScanError as exc:
             return ["expected a string finding, got ScanError: %s" % exc]
         return [] if got == [(2, "string")] else ["expected [(2, 'string')], got %r" % (got,)]
+
+    @case("py: every CJK run in one constant is reported, not just the first")
+    def _():
+        # The scanner used to report only the first run of each Python string while the JS
+        # scanner reports every run — a second Chinese run in the same string was invisible
+        # (and an allowlist token naming it was called stale). Measured live: a docstring with
+        # two runs reported one before, two after.
+        zh2 = "".join(chr(code) for code in (0x5185, 0x5BB9))
+        text = 'x = """%s filler %s"""\n' % (ZH, zh2)
+        got = texts("scripts/a.py", text, Allowlist.parse(""))
+        return [] if got == [ZH, zh2] else ["expected both runs, got %r" % (got,)]
 
     @case("ts: an English file reports nothing")
     def _():
