@@ -2093,6 +2093,7 @@ function OmTabApp({
         })
       : React.createElement(Mindmap, {
       nodes,
+      docId: docId || undefined,
       title: docTitle || t('mindmapTitle'),
       docParagraphs,
       onEditNode: (id: string, text: string) => {

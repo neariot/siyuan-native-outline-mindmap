@@ -75,18 +75,15 @@ function useDarkMode(): boolean {
   const [dark, setDark] = React.useState<boolean>(() => {
     if (typeof document === 'undefined') return false;
     const el = document.documentElement;
-    return el.getAttribute('data-theme-mode') === 'dark' ||
-           el.getAttribute('data-theme') === 'dark';
+    return el.getAttribute('data-theme-mode') === 'dark';
   });
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
     const el = document.documentElement;
-    const read = () =>
-      setDark(el.getAttribute('data-theme-mode') === 'dark' ||
-              el.getAttribute('data-theme') === 'dark');
+    const read = () => setDark(el.getAttribute('data-theme-mode') === 'dark');
     read();
     const obs = new MutationObserver(read);
-    obs.observe(el, { attributes: true, attributeFilter: ['data-theme-mode', 'data-theme'] });
+    obs.observe(el, { attributes: true, attributeFilter: ['data-theme-mode'] });
     return () => obs.disconnect();
   }, []);
   return dark;
@@ -95,6 +92,7 @@ function useDarkMode(): boolean {
 export default function Mindmap({
   nodes,
   title,
+  docId,
   docParagraphs,
   onFocusNode,
   zoomId,
@@ -131,6 +129,7 @@ export default function Mindmap({
 }: {
   nodes: OutlineNode[];
   title: string;
+  docId?: string;
   docParagraphs?: string[];
   onFocusNode?: (id: string) => void;
   zoomId?: string | null;
@@ -278,9 +277,9 @@ export default function Mindmap({
   }, [structure, themeIdx, lineStyle, shape]);
 
   // Collapsed state is stored **per document**: node IDs differ between documents, so mixing them would bleed across.
-  // The first node's ID is used as the document fingerprint — it is stable and differs per document.
+  // The document ID is preferred as the document fingerprint (fallback to the first node's ID if docId is not supplied).
   // (The root node is the synthetic `__root__`, which cannot distinguish documents.)
-  const docKey = nodes.length > 0 ? nodes[0].id : '';
+  const docKey = docId || (nodes.length > 0 ? nodes[0].id : '');
   const COLLAPSE_KEY = `om-mm-collapsed:${docKey}`;
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => {
     if (!docKey) return new Set();
@@ -614,8 +613,9 @@ export default function Mindmap({
       setView({ x: 0, y: 0, k: 1 });
       return;
     }
-    const cw = el.clientWidth || window.innerWidth;
-    const ch = el.clientHeight || window.innerHeight;
+    const cw = el.clientWidth;
+    const ch = el.clientHeight;
+    if (cw <= 0 || ch <= 0) return;
     // less padding on narrow screens
     const narrow = cw < 560;
     const pad = narrow ? 24 : 48;
@@ -952,7 +952,10 @@ export default function Mindmap({
       canvas.width = W * 2;
       canvas.height = H * 2;
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        return;
+      }
       ctx.fillStyle = theme.bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.scale(2, 2);
@@ -965,6 +968,9 @@ export default function Mindmap({
         a.download = `${title || 'mindmap'}.png`;
         a.click();
       }, 'image/png');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
     };
     img.src = url;
   };
@@ -1563,11 +1569,12 @@ export default function Mindmap({
                   <title>
                     {b.label}
                     {b.node.paragraphs?.length
-                      ? '\n' +
-                        b.node.paragraphs
-                          .filter((p) => p.trim())
-                          .map((p) => htmlToText(p))
-                          .join('\n')
+                      ? (() => {
+                          const lines = b.node.paragraphs
+                            .map((p) => htmlToText(p).replace(/\u200b/g, '').trim())
+                            .filter(Boolean);
+                          return lines.length ? '\n' + lines.join('\n') : '';
+                        })()
                       : ''}
                   </title>
 
