@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Bazaar package check: version-number consistency + every file reference in plugin.json really exists in package.zip.
 The same class of problem as CI error [01] readme.zh_CN."""
-import json, pathlib, script_log, sys, zipfile
+import json, os, pathlib, script_log, sys, zipfile
+# ★ Resolve from the file's location, not the cwd: every sibling script derives ROOT from
+#   __file__, and running this one from another directory used to die with a bare FileNotFoundError.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with script_log.track("verify-pkg"):
-    z = zipfile.ZipFile('package.zip')
+    z = zipfile.ZipFile(os.path.join(ROOT, 'package.zip'))
     names = set(z.namelist())
     try:
         d = json.loads(z.read('plugin.json').decode('utf-8'))
@@ -19,8 +22,8 @@ with script_log.track("verify-pkg"):
     #   The result was package.zip holding the old version number while the tag / Release named the new one —— the package sent out was wrong.
     #   package.json and src/plugin/plugin.json must be changed together; this is what stops a missed change.
     print("version")
-    pkg_ver = json.loads(pathlib.Path('package.json').read_text(encoding='utf-8'))['version']
-    src_ver = json.loads(pathlib.Path('src/plugin/plugin.json').read_text(encoding='utf-8'))['version']
+    pkg_ver = json.loads(pathlib.Path(ROOT, 'package.json').read_text(encoding='utf-8'))['version']
+    src_ver = json.loads(pathlib.Path(ROOT, 'src/plugin/plugin.json').read_text(encoding='utf-8'))['version']
     zip_ver = d['version']
     for label, a, b in [('package.json ↔ src/plugin.json', pkg_ver, src_ver),
                         ('package.json ↔ package.zip', pkg_ver, zip_ver)]:
@@ -61,7 +64,7 @@ with script_log.track("verify-pkg"):
     print()
     print("freshness")
     for f in ('index.js', 'index.css'):
-        built = pathlib.Path('dist-plugin') / f
+        built = pathlib.Path(ROOT, 'dist-plugin') / f
         if not built.exists():
             print(f"  {f:<24} ❌ dist-plugin/{f} is missing —— run `npm run build`")
             bad += 1

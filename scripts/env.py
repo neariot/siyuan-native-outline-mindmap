@@ -325,8 +325,8 @@ class Config:
     def plugin_dirs(self):
         """**All** plugin directories the build output must be synced into (ordered, deduplicated).
 
-        If `PLUGIN_DIRS` (colon-separated) is configured explicitly, use it and add none;
-        otherwise derive it: main workspace + isolated instance (the latter only when its workspace already exists).
+        From `PLUGIN_DIRS` (colon-separated), which is required — no derivation fallback exists
+        (an empty value fails loudly below rather than deploying nowhere).
 
         ★ Keeping "several" is a hard requirement: the two instances each hold a copy of the plugin,
           deploy only one and the other side runs its tests against stale code.
@@ -339,6 +339,12 @@ class Config:
             if d not in seen:
                 seen.add(d)
                 out.append(d)
+        # ★ A value with no usable entry (':', ' ', '::') passes _require() but deploys nowhere:
+        #   fail here instead of copying nothing and exiting 0.
+        if not out:
+            raise RuntimeError(
+                "PLUGIN_DIRS has no usable entry (%r). Set at least one plugin directory in .env." % raw
+            )
         return out
 
     @property
@@ -347,7 +353,13 @@ class Config:
         return os.path.join(self.workspace, "conf", "conf.json")
 
     def token(self):
-        """API token: if `.env` gives one explicitly, use it; otherwise read it from conf.json."""
+        """API token: if `.env` gives one explicitly, use it; otherwise read it from conf.json.
+
+        ★ Read failures **raise** (like the sibling `test_token()`), naming the path and the real
+        error: the old code turned every failure — permissions, malformed JSON, a truncated file —
+        into an empty string, so callers reported 'cannot get the API token' (or ate a bare 401)
+        instead of the actual cause.
+        """
         explicit = self.get("SIYUAN_TOKEN")
         if explicit:
             return explicit
@@ -355,8 +367,11 @@ class Config:
             import json
             with open(self.conf_json, encoding="utf-8") as f:
                 return (json.load(f).get("api") or {}).get("token", "")
-        except Exception:
-            return ""
+        except Exception as e:
+            raise RuntimeError(
+                f"Cannot read the API token: {self.conf_json} ({e})\n"
+                f"Set SIYUAN_TOKEN in .env, or fix the file above."
+            )
 
     def test_token(self):
         """The isolated test instance's own token (read from its conf.json). No falling back to token()."""
@@ -370,10 +385,6 @@ class Config:
                 f"Cannot read the isolated test instance's token: {path} ({e})\n"
                 f"Start the instance first: python3 scripts/test-instance.py"
             )
-
-    def test_build_url(self, platform, doc_id):
-        """Build page URL of the isolated test instance."""
-        return f"{self.siyuan_test}/stage/build/{platform}/?id={doc_id}"
 
     def build_url(self, platform, doc_id):
         """SiYuan build page URL. platform is `desktop` / `mobile`."""

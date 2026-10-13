@@ -287,8 +287,10 @@ conclusion to draw from a complete-looking list of findings.
   The export injects a copy of the whole page stylesheet into the live <svg> element and never removes it, so the user's open page accumulates one extra <style> per run.
 - **medium · bug** `scripts/perf-probe.py:185`  
   The tab is opened with the deprecated fixed wait=120, which sleeps two minutes *after* the readiness condition has already been satisfied - pure waste on every run of a probe whose whole point is trustworthy timing.
-- **medium · fallback** `scripts/perf-probe.py:182`  
-  The script assembles the SiYuan build URL itself and exposes --port, so the probe can be pointed at another instance by hand although env.py is the one place that computes that URL.
+- ~~**medium · fallback** `scripts/perf-probe.py:182`~~ **fixed**
+  The script assembled the build URL by hand with a `--port` override. Removed the flag; the URL
+  now comes from `cfg.build_url()` like every other caller (verified: no remaining `--port`
+  references outside an unrelated script's own flag).
 - **medium · bug** `scripts/record-demo.py:355`  
   The 'a document id is required' guard is case-sensitive, so a missing --doc still builds '.../?id=None' and the recording starts against a page with no document instead of failing fast.
 - ~~**medium · bug** `scripts/record-demo.py:375`~~ **fixed**
@@ -560,20 +562,26 @@ conclusion to draw from a complete-looking list of findings.
   list_tabs() returns [] for every exception, so 'the CDP endpoint is unreachable' is indistinguishable from 'the browser has no tabs' and close_stale_tabs then reports that nothing needed cleaning.
 - **low · ux** `scripts/deploy.py:111`  
   A real deploy run never prints the target list or count, so the AGENTS section 7 check ('confirm the printed deploy: N target(s) list before the check runs') can only be satisfied through `--list` or `npm run env`, and a zero-target run prints nothing at all before returning 0.
-- **low · bug** `scripts/env.py:341`  
-  token() turns every failure to read conf.json (permissions, malformed JSON, a truncated file) into an empty string, so callers report 'cannot get the API token' instead of the real error -- while the sibling test_token() raises for exactly the same failures.
-- **low · bug** `scripts/env.py:318`  
-  A PLUGIN_DIRS value that contains no usable entry (':', ' ', '::') passes _require() and yields an empty deploy-target list, so the deploy copies nothing and exits 0.
-- **low · docs** `scripts/env.py:311`  
-  The plugin_dirs docstring documents a fallback derivation for PLUGIN_DIRS that the code does not implement, so a reader concludes the key is optional while _require() makes it mandatory.
-- **low · dead-code** `scripts/env.py:357`  
-  test_build_url() is never called anywhere, so the helper that is supposed to keep callers from assembling the test-instance URL is unused while callers do assemble URLs themselves.
+- ~~**low · bug** `scripts/env.py:341`~~ **fixed**
+  `token()` turned every conf.json read failure into an empty string. Now raises `RuntimeError`
+  naming the path and the real error, like the sibling `test_token()` (verified live: malformed
+  JSON raises with path + cause; normal path still returns the token).
+- ~~**low · bug** `scripts/env.py:318`~~ **fixed**
+  A `PLUGIN_DIRS` with no usable entry (`:`, ` `, `::`) passed `_require()` and yielded an empty
+  deploy-target list. Now raises naming the bad value (verified: `PLUGIN_DIRS=:` raises).
+- ~~**low · docs** `scripts/env.py:311`~~ **fixed**
+  The `plugin_dirs` docstring promised a derivation fallback the code never implemented. Docstring
+  corrected to the actual contract (required key, fails loudly when empty).
+- ~~**low · dead-code** `scripts/env.py:357`~~ **fixed**
+  `test_build_url()` had zero callers (verified by grep across py/ts). Deleted; `build_url()`
+  (4 callers) stays.
 - **low · test-quality** `scripts/verify-host-style.py:36`  
   The readiness condition is vacuous and the real precondition (the plugin's <style> block) is never awaited; the script instead burns a fixed 120 s wait plus an 8 s sleep, against cdp.py's own measurement that the page is ready in about a second.
 - **low · docs** `scripts/verify-host-style.py:4`  
   The docstring says SiYuan attaches the plugin CSS to the host page with <link>, while the script removes and restores the text of a <style> element -- which is what the kernel actually does, so the comment misleads anyone who tries to keep the doc and the code consistent.
-- **low · bug** `scripts/verify-pkg.py:22`  
-  The script resolves package.json, package.zip and src/plugin/plugin.json relative to the current working directory, unlike every sibling script which derives ROOT from __file__, so running it from another directory dies with a bare FileNotFoundError.
+- ~~**low · bug** `scripts/verify-pkg.py:22`~~ **fixed**
+  Paths resolved from the cwd instead of `__file__`. All four anchored at `ROOT` (verified: runs
+  green from `/tmp`).
 
 ### scripts-live
 

@@ -148,8 +148,6 @@ def probe_js() -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--doc', default='', help='target document ID')
-    ap.add_argument('--port', type=int, default=int(cfg.siyuan_port),
-                    help='defaults to the SiYuan port from .env')
     ap.add_argument('--keep-open', action='store_true')
     ap.add_argument('--force', action='store_true',
                     help='measure anyway when the machine is very busy (refused by default)')
@@ -178,8 +176,10 @@ def main() -> int:
         print('     ⚠️  %s —— continuing because of --force, the result is not trustworthy' % why)
 
     close_stale_tabs()
+    # ★ The URL comes from env.py like every other caller — no hand assembly, no --port override
+    #   pointing the probe at another instance (AGENTS 5.1: one legitimate source for addresses).
     t = Tab(
-        f'http://{cfg.siyuan_host}:{args.port}/stage/build/desktop/?id={doc_id}',
+        cfg.build_url('desktop', doc_id),
         w=1400, h=900,
         ready="!!document.querySelector('.protyle-wysiwyg')",
         wait=120,

@@ -58,6 +58,11 @@ section is a fact worth stating rather than a section to delete and re-invent.
   released only on success; now a `finally` stops the screencast, sends `NUDGE_OFF`, and closes the
   tab on every path. The placeholder-ownership finding (`store.ts:1929`) was already fixed — the
   instance field is gone, verified by grep.
+- **Small script findings batch.** `token()` read failures now raise with path + cause (was: empty
+  string → downstream 401); empty `PLUGIN_DIRS` fails loudly (was: deploy-nothing exit 0);
+  misleading `plugin_dirs` docstring corrected; dead `test_build_url()` deleted; `verify-pkg.py`
+  anchored at `__file__` (runs from `/tmp`); `perf-probe.py` `--port` removed in favour of
+  `cfg.build_url()`.
 
 **Resolved, verified, and removed from the queue:**
 
