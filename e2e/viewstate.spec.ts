@@ -118,17 +118,31 @@ test('changing the structure and then the theme keeps both', async ({ page }) =>
   await ensureBarOpen(page);
   await page.locator('.mm-bar select').first().selectOption({ index: 1 });
   await page.waitForTimeout(400);
-  // Theme swatches: click the 4th (the first 3 are the default palette)
+  // Theme swatches: click the 5th of 8 (index 4).
+  // ★ Guard the change like case 1 does: the active swatch carries `.on`, so a click that did
+  //   nothing leaves `.on` where it was and fails here instead of riding through as "kept".
+  const onBefore = await page.evaluate(() =>
+    [...document.querySelectorAll('.mm-bar .theme-swatches > *')].findIndex((el) =>
+      (el as HTMLElement).classList.contains('on')));
   await ensureBarOpen(page);
   await page.locator('.mm-bar .theme-swatches > *').nth(4).click();
   await page.waitForTimeout(400);
+  const onAfter = await page.evaluate(() =>
+    [...document.querySelectorAll('.mm-bar .theme-swatches > *')].findIndex((el) =>
+      (el as HTMLElement).classList.contains('on')));
+  expect(onAfter, `the theme click must move the active swatch (was ${onBefore})`).toBe(4);
+  expect(onAfter, 'the theme click must change something').not.toBe(onBefore);
 
   const changed = await barPrefs(page);
   await roundTrip(page);
   const after = await barPrefs(page);
 
   expect(after, 'both the structure and the theme should persist').toEqual(changed);
-  expect(after[2], 'the third dropdown is style, and it should persist as well').toBe(changed[2]);
+  expect(after[2], 'the theme dropdown must persist as well').toBe(changed[2]);
+  const onRestored = await page.evaluate(() =>
+    [...document.querySelectorAll('.mm-bar .theme-swatches > *')].findIndex((el) =>
+      (el as HTMLElement).classList.contains('on')));
+  expect(onRestored, 'the theme swatch must persist the round trip too').toBe(4);
 });
 
 test('collapse state is still there after a view round trip', async ({ page }) => {

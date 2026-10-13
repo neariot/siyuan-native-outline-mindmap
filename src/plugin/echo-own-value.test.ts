@@ -89,6 +89,22 @@ console.log('\nAfter expiry it is no longer treated as an echo:');
   g.endApply([BLOCK], new Map([[BLOCK, '旧']]));
   // turning the expiry time back by hand is not possible, so this only verifies that prune can clear it
   check('before expiry it is an echo', g.isOwnValue(BLOCK, '旧'), true);
+  // ★ Post-expiry, via the real branch: backdate the private expiry map (white-box, but it
+  //   exercises the actual `Date.now() > until` path in isOwnValue, not a copy of it).
+  const inner = g as unknown as { valueExpiry: Map<string, number>; recentValues: Map<string, Set<string>> };
+  inner.valueExpiry.set(BLOCK, Date.now() - 1);
+  check('after expiry it is NOT an echo', g.isOwnValue(BLOCK, '旧'), false);
+  check('the expired entry is dropped, not kept', !inner.recentValues.has(BLOCK) && !inner.valueExpiry.has(BLOCK), true);
+  // ★ And prune() clears backdated entries without touching live ones.
+  g.beginApply();
+  g.endApply([BLOCK], new Map([[BLOCK, '新']]));
+  inner.valueExpiry.set(BLOCK, Date.now() - 1);
+  g.prune();
+  check('prune() drops the expired entry', !inner.recentValues.has(BLOCK), true);
+  g.beginApply();
+  g.endApply([BLOCK], new Map([[BLOCK, '活']]));
+  g.prune();
+  check('prune() keeps a live entry', g.isOwnValue(BLOCK, '活'), true);
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

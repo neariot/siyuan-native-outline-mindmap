@@ -176,14 +176,18 @@ test('typing after clicking a node text lands the characters in that node', asyn
   await page.keyboard.type(marker);
   await page.waitForTimeout(500);
 
-  const after = (await target.textContent()) ?? '';
-  expect(after, `the node text should become "${before}${marker}"`).toBe(before + marker);
-  // The other nodes must not be affected
-  const others = await page.locator('.node-text').allTextContents();
-  expect(others.filter((t) => t.includes(marker)).length, 'only that one node should change').toBe(1);
-
-  await page.keyboard.press('Backspace');
-  await page.waitForTimeout(300);
+  try {
+    const after = (await target.textContent()) ?? '';
+    expect(after, `the node text should become "${before}${marker}"`).toBe(before + marker);
+    // The other nodes must not be affected
+    const others = await page.locator('.node-text').allTextContents();
+    expect(others.filter((t) => t.includes(marker)).length, 'only that one node should change').toBe(1);
+  } finally {
+    // ★ Clean the marker on every path: a failing assertion above used to leave the shared
+    //   fixture dirty for every later case in the run.
+    await page.keyboard.press('Backspace');
+    await page.waitForTimeout(300);
+  }
 });
 
 /**
@@ -214,11 +218,13 @@ test('characters edited in the outline are written back to SiYuan', async ({ pag
     // ★ Poll instead of sleeping for a fixed duration: the write-back has debounce + a kernel round trip,
     //   measured to arrive within 1 second when fast, while a fixed 2.5 seconds is not enough when slow
     //   (passing alone and failing in a mixed run is exactly this kind of timing problem).
+    // ★ Scope the probe to the temp document: an instance-wide LIKE matches any paragraph anywhere —
+    //   including a leftover from an earlier failed run — instead of the document under test.
     await expect
       .poll(
         async () => {
           const rows = await api.sql(
-            `SELECT content FROM blocks WHERE type = 'p' AND content LIKE '%${marker}%' LIMIT 5`,
+            `SELECT content FROM blocks WHERE root_id = '${tempId}' AND type = 'p' AND content LIKE '%${marker}%' LIMIT 5`,
           );
           return rows.length;
         },

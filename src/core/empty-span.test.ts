@@ -52,10 +52,14 @@ const buildParagraphDom = (html: string): string =>
       !out.includes('<span></span>'),
       `got=${out}`,
     );
+    // ★ Assert on the STRIPPED text, not the raw output: the old form
+    //   (`out.includes('\u200b') || ...`) was satisfied by the placeholder inside the
+    //   un-stripped `<span>\u200b</span>` — passing on the broken code this file exists to catch.
+    const stripped = out.replace(/<[^>]*>/g, '');
     check(
-      `★ and the content is non-empty (the || fallback really takes effect)`,
-      out.includes('\u200b') || out.replace(/<[^>]*>/g, '').length > 0,
-      `got=${out}`,
+      `★ and the stripped content is exactly the fallback placeholder`,
+      stripped === '\u200b',
+      `got=${JSON.stringify(stripped)} from ${out}`,
     );
   }
 }

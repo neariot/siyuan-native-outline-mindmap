@@ -384,10 +384,11 @@ conclusion to draw from a complete-looking list of findings.
   The architecture doc still documents the markdown-by-default / DOM-when-styled decision tree; the code has routed everything through the DOM path for a while.
 - **low · dead-code** `src/core/blockdom.ts:164`  
   `paragraphBlockDom` is exported for `insertParagraphAfter` but no shipped code calls it; the real call site builds the same paragraph DOM inline, five times over, in a slightly different shape.
-- **low · test-quality** `src/core/empty-span.test.ts:57`  
-  For the `<span>\u200b</span>` variant the "the || fallback really took effect" assertion is satisfied by the placeholder inside the un-stripped span, so it passes on the broken code the file exists to catch.
-- **low · test-quality** `src/core/layout.test.ts:90`  
-  Two different colour invariants share one accumulator, so the two checks can never disagree and each one can report the other's failure — a red run no longer says which invariant broke.
+- ~~**low · test-quality** `src/core/empty-span.test.ts:57`~~ **fixed**
+  The assertion now checks the stripped text equals exactly the fallback placeholder — the old
+  form passed on the broken code via the placeholder inside the un-stripped span.
+- ~~**low · test-quality** `src/core/layout.test.ts:90`~~ **fixed**
+  Separate accumulators per invariant — a red run now names which invariant broke.
 - ~~**low · dead-code** `src/core/layout.ts:101`~~ **fixed**
   `escapeKramdown` was private and uncalled anywhere (verified by grep). Deleted.
 - ~~**low · dead-code** `src/core/map.ts:639`~~ **refuted in writing**
@@ -465,14 +466,14 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**low · bug** `e2e/mindmap.spec.ts:888`~~ **fixed**
   Both download cases now `await Promise.all([waitForEvent, click])`, so a failed click rejects
   the wait with it instead of stranding an unhandled rejection 30s later.
-- **low · test-quality** `e2e/outline.spec.ts:219`  
-  The write-back probe queries the whole instance for a fixed marker, so any paragraph containing it anywhere satisfies the poll — including a temp document left behind by an earlier failed run — instead of the document under test.
+- ~~**low · test-quality** `e2e/outline.spec.ts:219`~~ **fixed**
+  The write-back probe is scoped to the temp document (`root_id`), not the whole instance.
 - **low · test-quality** `e2e/outline.spec.ts:107`  
   firstParentBullet returns -1 for a missing precondition and this caller does not check it; a negative index selects the last row, so the case would silently zoom an unrelated (leaf) row and could still pass.
 - **low · fallback** `e2e/outline.spec.ts:202`  
   `notebook || (await resolveTestNotebook(api))` is an unreachable fallback of exactly the `X || <fallback>` shape AGENTS §5.1.3 forbids; if it ever ran, the temp document would be created in a notebook resolved by a name heuristic instead of failing.
-- **low · test-quality** `e2e/outline.spec.ts:184`  
-  The typing case mutates the shared test document and removes its marker only on the success path, so a failing assertion leaves the fixture dirty — the exact hazard testdoc.ts exists to remove.
+- ~~**low · test-quality** `e2e/outline.spec.ts:184`~~ **fixed**
+  Marker cleanup runs in `finally` — a failing assertion no longer leaves the shared fixture dirty.
 
 ### e2e-specs-b
 
@@ -492,20 +493,23 @@ conclusion to draw from a complete-looking list of findings.
   panel fails instead of passing on `Infinity` sentinels.
 - **low · fallback** `e2e/mobile.spec.ts:46`  
   (Fixed: all five call sites go through `resolveTestNotebook`, so the value is verified once, in one place.)
-- **low · test-quality** `e2e/mobile.spec.ts:242`  
-  The case `the mobile narrow-screen format toolbar toggles open and keeps its state` never tests the state being kept: the only assertion is that the toolbar is not collapsed immediately after opening it.
-- **low · test-quality** `e2e/mobile.spec.ts:117`  
-  The "toggle task status" criterion counts checkboxes over the whole document with one selector that cannot match anything and one that is unbounded, so the case cannot distinguish "the plugin's task box appeared" from "some checkbox exists somewhere".
-- **low · bug** `e2e/mobile.spec.ts:40`  
-  The temp-document cleanup swallows its own failure, so a document that could not be deleted is left in the notebook with nothing said — the opposite of the other suites, whose afterEach lets removeDoc throw.
-- **low · dead-code** `e2e/mobile.spec.ts:5`  
-  Three helpers are imported and never used; they are reached only through `openDocMobile` inside e2e/mobile.ts, so the spec carries dead imports.
+- ~~**low · test-quality** `e2e/mobile.spec.ts:242`~~ **fixed**
+  The toolbar-open case now asserts the open state persists (re-query after a settle wait),
+  not just immediate visibility.
+- ~~**low · test-quality** `e2e/mobile.spec.ts:117`~~ **fixed**
+  The task assertion targets the plugin's own `.taskbox`, not any checkbox on the page.
+- ~~**low · bug** `e2e/mobile.spec.ts:40`~~ **fixed**
+  Cleanup failures throw like every other suite — no more silent `.catch(() => {})`.
+- ~~**low · dead-code** `e2e/mobile.spec.ts:5`~~ **fixed**
+  The three unused imports (`mobileUrl`, `waitMobileReady`, `openPluginMobile`) are deleted.
 - **low · test-quality** `e2e/theme.spec.ts:41`  
   The engine guard in `pluginThemeSelectors` reads only the TOP-LEVEL rules of the plugin sheet (`rules.map(r => r.selectorText)`), so a theme-conditional rule nested in `@media` / `@supports` / `@container` is invisible to a case whose comment claims to check every theme-conditional rule in the shipped stylesheet. Today all of them are top level, so the gap is latent.
-- **low · test-quality** `e2e/viewstate.spec.ts:123`  
-  The case `changing the structure and then the theme keeps both` never checks that the theme click changed anything — unlike case 1, which guards its change with `not.toBe('向右')` — so a swatch click that did nothing leaves the case green while its name claims the theme was kept.
-- **low · docs** `e2e/viewstate.spec.ts:121`  
-  Two descriptions in that case name the wrong control: the comment says "click the 4th (the first 3 are the default palette)" while `nth(4)` is the 5th of 8 swatches, and the assertion message calls the third dropdown "style" while index 2 is the theme select.
+- ~~**low · test-quality** `e2e/viewstate.spec.ts:123`~~ **fixed**
+  The theme click is guarded by the active-swatch `.on` marker (before/after/round-trip) —
+  a no-op click fails instead of riding through as "kept".
+- ~~**low · docs** `e2e/viewstate.spec.ts:121`~~ **fixed**
+  The comment names the 5th of 8 swatches (index 4) and the assertion message names the theme
+  dropdown (index 2 is theme, verified against the label order).
 
 ### i18n-consistency
 
@@ -581,10 +585,12 @@ conclusion to draw from a complete-looking list of findings.
 
 - **low · docs** `docs/pitfalls/editor.md:82`  
   The §2.3 entry 'Paired reverse keys (Backspace / Delete)' points its Test line at a file that has no key-handling coverage at all.
-- **low · test-quality** `src/plugin/echo-own-value.test.ts:85`  
-  A section titled 'After expiry it is no longer treated as an echo' contains no post-expiry assertion and never calls prune(), so the behaviour its heading names is untested.
-- **low · test-quality** `src/plugin/hotkey-collision.test.ts:72`  
-  A corrupt keymap snapshot is reported as a missing one, and the 'the check works' control asserts a value it derived from the same map (and is silently skipped when the fixture has no ⌥⌘ key).
+- ~~**low · test-quality** `src/plugin/echo-own-value.test.ts:85`~~ **fixed**
+  Post-expiry assertions exercise the real `Date.now() > until` branch (white-box backdate) plus
+  `prune()` drop/keep behavior — the heading's behavior is now tested.
+- ~~**low · test-quality** `src/plugin/hotkey-collision.test.ts:72`~~ **fixed**
+  Corrupt vs missing snapshots report distinctly, and the spot-check pins `⌥⌘M` (verified live
+  as occupied) instead of skipping when no `⌥⌘` key is found.
 - **low · docs** `src/plugin/kernel-side-effects.test.ts:4`  
   The authority for these tests is cited as a gitignored development diary, so the measured facts behind the assertions are unreadable to anyone else (the same citation is used across the plugin tests).
 

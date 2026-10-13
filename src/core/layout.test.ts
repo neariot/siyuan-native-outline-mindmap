@@ -88,14 +88,20 @@ console.log('colours: structural completeness of the 8 palettes');
     const n = parseInt(hex.slice(1), 16);
     return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
   };
-  let ok = true;
-  const bad: string[] = [];
+  // ★ Separate accumulators per invariant: the old shared `ok`/`bad` let one invariant
+  //   report the other's failure — a red run no longer said which invariant broke.
+  let okBorder = true;
+  const badBorder: string[] = [];
   for (const [i, p] of MM_BRANCH_PALETTES.entries()) {
-    if (!(lum(p.fill) > lum(p.border))) { ok = false; bad.push(String(i)); }
-    if (!(lum(p.fill) > lum(p.text))) { ok = false; bad.push(`text${i}`); }
+    if (!(lum(p.fill) > lum(p.border))) { okBorder = false; badBorder.push(String(i)); }
   }
-  check('★ in every palette fill is lighter than border (light fill, dark border)', ok, bad.join(' '));
-  check('★ in every palette fill is lighter than text (keeps the text readable)', ok, bad.join(' '));
+  check('★ in every palette fill is lighter than border (light fill, dark border)', okBorder, badBorder.join(' '));
+  let okText = true;
+  const badText: string[] = [];
+  for (const [i, p] of MM_BRANCH_PALETTES.entries()) {
+    if (!(lum(p.fill) > lum(p.text))) { okText = false; badText.push(`text${i}`); }
+  }
+  check('★ in every palette fill is lighter than text (keeps the text readable)', okText, badText.join(' '));
 }
 
 // ──────────────────────────────────────────────────────────────────

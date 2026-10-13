@@ -2,9 +2,6 @@ import { test, expect } from '@playwright/test';
 import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook } from './testdoc';
 import {
   mobileContext,
-  mobileUrl,
-  waitMobileReady,
-  openPluginMobile,
   openDocMobile,
   clickMobileBarAction,
   mobileKeyboardBarState,
@@ -36,8 +33,10 @@ test.describe('Mobile E2E tests', () => {
   });
 
   test.afterEach(async () => {
+    // ★ Failures throw like every other suite: swallowing them leaves undeleted documents with
+    //   nothing said (and the leftover report then blames a later case for the wrong reason).
     if (tempDocId && api) {
-      await removeDoc(api, tempDocId).catch(() => {});
+      await removeDoc(api, tempDocId);
       tempDocId = '';
     }
   });
@@ -112,10 +111,13 @@ test.describe('Mobile E2E tests', () => {
       expect(texts).toContain('子主题节点八');
 
       // 4. Click "Toggle task status" (☑)
+      // ★ Assert the plugin's own task box, not any checkbox on the page: a bare
+      //   `input[type="checkbox"]` matches SiYuan chrome too, so the case cannot tell "the
+      //   plugin's task box appeared" from "some checkbox exists somewhere".
       await clickMobileBarAction(page, 'task');
       await page.waitForTimeout(250);
-      const hasTask = await page.locator('.taskbox, .om-taskbox, input[type="checkbox"]').count();
-      expect(hasTask).toBeGreaterThan(0);
+      const hasTask = await page.locator('.taskbox').count();
+      expect(hasTask, 'the plugin task box should appear after toggling').toBeGreaterThan(0);
 
       // 5. Click "Promote left" (⇤)
       await clickMobileBarAction(page, 'outdent');
@@ -258,6 +260,14 @@ test.describe('Mobile E2E tests', () => {
         return tb ? tb.classList.contains('om-toolbar--collapsed') : true;
       });
       expect(isCollapsed).toBe(false);
+      // ★ "keeps its state" needs a second read after a settle: asserting once, immediately,
+      //   cannot tell "stays open" from "opens then collapses".
+      await page.waitForTimeout(800);
+      const stillOpen = await page.evaluate(() => {
+        const tb = document.querySelector('.om-toolbar');
+        return tb ? !tb.classList.contains('om-toolbar--collapsed') : false;
+      });
+      expect(stillOpen, 'the toolbar must stay open, not just open momentarily').toBe(true);
     } finally {
       await ctx.close();
     }

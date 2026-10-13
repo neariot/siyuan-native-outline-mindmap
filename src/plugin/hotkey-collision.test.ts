@@ -63,14 +63,14 @@ const OUR_HOTKEYS: Record<string, string> = {
 };
 
 /** Read the snapshot of SiYuan's built-in hotkeys (exported from a real instance) */
-function loadSiYuanKeymap(): Record<string, string> | null {
+function loadSiYuanKeymap(): { map: Record<string, string> | null; corrupt: boolean } {
   const p = path.join(here, '__fixtures__', 'siyuan-keymap.json');
-  if (!fs.existsSync(p)) return null;
+  if (!fs.existsSync(p)) return { map: null, corrupt: false };
   try {
     const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-    return raw && typeof raw === 'object' ? raw : null;
+    return raw && typeof raw === 'object' ? { map: raw, corrupt: false } : { map: null, corrupt: true };
   } catch {
-    return null;
+    return { map: null, corrupt: true };
   }
 }
 
@@ -102,8 +102,13 @@ console.log('Hotkey format: it must be written the way SiYuan recognizes');
 console.log('\n★ Must avoid keys SiYuan built-ins already occupy');
 
 {
-  const keymap = loadSiYuanKeymap();
-  if (!keymap) {
+  const { map: keymap, corrupt } = loadSiYuanKeymap();
+  if (corrupt) {
+    // ★ A corrupt snapshot is not a missing one: report which, so the fix (re-export vs create)
+    //   is obvious instead of sending the reader to create a file that exists.
+    check('the SiYuan hotkey snapshot parses (re-export it, do not create it)', false,
+      'src/plugin/__fixtures__/siyuan-keymap.json exists but is not a JSON object; run scripts/snapshot-keymap.py to re-export it');
+  } else if (!keymap) {
     // With no snapshot, **fail loudly** instead of passing silently --
     // a silent skip means "no protection", which is exactly what this test was added to prevent.
     check(
@@ -129,15 +134,15 @@ console.log('\n★ Must avoid keys SiYuan built-ins already occupy');
     }
 
     // Reverse check that the lookup works: a key **known to be occupied** must be found
-    // (if this one passes too, the table lookup never took effect at all)
-    const known = [...occupied.keys()].find((k) => k.startsWith('⌥⌘'));
-    if (known) {
-      check(
-        '★ the check works (a known occupied key is found)',
-        occupied.get(known) !== undefined,
-        `spot check ${known} → ${occupied.get(known)}`,
-      );
-    }
+    // (if this one passes too, the table lookup never took effect at all).
+    // ★ Pinned, not conditional: the fixture is tracked, so a fixed known-occupied key must be
+    //   there — skipping when absent silently drops the only proof the lookup works.
+    //   (Verified live: ⌥⌘M is occupied by /editor/insert/memo — the collision this file exists for.)
+    check(
+      '★ the check works (⌥⌘M is found occupied)',
+      occupied.get('⌥⌘M') !== undefined,
+      `spot check ⌥⌘M → ${occupied.get('⌥⌘M')}`,
+    );
   }
 }
 
