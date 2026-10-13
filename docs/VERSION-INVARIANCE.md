@@ -92,3 +92,10 @@ Guarantees contract integrity without relying on manual checks:
 1. **`check-block-rules.py`**: Compiles and executes Go tests directly against `siyuan-src/kernel/treenode/tree.go` to verify block containment rules before release.
 2. **`check-kernel-shapes.py`**: Uses the TypeScript compiler API to verify that all wire shapes match `siyuan-src/app/src/types/api/index.d.ts`.
 3. **`VirtualKernel` (`src/siyuan/virtual-kernel.ts`)**: Emulates the kernel's DOM AST generation, Kramdown serialization, and transaction streaming offline. Runs full store integration suites in <300 ms without requiring a live Chromium instance.
+
+---
+
+## 5. Host Abstraction Layer (HAL) & Reconciler Architecture
+
+For complete details on the pure mathematical Tree Reconciler and pluggable SPI drivers (`IHostDriver`, `NativeHostDriver`, `VirtualHostDriver`), see [HOST-ABSTRACTION-LAYER.md](HOST-ABSTRACTION-LAYER.md).
+
