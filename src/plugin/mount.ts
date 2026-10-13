@@ -19,6 +19,8 @@ import { cloneNodes, collectIds, containsNode, flatNodes, touch } from '../model
 import { openTab, showMessage } from 'siyuan';
 import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
+import { NativeHostDriver } from '../siyuan/native-driver';
+import type { IHostDriver } from '../siyuan/host-driver';
 import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText, serializeTree, structureFingerprint } from './sync';
 import { escapeHtml } from '../model/html-escape';
 import { makeSiyuanId } from '../core/map';
@@ -229,6 +231,9 @@ function OmTabApp({
   // Number of unresolved conflicts (when >0 the UI warns instead of silently swallowing the user's edits)
   const [conflictCount, setConflictCount] = React.useState(0);
   const storeRef = React.useRef<SiYuanStore | null>(null);
+  // ★ The Host Abstraction Layer driver (the host's own side of navigation). Created together with the
+  //   store in `loadDoc`, so both describe the same document and the same client.
+  const driverRef = React.useRef<IHostDriver | null>(null);
   // Mutable reference to the current tree: write-back needs the latest tree, while setState is asynchronous
   const nodesRef = React.useRef<OutlineNode[] | null>(null);
   // Loop guard: ignore kernel events during write-back and for a short window right after it finishes
@@ -390,15 +395,11 @@ function OmTabApp({
         showMessage(t('errClientNotReady'), 5000, 'error');
         return;
       }
-      openTab({
-        app: appRef,
-        doc: {
-          id: target,
-          // The target may be a block ID —— the kernel resolves its owning document and locates the block
-          action: ['cb-get-focus', 'cb-get-scroll'],
-        },
-        keepAlive: true,
-      });
+      // ★ The host's own navigation, through the HAL driver (Tier 3). The driver holds the same `app`
+      //   resolution and the same `openTab` the code above measured, so the tab that opens is the one this
+      //   path already proved renders; the existence check and the guards above stay here because they own
+      //   the user-visible messages, which the driver's silent no-op cannot produce.
+      await driverRef.current?.openBlock(target);
     } catch (e) {
       showMessage(t('errJumpFailed', { msg: (e as Error).message }), 5000, 'error');
     }
@@ -679,6 +680,19 @@ function OmTabApp({
     const client = new SiYuanClient({ baseUrl: '', token: '' });
 
     storeRef.current = new SiYuanStore({ client, notebook: '', basePath: '/' });
+    // ★ The driver shares this client and store, so "which document is open" has one source for both.
+    //   ★★ Created here rather than at mount: the store is rebuilt per document, and a driver holding the
+    //      previous document's store would write navigation and capabilities against a stale target.
+    driverRef.current = new NativeHostDriver({
+      client,
+      store: storeRef.current,
+      plugin,
+      eventBus,
+      // ★ The `openTab` this file already imports and measured (the 2×2 experiment below): passing it
+      //   explicitly keeps the driver's navigation on the proven path instead of its `import('siyuan')`
+      //   fallback, which cannot be exercised offline.
+      openTab,
+    });
 
       // ★★★ Give the store a reader for "the current UI tree" (the fix for nodes lost when Enter is pressed repeatedly).
       //

@@ -2,16 +2,14 @@
 
 > Architectural specification for the zero-maintenance Host Abstraction Layer (HAL), pure mathematical Tree Reconciler, and pluggable SPI drivers.
 
-> **Status: this is the target architecture, not the runtime path.** Read the tiers below as a design the
-> code is being moved onto, not as a description of what runs today. Measured on this tree:
->
-> * **Tier 2 is real and wired**: `diffTrees` / `applyTreePatches` in `src/core/reconciler.ts`.
-> * **Tier 3 is not**: `IHostDriver` has two implementations (`native-driver.ts`, `virtual-driver.ts`) and
->   **nothing outside those files and their own tests imports them** —— `scripts/check-unreachable-modules.ts`
->   records them in its allowlist for exactly that reason. The write-back is still `store.ts`'s, driven
->   directly by `mount.ts`.
-> * `store.ts` also carries the version-compat piece that *is* used (`host-compat.ts`), which is why that
->   one is not in the allowlist.
+> **Status: this is a partly-live architecture.** Tier 2 (`diffTrees` / `applyTreePatches`) is implemented and
+> unit-tested (`src/core/reconciler.test.ts`) and is what `VirtualHostDriver` applies, but **no shipped
+> module imports it** —— the live write-back is still `store.ts`'s. **Tier 3 (`IHostDriver`) now has a live
+> implementation**: `NativeHostDriver` is constructed by `mount.ts` and carries host navigation, which is why
+> `scripts/check-unreachable-modules.ts` no longer allowlists `native-driver.ts`. Its **write** half
+> (`applyPatches`) is not on the runtime path. `virtual-driver.ts` remains allowlisted (test-only, by
+> design). `store.ts` also carries the version-compat piece that *is* used (`host-compat.ts`), which is why
+> that one is not in the allowlist.
 >
 > `docs/ARCHITECTURE.md` §2 carries the same note; it is repeated here because this file is where a reader
 > arrives when looking up the HAL, and it is the one most likely to be read as a description of the product.

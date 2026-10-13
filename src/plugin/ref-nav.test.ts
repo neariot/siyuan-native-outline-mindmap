@@ -87,8 +87,20 @@ console.log('\n=== the jump hands the kernel the application instance, with no s
   //    "a new caller is correct" from "an unexpected caller appeared"). The property that matters is
   //    "nothing is substituted for the application instance", so every call site is required to pass the
   //    real one and at least one has to exist.
-  const mountSrc = fs.readFileSync(path.join(__dirname, 'mount.ts'), 'utf8');
-  const appArgs = callArgProps(mountSrc, /^openTab$/, 'app');
+  // ★ The `openTab` call itself moved to the HAL driver (`native-driver.ts`), which now owns host
+  //   navigation; `mount.ts` keeps the existence check and the user-visible guards and calls
+  //   `driverRef.current?.openBlock(target)`. The invariant is about the call site wherever it lives, so
+  //   it is asserted in the module that now holds it —— reading only `mount.ts` would find zero call
+  //   sites and report "the jump does not happen" for a call that moved.
+  //
+  // ★★ The criterion is **every call site**, not "exactly one". Pinning the count made a correct change go
+  //    red: adding a second jump that also passes `app: appRef` failed `appArgs.length === 1`, which is the
+  //    same shape as the pinned `focusCanvas` count this repository already deleted (a count cannot tell
+  //    "a new caller is correct" from "an unexpected caller appeared"). The property that matters is
+  //    "nothing is substituted for the application instance", so every call site is required to pass the
+  //    real one and at least one has to exist.
+  const driverSrc = fs.readFileSync(path.join(__dirname, '..', 'siyuan', 'native-driver.ts'), 'utf8');
+  const appArgs = callArgProps(driverSrc, /^openTab$/, 'app');
   check('★ at least one openTab call site declares `app` (otherwise the jump does not happen)',
     appArgs.length >= 1, JSON.stringify(appArgs));
   check('★★ every openTab call site passes the application instance (`appRef`), never a substitute',
@@ -100,7 +112,7 @@ console.log('\n=== the jump hands the kernel the application instance, with no s
   // Without the guard, `appRef` may be undefined and the kernel receives undefined —— the same
   // blank page by another route. Asserted on comment-stripped source so the explanation above cannot satisfy it.
   check('★★ a missing application instance is reported instead of jumping',
-    stripComments(mountSrc).includes('if (!appRef)'), 'no `if (!appRef)` guard around the call');
+    stripComments(driverSrc).includes('if (!appRef)'), 'no `if (!appRef)` guard around the call');
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

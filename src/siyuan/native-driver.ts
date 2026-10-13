@@ -130,17 +130,20 @@ export class NativeHostDriver implements IHostDriver {
       return;
     }
 
-    let fn = this.openTabFn;
-    if (!fn) {
+    // ★ Named `openTab`, not a generic local: the call site is read by a static probe
+    //   (`src/plugin/ref-nav.test.ts`), which asserts that every openTab call passes the real
+    //   application instance. A local called `fn` made that guard unable to see this call at all.
+    let openTab = this.openTabFn;
+    if (!openTab) {
       try {
         const mod = await import('siyuan');
-        fn = mod.openTab;
+        openTab = mod.openTab;
       } catch {
         // Host runtime not available in offline context
       }
     }
 
-    if (!fn) {
+    if (!openTab) {
       return;
     }
 
@@ -148,7 +151,7 @@ export class NativeHostDriver implements IHostDriver {
       ? ['cb-get-focus', 'cb-get-scroll', 'cb-get-zoom']
       : ['cb-get-focus', 'cb-get-scroll'];
 
-    fn({
+    openTab({
       app: appRef,
       doc: {
         id: blockId,

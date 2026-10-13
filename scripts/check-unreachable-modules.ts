@@ -44,10 +44,8 @@ const ALLOWED: Record<string, string> = {
     'a benchmark load generator: its only product is the measurement, so the "caller" is the perf suite',
   'src/siyuan/virtual-kernel.ts':
     'a test double for the live kernel (the mirror the sync/race cases answer against), never shipped',
-  'src/siyuan/native-driver.ts':
-    'HAL target architecture — the reconciler/driver write path is not wired into store.ts yet (docs/ARCHITECTURE.md §2)',
   'src/siyuan/virtual-driver.ts':
-    'HAL target architecture — the offline half of the same driver SPI (docs/ARCHITECTURE.md §2)',
+    'HAL target architecture — the offline half of the same driver SPI (docs/ARCHITECTURE.md §2). Its live half, `native-driver.ts`, is now reachable: `mount.ts` constructs it and routes host navigation through it',
 };
 
 interface Finding {
