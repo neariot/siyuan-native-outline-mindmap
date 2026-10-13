@@ -130,6 +130,23 @@ section is a fact worth stating rather than a section to delete and re-invent.
   the first sibling —— indent is then a legitimate no-op, so the assertion failed on a correct product.
   Fixed to select siblings (rows 0,2) and to assert both the row that moves and the row that must not;
   outline suite 26/26 green. Recorded in `docs/pitfalls/testing.md`.
+- **The architecture docs now describe the code that runs, and one stale number is a new gate
+  (`check-todo-counts.py`).** `VERSION-INVARIANCE.md` claimed `treenode.CanContainBlock` lives in
+  `tree.go` (it is `block_structure.go`), that `layout.layout` was "introduced in 3.6+" (both
+  `centerLayout` and `layout` are declared at **v3.0.0**, the earliest tag with the types file), and
+  that the task-marker fallback triggers "if the endpoint is unavailable" (it is a **version decision**
+  — an unreadable version is *attempted*, because the fallback is the data-losing path). Boundary 4 now
+  states that all three sentinels read a **released tag**, not the working tree, and gives the
+  `block_structure.go` path and the v3.8.4 floor for the generated contract. `HOST-ABSTRACTION-LAYER.md`
+  gained the same "target architecture, not the runtime path" note `ARCHITECTURE.md` §2 carries, with the
+  measurement behind it (`IHostDriver` is imported only by its own two implementations and tests — the new
+  unreachable-modules gate's allowlist recorded that), and its "runs in sub-millisecond offline" claim is
+  now the measured **54 µs per diff+apply** on a 28-node tree.
+  ★ The line counts in `docs/TODO.md` were stale (`store.ts` had grown 273 lines). NEW GATE
+  `scripts/check-todo-counts.py`: `path N,NNN lines` names both the file and the number, so both are
+  checked; a bare file name resolves by suffix and an ambiguous or unknown one is reported, not skipped.
+  Red-proofed both ways (a stale count; an unresolvable name). This is the third number-in-prose defect
+  of the pass, so it is a gate rather than another correction.
 - **The audit queue is empty: 34 open → 0, and the tool now handles that state.** The remaining entries
   were prose-only `cannot-judge` docs findings, worked through by reading each one against the product and
   the released tag. 26 were real and fixed: the CI E2E job removed (it could never run —— no kernel on the
@@ -403,7 +420,8 @@ release while every gate stays green.
 
 ## Modularity
 
-The three big files are the obstacle: `Outliner.tsx` 4,686 lines, `store.ts` 2,982, `mount.ts` 2,352. The
+The three big files are the obstacle: `Outliner.tsx` 4,642 lines, `store.ts` 3,255, `mount.ts` 2,353
+(measured 2026-10-13; `scripts/check-todo-counts.py` re-measures and fails on drift). The
 work is not "split them up" but "stop the same idea being written twice", so each pass removes a
 duplication rather than moving lines.
 

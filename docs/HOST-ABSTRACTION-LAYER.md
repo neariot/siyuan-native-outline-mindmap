@@ -2,6 +2,21 @@
 
 > Architectural specification for the zero-maintenance Host Abstraction Layer (HAL), pure mathematical Tree Reconciler, and pluggable SPI drivers.
 
+> **Status: this is the target architecture, not the runtime path.** Read the tiers below as a design the
+> code is being moved onto, not as a description of what runs today. Measured on this tree:
+>
+> * **Tier 2 is real and wired**: `diffTrees` / `applyTreePatches` in `src/core/reconciler.ts`.
+> * **Tier 3 is not**: `IHostDriver` has two implementations (`native-driver.ts`, `virtual-driver.ts`) and
+>   **nothing outside those files and their own tests imports them** —— `scripts/check-unreachable-modules.ts`
+>   records them in its allowlist for exactly that reason. The write-back is still `store.ts`'s, driven
+>   directly by `mount.ts`.
+> * `store.ts` also carries the version-compat piece that *is* used (`host-compat.ts`), which is why that
+>   one is not in the allowlist.
+>
+> `docs/ARCHITECTURE.md` §2 carries the same note; it is repeated here because this file is where a reader
+> arrives when looking up the HAL, and it is the one most likely to be read as a description of the product.
+
+
 ## 1. Architectural Motivation
 
 Plugins built for extensible document systems (such as SiYuan) typically suffer from architectural coupling:
@@ -32,7 +47,8 @@ To provide zero-maintenance resilience against host updates, this project adopts
 │   - applyTreePatches(tree, patches): OutlineNode[]                     │
 │   - Pure functional diffing: Insert, Remove, Move, UpdateText,         │
 │     UpdateParagraphs, SetTaskStatus, SetNumbering, SetHeading          │
-│   - 100% deterministic, zero I/O, runs in sub-millisecond offline      │
+│   - 100% deterministic, zero I/O; 54 µs per diff+apply (28-node        │
+│     tree, 2000 runs, node 24, arm64)                                   │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼

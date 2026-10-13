@@ -274,6 +274,19 @@ GATES = [
         "requires": lambda: (REPO_ROOT / "scripts" / "check-version-floor.py").is_file(),
     },
     {
+        # ★ A count in prose has no way to go red, and this repository paid for that three times in one
+        #   pass: docs/TODO.md's three file sizes were stale (`store.ts` had grown 273 lines),
+        #   docs/TESTING.md carried four contradictory copies of the language-allowlist size, and
+        #   docs/SHORTCUTS.md said the undo merge window was 1.5s where the constant is 1.2s. This covers
+        #   the mechanical half —— `path N,NNN lines` names both the file and the number, so both can be
+        #   checked. The other half (a bare number whose subject is only implied) is not decidable and the
+        #   tool says so instead of guessing.
+        "name": "todo-counts",
+        "command": "python3 scripts/check-todo-counts.py",
+        "why": "every line count a document states matches the file it names",
+        "requires": lambda: (REPO_ROOT / "scripts" / "check-todo-counts.py").is_file(),
+    },
+    {
         # ★ A citation is only an authority if it can be read. Twenty-three tracked files named
         #   `.logs/API-GOTCHAS.md §NN` or `.logs/perf-test-design.md §N` as the basis for their
         #   assertions —— and `.logs/` is gitignored, so the measured facts behind those assertions
