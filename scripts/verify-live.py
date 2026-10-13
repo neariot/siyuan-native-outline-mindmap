@@ -474,8 +474,10 @@ def main():
 
     url = cfg.build_url("desktop", doc)
     print(f"opening {url}")
-    # the desktop build takes about 26-30 seconds
-    with Tab(url, w=1600, h=1000, wait=30) as tab:
+    # ★ Readiness is a real condition, not a fixed sleep: the old `wait=30` paid 30s on every run
+    #   (cdp.py documents fixed waits as the wrong tool — the build was measured ready in ~1.3s).
+    with Tab(url, w=1600, h=1000,
+             ready="document.readyState === 'complete' && !!document.querySelector('.protyle-wysiwyg')") as tab:
         open_plugin(tab)
         if args.which in ("all", "css"):
             run_css(tab)

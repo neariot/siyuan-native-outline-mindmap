@@ -180,11 +180,12 @@ def main() -> int:
     close_stale_tabs()
     # ★ The URL comes from env.py like every other caller — no hand assembly, no --port override
     #   pointing the probe at another instance (AGENTS 5.1: one legitimate source for addresses).
+    #   ★ No fixed `wait`: readiness is the `ready` expression below (a fixed 120s slept two minutes
+    #   *after* readiness on every run — pure waste on a probe about trustworthy timing).
     t = Tab(
         cfg.build_url('desktop', doc_id),
         w=1400, h=900,
         ready="!!document.querySelector('.protyle-wysiwyg')",
-        wait=120,
     )
     time.sleep(8)
     t.ev(

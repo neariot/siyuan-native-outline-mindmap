@@ -288,13 +288,16 @@ conclusion to draw from a complete-looking list of findings.
 - ~~**medium · bug** `scripts/kernel-mutation-throughput.py:131`~~ **fixed**
   Serial and concurrent loops indexed `probe[i]` to `n-1` while failed inserts shrink the list —
   both now use `probe[i % len(probe)]`, matching the warm-up loop's existing guard.
-- **medium · language** `scripts/mindmap-shot.py:168`  
-  The Chinese UI label the script matches on is hidden from the language gate by double escaping (a JS \u escape inside a Python string), so audit-language.py cannot report or excuse it - its 'no CJK text is unaccounted for' claim does not hold for this file.
+- ~~**medium · language** `scripts/mindmap-shot.py:168`~~ **refuted in writing**
+  The label is a JS `\u` escape inside a Python string, which audit-language.py decodes through
+  `ast` (verified: the gate reports nothing for this file). No hiding, nothing to fix — beyond the
+  `Session.ev` error contract fixed alongside `cdp.py` above.
 - ~~**medium · bug** `scripts/mindmap-shot.py:62`~~ **fixed**
   The injected `<style>` is removed from the live svg in a `finally` (plus blob-URL revocation);
   verified by `node --check` on the extracted JS.
-- **medium · bug** `scripts/perf-probe.py:185`  
-  The tab is opened with the deprecated fixed wait=120, which sleeps two minutes *after* the readiness condition has already been satisfied - pure waste on every run of a probe whose whole point is trustworthy timing.
+- ~~**medium · bug** `scripts/perf-probe.py:185`~~ **fixed**
+  The deprecated fixed `wait=120` is gone; opening waits on the readiness expression. (The
+  separate `time.sleep(8)` after open is untouched — out of scope for this entry.)
 - ~~**medium · fallback** `scripts/perf-probe.py:182`~~ **fixed**
   The script assembled the build URL by hand with a `--port` override. Removed the flag; the URL
   now comes from `cfg.build_url()` like every other caller (verified: no remaining `--port`
@@ -653,8 +656,8 @@ conclusion to draw from a complete-looking list of findings.
   AndroidBridge.input_key() and AndroidBridge.tap() have no caller anywhere in the repository, so the keycode table in their docstrings documents code nothing runs.
 - **low · test-quality** `scripts/verify-live.py:90`  
   The icon check passes when the page contains no svg[fill="none"] at all, so it cannot distinguish 'the rule works' from 'there was nothing to check'.
-- **low · bug** `scripts/verify-live.py:410`  
-  The tab is opened with the deprecated fixed wait=30 instead of a readiness expression, so every live run pays a fixed 30-second sleep that cdp.py documents as the wrong tool for exactly this.
+- ~~**low · bug** `scripts/verify-live.py:410`~~ **fixed**
+  The tab opens on a readiness expression instead of a fixed 30s sleep.
 - **low · bug** `scripts/verify-live.py:289`  
   The theme attributes the check writes are restored only when the host theme really changed, so a run in which the stylesheet swap had no effect leaves data-theme-mode="dark" on the user's live page while the light stylesheet is loaded.
 

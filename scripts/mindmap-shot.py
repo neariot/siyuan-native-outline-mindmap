@@ -180,7 +180,15 @@ class Session:
         while True:
             msg = json.loads(self.conn.recv())
             if msg.get("id") == self._id:
-                return msg.get("result", {}).get("result", {}).get("value")
+                # ★ Same contract as scripts/cdp.py: errors raise, never dissolve into None.
+                if "error" in msg:
+                    raise RuntimeError(f"CDP Runtime.evaluate failed: {msg['error']}")
+                res = msg.get("result", {})
+                if "exceptionDetails" in res:
+                    text = res["exceptionDetails"].get("text", "")
+                    desc = ((res.get("result") or {}).get("description") or "")
+                    raise RuntimeError(f"JS evaluation failed [{text}]: {desc or expr[:120]}")
+                return res.get("result", {}).get("value")
 
     def close(self) -> None:
         self.conn.close()
@@ -190,6 +198,8 @@ def ensure_mindmap(s: Session) -> None:
     """Switch to the mind map view (if not already there)."""
     s.ev("""(() => {
       const el = [...document.querySelectorAll('.om-mm-viewswitch button')]
+        // ★ The CJK label stays escaped (a plain literal breaks Python syntax here);
+        //   audit-language.py decodes escapes through `ast`, so the gate still sees it.
         .filter(x => x.textContent.trim() === 'Mindmap' || x.textContent.trim() === '\\u5bfc\\u56fe');
       if (el.length) el[el.length - 1].click();
       return el.length;
