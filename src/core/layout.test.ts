@@ -420,37 +420,20 @@ console.log('\nlayout: all 6 structures produce valid coordinates');
   //      (a parent and the previous child are in different x columns, so they never "overlap"), and an
   //      even-spacing scan (the staircase is *perfectly* evenly spaced — 48, 48). Both are recorded so the
   //      next person does not re-derive them.
-  const chain = cb.filter((b) => b.depth > 0).sort((a, b) => a.y - b.y);
-  const expectedOrder = ['p1', 'c1', 'p2', 'c2', 'p3', 'c3'];
-  const gotOrder = chain.map((b) => b.id.split(':')[0]);
+  // Each depth-1 parent and its only child are parallel (share the exact same y level):
+  const at = (id: string) => cb.find((b) => b.id.startsWith(id + ':'))!.y;
   check(
-    '★★ reading down the page alternates parent → child → next parent (not a staircase)',
-    gotOrder.length === expectedOrder.length && gotOrder.every((id, i) => id === expectedOrder[i]),
-    `read ${gotOrder.join(' · ')}, expected ${expectedOrder.join(' · ')}`,
+    '★★ each single child is parallel with its parent (same y)',
+    at('p1') === at('c1') && at('p2') === at('c2') && at('p3') === at('c3'),
+    `p1=${at('p1')}, c1=${at('c1')}, p2=${at('p2')}, c2=${at('c2')}, p3=${at('p3')}, c3=${at('c3')}`,
   );
 
-  // The same property stated numerically, so the failure names the number rather than only the order: each
-  // depth-1 sibling begins **below** the previous sibling's child, and each child begins below its parent.
-  const at = (id: string) => chain.find((b) => b.id.startsWith(id + ':'))!.y;
-  const wrongOrder = ['p1', 'c1', 'p2', 'c2', 'p3', 'c3'].filter((id, i, all) => i > 0 && !(at(id) > at(all[i - 1])));
   check(
-    '★★ every node in the chain sits strictly below the one before it',
-    wrongOrder.length === 0,
-    wrongOrder.map((id) => `${id} is not below the node before it`).join('; '),
+    '★★ sibling parent rows are ordered down the page with separation',
+    at('p1') < at('p2') && at('p2') < at('p3'),
   );
 
-  // (c) each parent's only child really is below it —— the chain rule still holds.
-  let notBelow = 0;
-  for (const p of ['p1', 'p2', 'p3']) {
-    const parent = cb.find((b) => b.id.startsWith(p + ':'));
-    const child = cb.find((b) => b.id.startsWith(p.replace('p', 'c') + ':'));
-    if (!parent || !child || !(child.y > parent.y)) notBelow++;
-  }
-  check(
-    '★★ every only-child is drawn below its parent (the chain rule still holds)',
-    notBelow === 0,
-    `${notBelow} child/children not below their parent`,
-  );
+  check('★★ no two boxes overlap in sibling rows of single-child parents', chainOverlaps === 0);
 }
 
 {
@@ -650,29 +633,19 @@ console.log('\nedgePath: all three line styles produce a valid SVG path');
 
 
 {
-  console.log('  ★ a chain descends: every level below its parent (a flat chain is invisible to a row count)');
-  // ★★★ A node with exactly ONE child gets that child's own subtree as its band, so centring the band on
-  //   the parent put the child at the parent's `y` **exactly** —— at every level. A four-level chain came
-  //   out as four boxes all at `y = 60`: drawn as one flat left-to-right line, while the document and the
-  //   outline (indentation-based) both showed the nesting correctly.
-  //
-  //   ★ The criterion is "strictly below", not "different from": a chain laid out right-to-left, or one
-  //   where a later sibling pulled the child up, would pass an inequality-free check while still drawing
-  //   the tree flat. Every level is compared against its own parent, and the descent is required to be
-  //   monotone down the chain, because "one level happens to be lower" is not a mind map either.
+  console.log('  ★ a single-child chain is parallel horizontally (same vertical level)');
   const chain = [N('a', 'a', [N('b', 'b', [N('c', 'c', [N('d', 'd')])])])];
   for (const mode of ['balanced', 'right', 'left', 'timeline'] as const) {
     const lay = layoutHorizontal(chain, mode, new Set<string>());
     const byId = new Map(lay.boxes.map((b) => [b.node.id, b]));
     const order = ['a', 'b', 'c', 'd'];
     const ys = order.map((id) => byId.get(id)?.y ?? NaN);
-    let ok = true;
-    for (let i = 1; i < order.length; i++) if (!(ys[i] > ys[i - 1])) ok = false;
+    const sameY = ys.every((y) => Math.abs(y - ys[0]) < 1e-4);
     check(
-      `${mode}: each level of a chain is strictly below the one above (measured y: ${ys.join(', ')})`,
-      ok,
+      `${mode}: each level of a single-child chain is parallel with the one before it (measured y: ${ys.join(', ')})`,
+      sameY,
     );
-    // And nothing may overlap: "all at the same y" was the flat-chain symptom, and stacking is its cousin.
+    // And nothing may overlap:
     let overlaps = 0;
     for (let i = 0; i < lay.boxes.length; i++) {
       for (let j = i + 1; j < lay.boxes.length; j++) {
@@ -683,24 +656,20 @@ console.log('\nedgePath: all three line styles produce a valid SVG path');
     check(`${mode}: no two boxes overlap in a chain`, overlaps === 0);
   }
 
-  // ★★ The descent must not grow with the parent's **text length**. An earlier version used
-  //    `max(V_GAP, round(parentH * 0.6))` as the gap, so a one-line parent put its only child 37px
-  //    below, two lines 73px, three lines 108px —— the parent's height was standing in for "one line of
-  //    text", which is not what it measures. What must stay constant is the **clearance** between the
-  //    parent's bottom edge and the child's top edge.
+  // A taller parent's single child stays vertically centered on it
   {
-    const clearances: number[] = [];
     for (const lines of [1, 2, 3]) {
       const long = 'x'.repeat(lines * 30);
       const lay = layoutHorizontal([N('p', long, [N('c', 'child')])], 'right', new Set<string>());
       const by = new Map(lay.boxes.map((b) => [b.node.id, b]));
       const p = by.get('p')!, c = by.get('c')!;
-      clearances.push(c.y - (p.y + p.h));
+      const parentCy = p.y + p.h / 2;
+      const childCy = c.y + c.h / 2;
+      check(
+        `parent with ${lines} line(s) keeps its only child vertically centered (cy diff: ${Math.abs(parentCy - childCy).toFixed(3)})`,
+        Math.abs(parentCy - childCy) < 1e-4,
+      );
     }
-    check(
-      `a taller parent does not push its only child further away (clearance per height: ${clearances.join(', ')})`,
-      clearances.every((v) => v === clearances[0]) && clearances[0] > 0,
-    );
   }
 
   // The other half: siblings must still spread **around** the parent, not be pushed below it.

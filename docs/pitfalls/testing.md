@@ -1117,10 +1117,8 @@ they should be level".
 
 **What it was.** Three parents each holding exactly one child drew as a staircase —— 345 / 374 / 403 / 432,
 one step per node —— so **parent B was drawn level with parent A's child**. `subtreeH` reports the vertical
-band a subtree reserves, and the layout stacks those bands to place siblings; for a **single** child it
-returned the *child's* band alone, ignoring that `childCyOf` forces the child below its parent (the rule that
-stops `a > b > c > d` drawing as one flat line). A chain of n levels reserved the extent of n−1: one node
-height short, **per level**.
+band a subtree reserves, and the layout stacks those bands to place siblings.
+(Single children are now horizontally parallel with their parents (`child.y === parent.y`) by standard mindmap design, with `subtreeH` reserving `Math.max(h + V_GAP, children)`).
 
 **The practice, and the reason this entry exists:** the first two regression tests written for it **passed
 with the defect restored**, so they would have shipped a fix nobody could keep honest.

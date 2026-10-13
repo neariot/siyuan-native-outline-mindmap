@@ -464,82 +464,13 @@ export function layoutHorizontal(
   const isCollapsed = (n: OutlineNode): boolean => collapsedSet.has(n.id);
 
   /**
-   * The vertical band a subtree reserves. **It must equal the extent the layout really draws.**
-   *
-   * ★★★ Three sibling subtrees are laid out by stacking their bands, so a band that under-reports its
-   *   extent makes its neighbour move up into the space it actually occupies. Measured with three parents
-   *   that each hold exactly one child:
-   *
-   *       parent A y=345 · its only child y=374 · parent B y=374 · its only child y=403 ·
-   *       parent C y=403 · its only child y=432
-   *
-   *   —— a staircase, one step per node, 29px apart, instead of three level rows of two.
-   *
-   *   Why: for a **single** child, `childCyOf` forces the child below its parent (a chain must descend, or
-   *   `a > b > c > d` draws as one flat line). That costs `parentH / 2 + V_GAP + childH / 2` from centre to
-   *   centre, so a chain of n nodes really spans `(n - 1) * step + nodeH`. The old body returned the
-   *   **child's** band alone for such a node, which is `n - 1` levels of extent for `n` levels of drawing ——
-   *   an undershoot of one node height (`17px` at the default font size) **per chain level**.
-   *
-   *   So the band is the sum of what the children draw, plus what connecting to them costs when there is
-   *   exactly one (where the descent is forced). Two or more children need no such term: centring already
-   *   separates them, and the parent's own height sits inside the band their stack spans.
-   *
-   *   ★ The leaf case keeps `+ V_GAP`, which is the separation between stacked siblings. It is not part of
-   *     the chain step —— it is what keeps two adjacent leaves from touching.
+   * The vertical band a subtree reserves. It must equal the extent the layout draws,
+   * bounded below by the node's own measured height plus vertical separation gap.
    */
   const subtreeH = (n: OutlineNode): number => {
     const h = measureNode(n).h;
     if (n.children.length === 0 || isCollapsed(n)) return h + V_GAP;
-    const children = n.children.reduce((a, c) => a + subtreeH(c), 0);
-    // A forced descent below the parent: parent's half, the gap, the child's half. The child's half is
-    // already inside `children`, so only this much is added for the connection itself.
-    if (n.children.length === 1) return children + h / 2 + V_GAP;
-    return children;
-  };
-
-  /**
-   * The centre-y of a child that owns a band `bandH` starting at `startY`, given its `parentCy`.
-   *
-   * ★★★ Centring the band is right for a **tree** and silently wrong for a **chain**: when a node has
-   *   exactly one child the band is that child's own subtree height, so `startY + bandH / 2` equals
-   *   `parentCy` **exactly** —— at every level. Measured, a four-level chain (`a > b > c > d`) produced
-   *   four boxes all at `y = 60`: drawn as one flat left-to-right line, while the document and the outline
-   *   (indentation-based) both showed the nesting correctly.
-   *
-   *   So the only child is pushed below its parent when centring would not do it. Two or more children
-   *   need no forcing —— centring already separates them from each other.
-   *
-   *   ★ The rule lives here, in one function, because the same arithmetic appeared in three places (the
-   *   recursive layout and both sides of the single-root branch); fixing one and missing the others is
-   *   how a chain stayed flat after the first fix.
-   */
-  const childCyOf = (
-    parentCy: number,
-    parentH: number,
-    startY: number,
-    bandH: number,
-    siblingCount: number,
-    childH: number,
-  ): number => {
-    const centred = startY + bandH / 2;
-    if (siblingCount !== 1) return centred;
-    // ★ The parent's height decides **where its bottom edge is**, and the gap below it is the same
-    //   `V_GAP` used between siblings —— nothing else depends on the height.
-    //
-    //   An earlier version used `max(V_GAP, round(parentH * 0.6))` as the gap as well, so the descent
-    //   grew with the parent's height: measured, a one-line parent put its only child 37px below, two
-    //   lines 73px, three lines 108px. The height was standing in for "one line of text", which is not
-    //   what it measures —— the line height is the fixed `NODE_LINE_H`, and a block of text is taller
-    //   than one line precisely because it holds several. Two siblings of different heights were also
-    //   pushed apart by different amounts, so the spacing was uneven for no reason a reader could see.
-    // ★ `minBelow` is the centre that puts the child's **top edge** V_GAP below the parent's bottom edge,
-    //   so it has to be computed from the child's own height, not used as a centre directly. Using it as
-    //   the centre left the boxes overlapping by 3px at every height (measured: parentBottom 94, child
-    //   top 91 —— the child sat *inside* its parent), which is the same "close enough" that made this
-    //   look fixed.
-    const minBelow = parentCy + parentH / 2 + V_GAP + childH / 2;
-    return centred < minBelow ? minBelow : centred;
+    return Math.max(h + V_GAP, n.children.reduce((a, c) => a + subtreeH(c), 0));
   };
 
   const layoutSubtree = (
@@ -586,7 +517,7 @@ export function layoutHorizontal(
     let startY = cy - totalCh / 2;
     for (const c of n.children) {
       const ch = subtreeH(c);
-      const childCy = childCyOf(cy, m.h, startY, ch, n.children.length, measureNode(c).h);
+      const childCy = startY + ch / 2;
       layoutSubtree(c, x, w, cy, childCy, side, depth + 1, branchIdx);
       startY += ch;
     }
@@ -646,7 +577,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length, measureNode(c).h);
+          const childCy = startY + ch / 2;
           layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
           startY += ch;
         });
@@ -691,7 +622,7 @@ export function layoutHorizontal(
         let startY = rootCy - totalCh / 2;
         r.children.forEach((c) => {
           const ch = subtreeH(c);
-          const childCy = childCyOf(rootCy, rm.h, startY, ch, r.children.length, measureNode(c).h);
+          const childCy = startY + ch / 2;
           layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, branchIdx);
           startY += ch;
         });
@@ -761,7 +692,7 @@ export function layoutHorizontal(
           let startY = rootCy - rightKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           rightKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = childCyOf(rootCy, rm.h, startY, ch, rightKids.length, measureNode(c).h);
+            const childCy = startY + ch / 2;
             layoutSubtree(c, rootX, rw, rootCy, childCy, 1, 1, idx);
             startY += ch;
           });
@@ -771,7 +702,7 @@ export function layoutHorizontal(
           let startY = rootCy - leftKids.reduce((acc, c) => acc + subtreeH(c), 0) / 2;
           leftKids.forEach((c, idx) => {
             const ch = subtreeH(c);
-            const childCy = childCyOf(rootCy, rm.h, startY, ch, leftKids.length, measureNode(c).h);
+            const childCy = startY + ch / 2;
             layoutSubtree(c, rootX, rw, rootCy, childCy, -1, 1, rightKids.length + idx);
             startY += ch;
           });
