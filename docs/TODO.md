@@ -69,6 +69,11 @@ section is a fact worth stating rather than a section to delete and re-invent.
   check names with exit 2; PNG export failures report via `onError` → `showMessage` (new
   `errExportPng` key); E2E download waits use `Promise.all`. Four more entries verified already
   fixed (menu focus, title escape, doc guard, tooltip rule) and struck with evidence.
+- **Low-findings sweep.** Removed the `titleParagraphs` array smuggling (`as any` gone both ends;
+  opts + `takeTitleParagraphs()` stay); `export.spec.ts` reads the `SPECIAL_TOP` fixture instead of
+  retyped literals; dragdrop kernel-order assertion compares against the kernel's own order; deleted
+  uncalled `escapeKramdown`; refuted the "no-op span step" with measured evidence (it unescapes text
+  inside stashed spans).
 
 **Resolved, verified, and removed from the queue:**
 
