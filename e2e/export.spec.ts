@@ -6,7 +6,7 @@ import {
 } from './mindmap';
 import {
   kernelApi, ensureTestDoc, resolveTestNotebook, createTempDoc, removeDoc,
-  TOP_BRANCHES, SPECIAL_DOC_MD, type KernelApi,
+  TOP_BRANCHES, SPECIAL_DOC_MD, SPECIAL_TOP, type KernelApi,
 } from './testdoc';
 
 /**
@@ -258,7 +258,10 @@ test('XML special characters in nodes are escaped', async ({ page }) => {
     const xml = mm.buf.toString('utf8');
 
     // ① Dangerous characters must not appear **bare** in an attribute value
-    expect(xml, 'a bare `<alpha>` should not appear in a TEXT attribute').not.toContain('TEXT="SVR<alpha>');
+    // ★ Asserted against the shared SPECIAL_TOP fixture, not a retyped literal: a literal here and
+    //   the fixture in testdoc.ts can drift apart unnoticed. The raw fixture holds bare `<`, `>`,
+    //   `&`, so its verbatim presence inside TEXT="…" is itself the bug — no partial matching needed.
+    expect(xml, 'the raw special text must not appear bare in a TEXT attribute').not.toContain(`TEXT="${SPECIAL_TOP}"`);
     expect(xml, '`&` must be escaped as &amp;').toContain('&amp;');
     expect(xml, '`<` must be escaped as &lt;').toContain('&lt;');
     expect(xml, '`>` must be escaped as &gt;').toContain('&gt;');
@@ -277,7 +280,7 @@ test('XML special characters in nodes are escaped', async ({ page }) => {
       const doc = new DOMParser().parseFromString(markup, 'application/xml');
       return [...doc.querySelectorAll('node')].map((n) => n.getAttribute('TEXT'));
     }, xml);
-    expect(texts, 'parsing it back should restore the original text').toContain('SVR<alpha> & 阈值');
+    expect(texts, 'parsing it back should restore the original text').toContain(SPECIAL_TOP);
     expect(texts, 'a child node containing < > & should be restored too').toContain('x > 10 & y < 20');
     expect(texts, 'the quoted node should be restored').toContain('符号 "测试"');
   } finally {

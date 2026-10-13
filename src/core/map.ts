@@ -93,11 +93,6 @@ function unescapeHtml(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
-/** Escape characters that carry syntax in Kramdown (called on plain-text fragments only) */
-function escapeKramdown(s: string): string {
-  return s.replace(/([\\`*_~[\]])/g, '\\$1');
-}
-
 /**
  * Turn a node's HTML fragment into SiYuan Kramdown inline text.
  *
@@ -834,7 +829,6 @@ export function treeToKramdown(
   const titleParas =
     opts.titleParagraphs ??
     opts.docParagraphs ??
-    (nodes as any).titleParagraphs ??
     [];
   for (const p of titleParas) {
     const kd = htmlToKramdown(p);
@@ -1112,7 +1106,6 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   for (const n of flatNodes(roots)) if (!n.id) n.id = makeSiyuanId();
 
   lastTitleParagraphs = titleParagraphs;
-  (roots as any).titleParagraphs = titleParagraphs;
   return roots;
 }
 

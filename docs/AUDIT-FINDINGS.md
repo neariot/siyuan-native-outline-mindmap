@@ -315,8 +315,10 @@ conclusion to draw from a complete-looking list of findings.
 
 ### siyuan
 
-- **medium · dead-code** `src/siyuan/store.ts:2130`  
-  The post-move verification poll is unreachable — `ok = true` is set before the loop, so `if (ok) break` fires on iteration 0 and the `SELECT parent_id` confirmation never runs; every moveBlock is then counted as a successful move even though api.ts itself documents that a refused move returns `code:0` and does nothing.
+- ~~**medium · dead-code** `src/siyuan/store.ts:2130`~~ **stale — not present in current code**
+  The code sets `ok = false` before the move and `ok = true` only after `moveBlock` succeeds
+  (verified by read; so since the single-commit history). The described `ok = true`-before-loop
+  shape does not exist.
 - ~~**medium · bug** `src/siyuan/store.ts:190`~~ **fixed**
   `pruneDestroyedSiblings` declared an existing sibling block 'destroyed' after two SQL misses only
   200 ms apart and never consulted `freshlyInserted`. Fixed: fresh blocks are skipped before any probe
@@ -350,12 +352,18 @@ conclusion to draw from a complete-looking list of findings.
   For the `<span>\u200b</span>` variant the "the || fallback really took effect" assertion is satisfied by the placeholder inside the un-stripped span, so it passes on the broken code the file exists to catch.
 - **low · test-quality** `src/core/layout.test.ts:90`  
   Two different colour invariants share one accumulator, so the two checks can never disagree and each one can report the other's failure — a red run no longer says which invariant broke.
-- **low · dead-code** `src/core/layout.ts:101`  
-  `escapeKramdown` is defined and never called anywhere (not even inside map.ts), and no gate notices because tsconfig has no noUnusedLocals.
-- **low · dead-code** `src/core/map.ts:639`  
-  The "inline styles" step in kramdownToHtml rebuilds the matched span character for character, so the whole statement is a no-op that reads as if it did something.
-- **low · type-escape** `src/core/map.ts:738`  
-  The title paragraphs are smuggled out of kramdownToTree as an undeclared array property read through `as any`, duplicating the module-global channel `takeTitleParagraphs()` — a reader of the types cannot see that the tree carries this field.
+- ~~**low · dead-code** `src/core/layout.ts:101`~~ **fixed**
+  `escapeKramdown` was private and uncalled anywhere (verified by grep). Deleted.
+- ~~**low · dead-code** `src/core/map.ts:639`~~ **refuted in writing**
+  The step is load-bearing, not a no-op: it stashes the span through the entity-escaping stages
+  and step 7 unescapes only the *text inside* it (`<span style="…">a&amp;b</span>` → `<span
+  style="…">a&b</span>`, verified live). A character-identical rebuild on clean input is the
+  point — the structure must survive escaping unchanged.
+- ~~**low · type-escape** `src/core/map.ts:738`~~ **fixed**
+  The tree no longer smuggles `titleParagraphs` as an undeclared array property (`as any` gone
+  on both ends): the writer half is `treeToKramdown(nodes, { titleParagraphs })` / `docParagraphs`
+  opts, the reader half is the `takeTitleParagraphs()` channel. Verified: zero remaining
+  `.titleParagraphs` accesses outside the option plumbing; typecheck + map suite green.
 
 ### docs-core
 
@@ -407,8 +415,9 @@ conclusion to draw from a complete-looking list of findings.
   Three exported helpers are called by nothing (typeInNode, pressKeyInNode, clickBullet), each carrying its own selector that can rot unnoticed - the same failure this file already documents for a fourth one.
 - **low · test-quality** `e2e/outline.ts:40`  
   ensureOutlineReady's criterion counts every `.node-row` including the empty placeholder row, while its message claims a real node row - so the precondition passes when the outline rendered no content, the family of vacuous pass the ledger records as more dangerous than a false failure.
-- **low · dead-code** `e2e/testdoc.ts:279`  
-  SPECIAL_TOP is exported with a comment stating what the export must contain, but no test reads it; export.spec.ts asserts the same text as its own literal, so the fixture and its assertion can now drift apart.
+- ~~**low · dead-code** `e2e/testdoc.ts:279`~~ **fixed**
+  `SPECIAL_TOP` is now imported by `export.spec.ts` (the bare-literal and round-trip assertions
+  read the fixture), so export and assertion cannot drift apart.
 - **low · bug** `e2e/themes.ts:172`  
   restoreTheme is documented as 'Put the instance back the way it was found' but neither of its two effects restores anything: `mode` defaults to the literal 'light' rather than the mode it found, and useTheme's forced `modeOS: false` (which it needs to make the switch real) is never written back, so a run permanently clears 'follow the system' on the shared instance.
 
@@ -434,8 +443,9 @@ conclusion to draw from a complete-looking list of findings.
   The file header states the menu has 7 items while the file's own case asserts exactly 8, so the header is stale (it also disagrees with the enumerated list in the same sentence).
 - **low · test-quality** `e2e/dragdrop.spec.ts:177`  
   The "written back to SiYuan" criterion compares `topLevelTexts` with the UI list **filtered by DB membership**, so a node that disappeared from the kernel still compares equal — the assertion is one-directional and cannot see data loss.
-- **low · dead-code** `e2e/dragdrop.spec.ts:213`  
-  The same-level guard filters the measured texts by a hardcoded name list whose last two entries can never occur: TEMP_DOC_MD has only 甲/甲一/乙/乙一, so 丙 and 丁 are leftovers from a different fixture and the filter silently means "甲 or 乙".
+- ~~**low · dead-code** `e2e/dragdrop.spec.ts:213`~~ **fixed**
+  The kernel-order assertion compares against the kernel's own order instead of a hardcoded
+  name list whose 丙/丁 entries this fixture never holds.
 - **low · docs** `e2e/export.spec.ts:230`  
   The comment above the determinism case allows variation the assertion forbids: it says a little variation (timestamps and the like) is acceptable while the criterion is exact string equality.
 - **low · type-escape** `e2e/interactions.spec.ts:1`  

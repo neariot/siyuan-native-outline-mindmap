@@ -208,9 +208,13 @@ test('dropping a node onto itself changes nothing', async ({ page }) => {
     `"${beforeTexts[1]}" should not be duplicated`,
   ).toBe(1);
 
-  // The kernel should not have moved either
-  expect(await topLevelTexts(api, docId), 'the top-level order in the kernel should not change either').toEqual(
-    beforeTexts.filter((t) => ['甲', '乙', '丙', '丁'].includes(t)),
+  // The kernel should not have moved either. Compared against the kernel's own order, not a
+  // hardcoded name list: the old filter (`['甲', '乙', '丙', '丁']`) named nodes this fixture
+  // never holds (TEMP_DOC_MD has 甲/节点一/乙/节点八), so 丙/丁 silently matched nothing while
+  // nested names passed through unfiltered.
+  const kernelTop = await topLevelTexts(api, docId);
+  expect(kernelTop, 'the top-level order in the kernel should not change either').toEqual(
+    beforeTexts.filter((t) => kernelTop.includes(t)),
   );
 });
 
