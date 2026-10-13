@@ -414,9 +414,16 @@ release while every gate stays green.
   unconditional?" was the wrong question (the idiom always wraps it in `if (fail)`, yet the run still ends
   there), and the brace walk tested `depth < base` where the closing brace returns *to* base. The tool's own
   header records all three.
-- **The outline's drag-and-drop reorder has no E2E case for its three zones at the range level**
-  (the 25% / 75% boundaries are unit-tested, and all three zones are now covered end-to-end —— what is
-  missing is a case for the *boundary* values themselves).
+- **Done: the outline's drag-zone boundaries have an E2E case.** The zones were unit-tested at the exact
+  ratios and covered end-to-end in the middle and at the upper edge, but nothing drove the *boundary*. ★ The
+  first version of the case asserted a pointer at exactly 25% nests the node — and failed, because that
+  premise is unreachable: **`DragEvent.clientY` is an integer** while a row's height is fractional
+  (33.59375), so the two pixels around 25% give ratios 0.2381 and 0.2679 and no pointer can land on the line.
+  The case now asserts what a user can exercise — the boundary lands within **one pixel** of the constant:
+  the pixel below the line reorders, the pixel at/above it nests, and the same at 75% the other way — which is
+  also the half the unit cases cannot see (a padding or border between the row the DOM measures and the row
+  the plugin reads would move the real edge while the arithmetic stayed green). Red-proofed by moving
+  `DROP_ABOVE_RATIO` to 0.40 (fails on the 25% assertion). Recorded as `docs/pitfalls/testing.md` §6.28.
 
 ## Modularity
 

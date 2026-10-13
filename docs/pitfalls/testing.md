@@ -1258,3 +1258,40 @@ failed a second way: `expect(received).toMatch(...)` on the exported markdown.
 - ★ **When two edits land in one commit, the second one is unreviewed.** Here the index and the fixture
   changed together; the index was never reconsidered, and the resulting 2-minute timeout was read as a
   product problem first.
+
+### 6.28 A boundary a real pointer cannot reach: `clientY` is an integer
+
+**Symptom.** A new E2E case for the outline's three drop zones asserted that a pointer at **exactly 25%** of
+a row's height nests the node (`child`), because the unit cases pin `dropZoneAt(0.25) === 'child'`. Through a
+real drag it failed: the source row's indentation did not change, so the decision was `above`.
+
+**Cause — the test's premise was unreachable, not the product.** `DragEvent.clientY` is an **integer**,
+while `getBoundingClientRect().height` is fractional. Measured on the fixture row:
+
+```
+row height 33.59375
+25% = 8.398 px   → the two integer pixels are 8 (ratio 0.2381) and 9 (ratio 0.2679)
+75% = 25.195 px  → 25 (ratio 0.7442) and 26 (ratio 0.7740)
+```
+
+There is no integer `clientY` that yields `ratio === 0.25`, so "the pointer is exactly on the boundary" is
+not a thing a user can do. The decision is correct: 8 px is below the line → `above`, 9 px is above it →
+`child`. The unit cases are right too — they call `dropZoneAt` with a real number, and `0.25` is in the
+closed interval. The two layers are about different things, and only the unit layer can express "exactly on
+the line".
+
+**Practice.**
+
+- ★ **Ask what the input resolution is before writing a boundary case at the boundary.** A pointer gives
+  integer coordinates, a finger gives integers too, and a row's height is fractional — so the boundary lives
+  *between* two pixels. The assertion that a user can exercise is "the boundary lands within one pixel of
+  where the constant says": the pixel below the 25% line reorders, the pixel at or above it nests, and the
+  same at 75% the other way. That is also the property the unit cases **cannot** cover — a padding or border
+  between the row the DOM measures and the row the plugin reads would move the real edge while the
+  arithmetic stayed green.
+- ★ **Measure the primitive, then write the case.** The first version guessed `targetPosition.y = height *
+  0.25` and failed; one probe printing `clientY` and the computed ratio showed why in a single run, and the
+  failure was in the case rather than in the product.
+- ★ **A red proof confirms the case can fail, and that it fails for the right reason.** Moving
+  `DROP_ABOVE_RATIO` to 0.40 made the case fail on the assertion that names the 25% line — not on an
+  unrelated timeout or a missing element.

@@ -357,6 +357,119 @@ test('a drop in the middle of a row makes a child, only the upper edge reorders 
   }
 });
 
+/**
+ * ★ The drop zones' **boundaries**, driven through a real browser at the resolution a pointer has.
+ *
+ * The unit cases in `src/plugin/outline/drop-zone.test.ts` pin the arithmetic (exactly 0.25 → `child`,
+ * 24.9 → `above`, 75.1 → `below`). What they cannot see is the other half of the claim: that the ratio the
+ * *page* produces is the one the decision receives. **Measured, and it is not exact** —— `DragEvent.clientY`
+ * is an **integer**, while a row's `getBoundingClientRect().height` is fractional (33.59375 in this
+ * fixture), so a pointer at "exactly 25% of the row" cannot be expressed: the two integer pixels around that
+ * point give 0.2381 and 0.2679. A case asserting `ratio === 0.25` through a real drag is therefore
+ * asserting something unreachable, and it failed for that reason before this comment was written.
+ *
+ * So the claim tested here is the one a user can exercise: **the boundary lands within one pixel of where
+ * the constant says**. The pixel below the 25% line must reorder (`above`), the pixel at or above it must
+ * nest (`child`), and the same at 75% the other way. That is also the property the unit cases cannot cover
+ * —— a padding or border between the row the DOM measures and the row the plugin reads would move the real
+ * edge while the arithmetic stayed green.
+ *
+ * Judged by the **level** (from `treeShape()`), which is what a `child` drop changes; a flat text list
+ * cannot see it, which is how the `child` zone was once misread as "no change".
+ */
+test('★ the drop boundary lands within one pixel of the 25% and 75% lines', async ({ page }) => {
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+
+  /** A fresh document; drop row 2 onto row 0 at `offsetPx` below row 0's top; return the shape. */
+  const dropAtOffset = async (offsetPx: number): Promise<string[]> => {
+    const fresh = await createTempDoc(api, notebook, TEMP_DOC_MD);
+    try {
+      await openDoc(page, fresh);
+      await toOutlineView(page);
+      await page
+        .locator('.om-bullet')
+        .nth(2)
+        .dragTo(page.locator('.node-row').nth(0), {
+          targetPosition: { x: 12, y: offsetPx },
+        });
+      await page.waitForTimeout(1300);
+      return treeShape(page);
+    } finally {
+      await removeDoc(api, fresh);
+    }
+  };
+
+  // Measure the row the plugin itself reads, so the pixel offsets are derived rather than guessed.
+  const rect = await page.evaluate(() => {
+    const r = document.querySelectorAll('.node-row')[0]!.getBoundingClientRect();
+    return { top: r.top, height: r.height };
+  });
+  // ★ The integer pixels bracketing each line: `floor` is below the line, `floor + 1` is at or above it.
+  const line25 = rect.height * 0.25;
+  const line75 = rect.height * 0.75;
+  const below25 = Math.floor(line25);
+  const at25 = below25 + 1;
+  const below75 = Math.floor(line75);
+  const at75 = below75 + 1;
+  // The ratio the decision will actually compute for those pixels (integer clientY, fractional height).
+  const ratioOf = (offset: number): number => offset / rect.height;
+  console.log(
+    `PROBE row height ${rect.height}; 25% = ${line25.toFixed(3)} → pixels ${below25} (ratio ${ratioOf(below25).toFixed(4)}) / ` +
+      `${at25} (ratio ${ratioOf(at25).toFixed(4)}); 75% = ${line75.toFixed(3)} → pixels ${below75} / ${at75}`,
+  );
+
+  const indentOf = (rows: string[], text: string): number =>
+    Number(rows.find((r) => r.split('|')[1] === text)!.split('|')[0]);
+
+  // ── 25% line: below it → `above` (same level, ordered first); at/above it → `child` (deeper) ──
+  const b = await dropAtOffset(below25);
+  const source = b.map((r) => r.split('|')[1]).sort();
+  const baseline = await (async () => {
+    const fresh = await createTempDoc(api, notebook, TEMP_DOC_MD);
+    try {
+      await openDoc(page, fresh);
+      await toOutlineView(page);
+      return treeShape(page);
+    } finally {
+      await removeDoc(api, fresh);
+    }
+  })();
+  const sourceText = baseline[2].split('|')[1];
+  const targetIndent = indentOf(baseline, baseline[0].split('|')[1]);
+
+  expect(
+    indentOf(b, sourceText),
+    `★ one pixel below the 25% line (${below25}px, ratio ${ratioOf(below25).toFixed(4)}) must be the ` +
+      'same-level `above` zone, not a child',
+  ).toBe(targetIndent);
+  expect(b[0].split('|')[1], 'an `above` drop puts the source first').toBe(sourceText);
+  expect(source, 'no node is lost').toEqual(baseline.map((r) => r.split('|')[1]).sort());
+
+  const c = await dropAtOffset(at25);
+  expect(
+    indentOf(c, sourceText),
+    `★ the first pixel at or above the 25% line (${at25}px, ratio ${ratioOf(at25).toFixed(4)}) must be ` +
+      'the `child` zone —— the interval is closed at the low end',
+  ).toBeGreaterThan(targetIndent);
+
+  // ── 75% line: below it → `child`; above it → `below` (same level) ──
+  const d = await dropAtOffset(below75);
+  expect(
+    indentOf(d, sourceText),
+    `★ one pixel below the 75% line (${below75}px, ratio ${ratioOf(below75).toFixed(4)}) is still the ` +
+      '`child` zone —— the interval is closed at the high end',
+  ).toBeGreaterThan(targetIndent);
+
+  const e = await dropAtOffset(at75);
+  expect(
+    indentOf(e, sourceText),
+    `★ the first pixel above the 75% line (${at75}px, ratio ${ratioOf(at75).toFixed(4)}) must be the ` +
+      'same-level `below` zone, not a child',
+  ).toBe(targetIndent);
+
+  await api.dispose();
+});
+
 /** Dragging too far onto empty canvas space should not lose nodes. */
 test('dropping on empty space does not lose nodes', async ({ page }) => {
   const before = await rowTexts(page);

@@ -22,7 +22,7 @@ test-criteria — it had become unreadable.)
 | [`pitfalls/plugin.md`](pitfalls/plugin.md) | Plugin mechanics: i18n, icon tooltips | `5.1`–`5.5` |
 | [`pitfalls/build.md`](pitfalls/build.md) | Build and engineering: minifiers, DOM paths, dead-code removal | `6.2`, `6.3`, `6.7` |
 | [`pitfalls/debug.md`](pitfalls/debug.md) | Debugging methods and tools: **screenshot first**, polling, CDP recording, `getComputedStyle` | `6.5`, `6.6`, `6.9`, `6.12`, `6.19`, `6.20` |
-| [`pitfalls/testing.md`](pitfalls/testing.md) | Tests and criteria: assertions that **look right but have no defensive value**; never guess a target or a path | `6.1`, `6.4`, `6.8`, `6.9f/h–m/r–u/z`, `6.10`, `6.11`, `6.13`, `6.14`, `6.15`–`6.18`, `6.22`, `6.25`, `6.27` |
+| [`pitfalls/testing.md`](pitfalls/testing.md) | Tests and criteria: assertions that **look right but have no defensive value**; never guess a target or a path | `6.1`, `6.4`, `6.8`, `6.9f/h–m/r–u/z`, `6.10`, `6.11`, `6.13`, `6.14`, `6.15`–`6.18`, `6.22`, `6.25`, `6.27`, `6.28` |
 
 SiYuan kernel API behaviour (`insertBlock` anchors, `updateBlock` rebuilding
 block IDs, poll-after-write, kramdown parsing, plugin loading details) is about
