@@ -509,11 +509,25 @@ const onlyStyle = htmlToSiyuanDom('<span style="font-size:20px">大</span>');
 check('DOM: pure style uses text',
   onlyStyle === '<span data-type="text" style="font-size:20px">大</span>', onlyStyle);
 
-// Links/images are kept as-is (SiYuan recognises the standard tags)
+// Links/images are rewritten into the form the kernel actually stores.
+//
+// ★★ Both assertions below used to pin `<a href>` / `<img src>` being passed through, on the
+//   belief that "SiYuan recognises the standard tags". Measured against the running kernel,
+//   it does not: `<a href="https://x.com">链</a>` and `<img src="assets/a.png">` both come
+//   back as the literal text `<protyle-html>`, i.e. the link and the image were destroyed.
+//   lute reads the address from `data-href` on a **span** carrying `a`
+//   (`util.GetTextMarkAData`), and an inline image is `<span data-type="img">`.
 const linkDom = htmlToSiyuanDom('<a href="https://x.com">链</a>');
-check('DOM: link kept', linkDom.includes('<a href="https://x.com">'), linkDom);
+check('DOM: link rewritten to the form the kernel stores',
+  linkDom === '<span data-type="a" data-href="https://x.com">链</span>', linkDom);
 const imgDom = htmlToSiyuanDom('<img src="assets/a.png">');
-check('DOM: image kept', imgDom.includes('assets/a.png'), imgDom);
+// ★ The empty `<span> </span>` SiYuan puts in front of an inline image is removed by the
+//   empty-span rule below. That is deliberate, not an accident: the kernel accepts the image
+//   span without it (measured — with the separator the read-back kramdown carries a trailing
+//   `<span data-type="text"> </span>` as well, which is a stray space in the document).
+check('DOM: image rewritten to the form the kernel stores',
+  imgDom === '<span data-type="img"><span><img src="assets/a.png" data-src="assets/a.png" alt=""/></span></span>',
+  imgDom);
 
 // Unrecognised tags are stripped, but the **text must be kept** (better less styling than lost content)
 const unknownDom = htmlToSiyuanDom('<div>文字</div>');

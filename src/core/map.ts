@@ -243,6 +243,10 @@ export function htmlToKramdown(html: string): string {
   s = s.replace(/<em>([\s\S]*?)<\/em>/g, (_m, t: string) => `*${unescapeHtml(t)}*`);
   s = s.replace(/<s>([\s\S]*?)<\/s>/g, (_m, t: string) => `~~${unescapeHtml(t)}~~`);
   s = s.replace(/<del>([\s\S]*?)<\/del>/g, (_m, t: string) => `~~${unescapeHtml(t)}~~`);
+  // ★ `<strike>` is what Blink actually emits (measured in a real browser for
+  //   `document.execCommand('strikeThrough')`), and it is not in the `KNOWN_TAG` whitelist
+  //   below either —— so it used to survive as literal `<strike>` text instead of a mark.
+  s = s.replace(/<strike>([\s\S]*?)<\/strike>/g, (_m, t: string) => `~~${unescapeHtml(t)}~~`);
   s = s.replace(/<code>([\s\S]*?)<\/code>/g, (_m, t: string) => `\`${unescapeHtml(t)}\``);
 
   // 4) links
@@ -340,6 +344,73 @@ export function htmlToKramdown(html: string): string {
 // ---------------------------------------------------------------- HTML → SiYuan DOM
 
 /**
+ * The kramdown a document holds → **the same inline DOM** `htmlToSiyuanDom` produces for a
+ * node's text.
+ *
+ * ★★ It exists for one caller, and the reason is a measured defect.
+ *
+ *   `store.ts` decides "does this block need rewriting?" before it calls `updateBlockDom`.
+ *   It used to compare a serialised node text against `blocks.content`, and **`blocks.content`
+ *   is plain text** — every markup variant of a paragraph reads back as the same stripped
+ *   string. So removing a strikethrough left both sides equal, `updateBlockDom` was never
+ *   called, and the mark came back on the next reload while the outline showed it removed.
+ *   Measured on the outline: the UI showed plain text and the document still held
+ *   `<span data-type="text" style="font-weight: bold;">`.
+ *
+ *   Both sides are therefore reduced to the form the write actually sends, so "unchanged"
+ *   means "the same bytes would be written" rather than "the same characters".
+ *   The round trip through the reader is what makes that a fixed point: reading `**X**` back
+ *   gives `<b>X</b>`, which serialises to the same span as a bold `<span style=…>`.
+ */
+export function markdownToInlineDom(markdown: string): string {
+  return htmlToSiyuanDom(kramdownToHtml(markdown));
+}
+
+/**
+ * Split a `style` attribute into the SiYuan **marks** it stands for and the style that is
+ * left over.
+ *
+ * Why a split at all: the outline toolbar runs with `styleWithCSS` on, so bold / italic /
+ * underline / strike arrive as CSS declarations rather than as `<b>` / `<i>` / `<u>` / `<s>`.
+ * Passing them through unchanged stores them as an inline style, which the kernel renders
+ * but SiYuan itself would never write (measured: `<span data-type="text"
+ * style="font-weight: bold;">` stays that way instead of becoming `**X**`).
+ *
+ * A declaration that is only a mark is removed from the style; everything else — colour,
+ * background, size, family — stays, and the caller puts `text` back into `data-type` when
+ * something is left, because the kernel needs mark and style merged on one tag.
+ */
+const CSS_MARKS: Array<[RegExp, string]> = [
+  [/^font-weight\s*:\s*(?:bold|bolder|[6-9]00)\b/i, 'strong'],
+  [/^font-style\s*:\s*(?:italic|oblique)\b/i, 'em'],
+  [/^text-decoration(?:-line|-style)?\s*:.*\bunderline\b/i, 'u'],
+  [/^text-decoration(?:-line|-style)?\s*:.*\bline-through\b/i, 's'],
+];
+
+function splitStyleMarks(raw: string): { marks: string[]; style: string } {
+  const decls = raw.split(';').map((d) => d.trim()).filter(Boolean);
+  const marks: string[] = [];
+  const rest: string[] = [];
+  for (const d of decls) {
+    const hit = CSS_MARKS.find(([re]) => re.test(d));
+    if (hit) {
+      if (!marks.includes(hit[1])) marks.push(hit[1]);
+    } else {
+      rest.push(d);
+    }
+  }
+  // Nothing was a mark: hand the attribute back **untouched**, so a plain colour span keeps
+  // byte-for-byte the form the user (or the kernel) wrote. Rebuilding it here would quietly
+  // reformat every style in the document on the next save.
+  if (!marks.length) return { marks, style: raw };
+  if (!rest.length) return { marks, style: '' };
+  // Keep a trailing `;` when the input had one: the declaration list is rebuilt, but not
+  // reformatted — `style="color: #dc2a2a;"` must not come back as `style="color: #dc2a2a"`.
+  const tail = /;\s*$/.test(raw) ? ';' : '';
+  return { marks, style: rest.join('; ') + tail };
+}
+
+/**
  * A node's HTML fragment → **SiYuan native inline DOM** (for writing).
  *
  * ★★★ Why this function is needed (measured conclusion):
@@ -373,16 +444,91 @@ export function htmlToSiyuanDom(fragment: string): string {
   if (!fragment) return '';
   let s = fragment;
 
-  // 1) inline-style span: add `data-type="text"` so SiYuan treats it as an inline style.
+  // 0) ★★★ The semantic spans this plugin's own **reader** produces.
   //
-  //    Note this must run **before** the other rules, so the generic span rule does not eat the style.
+  //   Without a rule each of them reached the kernel as an ordinary span and the attribute
+  //   was dropped (measured against the running kernel):
+  //     `<span data-noderef="id">T</span>`  → `<span data-type="text">T</span>`   ← the reference is destroyed
+  //     `<span data-formula="E=mc^2">…</span>` → `<span data-type="text">$E=mc^2$</span>`
+  //     `<span data-tag="proj">#proj</span>`  → `<span data-type="text">#proj</span>`
+  //   `htmlToKramdown` has always handled these, so the two writers disagreed and whichever
+  //   one the save happened to use decided whether the markup survived. The forms below are
+  //   the ones `parse/inline_html.go SetTextMarkNode` actually reads — `data-href`, `data-id`,
+  //   `data-content` — and a tag, which SiYuan has **no** inline mark for, is plain text.
   s = s.replace(
-    /<span([^>]*?)\bstyle="([^"]*)"([^>]*?)>/g,
-    (m, pre: string, style: string, post: string) =>
-      /\bdata-type=/.test(pre + post)
-        ? m
-        : `<span data-type="text"${pre}style="${style}"${post}>`,
+    /<span[^>]*\bdata-formula="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g,
+    (_m, latex: string) =>
+      `<span data-type="inline-math" data-subtype="math" data-content="${escapeAttr(latex)}">${latex ? `$${latex}$` : ''}</span>`,
   );
+  s = s.replace(
+    /<span[^>]*\bdata-noderef="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g,
+    (_m, id: string, text: string) => `<span data-type="block-ref" data-id="${escapeAttr(id)}">${text}</span>`,
+  );
+  // A mention has no inline mark in SiYuan at all, so the text is what can be kept.
+  s = s.replace(/<span[^>]*\bdata-mention="[^"]*"[^>]*>([\s\S]*?)<\/span>/g, (_m, text: string) => text);
+  s = s.replace(
+    /<span[^>]*\bdata-tag="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g,
+    (_m, name: string) => `#${name}`,
+  );
+
+  // 0.1) ★★★ An inline image is a **span**, not a bare `<img>` (measured).
+  //
+  //   Written as `<img …>` the kernel answers `<protyle-html>`; written as
+  //   `<span data-type="img"><span><img src data-src alt></span></span>` it comes back as
+  //   `![alt](path)`. `data-img` is this plugin's carrier for the asset path, so that is what
+  //   both attributes are filled from.
+  s = s.replace(
+    /<img[^>]*\b(?:data-img|src)="([^"]*)"[^>]*>/g,
+    (_m, path: string, offset: number, whole: string) => {
+      if (!path || path.startsWith('imgid://')) return '';
+      const alt = /\balt="([^"]*)"/.exec(whole)?.[1] ?? '';
+      return (
+        `<span data-type="img"><span> </span><span>` +
+        `<img src="${escapeAttr(path)}" data-src="${escapeAttr(path)}" alt="${escapeAttr(alt)}"/>` +
+        `</span></span>`
+      );
+    },
+  );
+
+  // 0.2) ★★★ A link is `<span data-type="a" data-href>`, not `<a href>` (measured).
+  //
+  //   `<a href="…">` — what the toolbar inserts and the reader produces — is stored by the
+  //   kernel as `<protyle-html>`. lute reads the address from `data-href` on a span carrying
+  //   `a` (`util.GetTextMarkAData`).
+  s = s.replace(/<a([^>]*)>([\s\S]*?)<\/a>/g, (_m, attrs: string, text: string) => {
+    const href = /\bhref="([^"]*)"/.exec(attrs)?.[1] ?? '';
+    const title = /\btitle="([^"]*)"/.exec(attrs)?.[1] ?? '';
+    if (!href) return text;
+    return (
+      `<span data-type="a" data-href="${escapeAttr(href)}"` +
+      (title ? ` data-title="${escapeAttr(title)}"` : '') +
+      `>${text}</span>`
+    );
+  });
+
+  // 1) inline-style span: split the CSS declarations into SiYuan marks and a real style.
+  //
+  //    The outline sets `styleWithCSS=true`, so Blink puts **CSS** in the node instead of a
+  //    semantic tag — measured in the live outline:
+  //      bold     → `<span style="font-weight: bold;">`
+  //      italic   → `<span style="font-style: italic;">`
+  //      underline→ `<span style="text-decoration-line: underline;">`
+  //      strike   → `<span style="text-decoration-line: line-through;">`
+  //    and the same arrives from any word processor. Handed through unchanged they are stored
+  //    as `<span data-type="text" style=…>`, i.e. the document never gets `**bold**` /
+  //    `*italic*` / `<u>` / `~~strike~~` and SiYuan's own toolbar does not recognise them.
+  //
+  //    ★ Mark and style must end up on **one** tag: nesting loses one of the two (measured
+  //    against the kernel, see the round-trip table below).
+  s = s.replace(/<span([^>]*?)\bstyle="([^"]*)"([^>]*?)>/g, (m, pre: string, style: string, post: string) => {
+    // Already carries a SiYuan mark: this function must not reinterpret it.
+    if (/\bdata-type=/.test(pre + post)) return m;
+    const { marks, style: rest } = splitStyleMarks(style);
+    if (!marks.length) return `<span data-type="text"${pre}style="${style}"${post}>`;
+    // Mark and style on **one** tag: nesting loses one of them (measured, see the table above).
+    const attr = rest ? `${pre}style="${rest}"${post}` : '';
+    return `<span data-type="${marks.join(' ')}"${attr}>`;
+  });
 
   // 2) `<font color="…">` → a span with style.
   //
@@ -404,22 +550,26 @@ export function htmlToSiyuanDom(fragment: string): string {
   s = s.replace(/<\/?font[^>]*>/gi, '');
 
   // 3) semantic tags → SiYuan data-type
+  //
+  // ★ `strike` is in the list because that is what Blink produces: measured in a real
+  //   browser, `document.execCommand('strikeThrough')` yields `<strike>`, not `<s>`. It used
+  //   to fall through to the fallback strip below, which deleted the tags and kept the text —
+  //   the mark vanished on the way to SiYuan, with no error.
+  // ★ The attributes are carried across: `kramdownToHtml` folds a trailing IAL into
+  //   `<b style="color: …">`, and a bold coloured word has to keep both.
   const SEMANTIC: Array<[RegExp, string]> = [
-    [/<(\/?)b>/g, 'strong'],
-    [/<(\/?)strong>/g, 'strong'],
-    [/<(\/?)i>/g, 'em'],
-    [/<(\/?)em>/g, 'em'],
-    [/<(\/?)s>/g, 's'],
-    [/<(\/?)del>/g, 's'],
-    [/<(\/?)code>/g, 'code'],
-    [/<(\/?)u>/g, 'u'],
-    [/<(\/?)sup>/g, 'sup'],
-    [/<(\/?)sub>/g, 'sub'],
-    [/<(\/?)mark>/g, 'mark'],
+    [/<(\/?)(?:b|strong)\b([^<>]*)>/g, 'strong'],
+    [/<(\/?)(?:i|em)\b([^<>]*)>/g, 'em'],
+    [/<(\/?)(?:s|del|strike)\b([^<>]*)>/g, 's'],
+    [/<(\/?)code\b([^<>]*)>/g, 'code'],
+    [/<(\/?)u\b([^<>]*)>/g, 'u'],
+    [/<(\/?)sup\b([^<>]*)>/g, 'sup'],
+    [/<(\/?)sub\b([^<>]*)>/g, 'sub'],
+    [/<(\/?)mark\b([^<>]*)>/g, 'mark'],
   ];
   for (const [re, type] of SEMANTIC) {
-    s = s.replace(re, (_m, slash: string) =>
-      slash ? '</span>' : `<span data-type="${type}">`,
+    s = s.replace(re, (_m, slash: string, attrs: string) =>
+      slash ? '</span>' : `<span data-type="${type}"${attrs}>`,
     );
   }
 
@@ -441,10 +591,20 @@ export function htmlToSiyuanDom(fragment: string): string {
     // attrs looks like ` style="color:red"`
     return `<span data-type="${semType}"${attrs}>${text}</span>`;
   };
-  // semantic outside, style inside
+  // semantic outside, semantic inside (any pair of mark types)
+  //
+  // ★★ The type list may hold **several** types: lute reads `data-type` as a
+  //    space-separated set (`data-type="code strong"` is measured to keep both), and a
+  //    nested pair loses one of them — `<span data-type="code"><span data-type="strong">X`
+  //    comes back as `` `X` ``, the bold gone. So two marks are merged onto one tag here
+  //    rather than left nested.
   s = s.replace(
-    /<span data-type="([a-z]+)">\s*<span data-type="text"([^>]*)>([\s\S]*?)<\/span>\s*<\/span>/g,
-    (_m, semType: string, attrs: string, text: string) => mergeInto(semType, attrs, text),
+    /<span data-type="([a-z ]+)">\s*<span data-type="([a-z ]+)"([^>]*)>([\s\S]*?)<\/span>\s*<\/span>/g,
+    (_m, outer: string, inner: string, attrs: string, text: string) =>
+      // An inner `text` is only the carrier for a style, not a mark of its own: the outer
+      // mark already describes the run. Folding it in as well would make every styled span
+      // read `data-type="strong text"` where SiYuan writes `data-type="strong"`.
+      mergeInto(inner.trim() === 'text' ? outer : `${outer} ${inner}`, attrs, text),
   );
   // style outside, semantic inside
   s = s.replace(
@@ -567,6 +727,18 @@ export function kramdownToHtml(kd: string): string {
   //     only `u` / `sub` / `sup` / `span` appeared
   //     (`b` and `t` were **false positives** caused by `a<b>c` and `<T>`, not real tags).
   //   The narrower the list the better: add one `b` and `a<b>c` gets eaten as a tag.
+  //
+  // ★★★ The kept tags stay **stashed until the very end** of this function.
+  //
+  //   They used to be restored right here, before the text rules below ran. Every one of
+  //   those rules is written against **text**, not markup —— and one of them is `#name`:
+  //     `style="color: #dc2a2a;"` → `style="color: <span data-tag="dc2a2a;">…`
+  //   i.e. a hex colour inside an attribute was rewritten into a tag, the node's text became
+  //   that garbage, and the next save wrote it back: **the user's colour was destroyed, and
+  //   `htmlToKramdown` does not repair it**. Measured:
+  //     in   `<span data-type="text" style="color: #dc2a2a;">甲</span>{: style="color: #dc2a2a;"}`
+  //     out  `<span data-type="text" style="color: <span data-tag="dc2a2a;">甲</span>{:">#dc2a2a;">…`
+  //   Restoring last removes the whole class: no text rule can reach inside a tag again.
   const KEEP_TAG = /<\/?(?:span|u|sup|sub)\b[^<>]*>/gi;
   const keep: string[] = [];
   let s = kd.replace(KEEP_TAG, (m) => {
@@ -577,7 +749,7 @@ export function kramdownToHtml(kd: string): string {
     .replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  s = s.replace(/\u0002(\d+)\u0002/g, (_m, i: string) => keep[Number(i)] ?? '');  // formula (handled first so $ is not escaped)
+  // formula (handled first so $ is not escaped)
   s = s.replace(/\$([^$]+)\$/g, (_m, latex: string) => `<span data-formula="${latex}">$${latex}$</span>`);
   // block references
   //
@@ -598,21 +770,49 @@ export function kramdownToHtml(kd: string): string {
       `<span data-noderef="${id}">${dq !== undefined ? dq : sq}</span>`,
   );
   // image
-  s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_m, alt: string, src: string) => `<img alt="${alt}" src="${src}" />`);
+  //
+  // ★★ The asset path goes in `data-img`, **not** in `src` (measured).
+  //
+  //   `data-img` is this plugin's own carrier for "a path inside SiYuan's assets" — it is
+  //   what `hydrateEditable` resolves into a real URL, and what `htmlToSiyuanDom` reads to
+  //   rebuild the kernel's inline-image span. Emitting `src` instead produced a third shape
+  //   for the same thing: the writer never saw `data-img`, so the image was not hydrated on
+  //   load and was rewritten as a bare `<img src>` the kernel answers with `<protyle-html>`.
+  s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_m, alt: string, src: string) => `<img data-img="${src}" alt="${alt}" />`);
   // link
   s = s.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_m, text: string, href: string) => `<a href="${href}">${text}</a>`);
   // inline styles (color/highlight)
   s = s.replace(/<span style="([^"]*)">([\s\S]*?)<\/span>/g, (_m, style: string, text: string) => {
     return `<span style="${style}">${text}</span>`;
   });
-  // tag
-  s = s.replace(/(^|[\s(])#([^\s#]+)/g, (_m, pre: string, name: string) => `${pre}<span data-tag="${name}">#${name}</span>`);
   // emphasis
+  //
+  // ★★ `==…==` is SiYuan's own shorthand for a highlight (`<span data-type="mark">`, measured:
+  //   writing the span comes back as `==X==`). The writer maps `<mark>` to that span, so the
+  //   reader has to understand the shorthand too — without this rule a highlighted word came
+  //   back as the literal characters `==X==` on every reload.
+  s = s.replace(/==([\s\S]*?)==/g, '<mark>$1</mark>');
   s = s.replace(/~~([\s\S]*?)~~/g, '<s>$1</s>');
   s = s.replace(/\*\*([\s\S]*?)\*\*/g, '<b>$1</b>');
   s = s.replace(/\*([^*]+)\*/g, '<i>$1</i>');
   s = s.replace(/`([^`]*)`/g, '<code>$1</code>');
   s = s.replace(/<u>([\s\S]*?)<\/u>/g, '<u>$1</u>');
+
+  // ★★★ Fold a trailing inline IAL into the element it belongs to, **before** dropping it.
+  //
+  //   SiYuan exports "mark + style" as the mark's markdown followed by an IAL
+  //   (measured: writing `<span data-type="strong" style="color: #dc2a2a;">X</span>` comes back
+  //   as `**X**{: style="color: #dc2a2a;"}`). Deleting the IAL as "a suffix that is not part
+  //   of the text" — which is what the rule below does — threw the **colour** away with it, so
+  //   a bold coloured word came back plain on every reload.
+  //
+  //   A `<span>` that already carries a `style` is left alone: its style already survived the
+  //   round trip, and adding a second `style=` attribute would produce invalid markup.
+  s = s.replace(
+    /(<(span|b|strong|i|em|u|s|del|code|mark|sup|sub)\b)((?![^<>]*\bstyle=)[^<>]*)>([\s\S]*?)<\/\2>\s*\{:\s*style="([^"]*)"\}/g,
+    (_m, open: string, tag: string, attrs: string, inner: string, style: string) =>
+      `${open}${attrs} style="${style.replace(/"/g, '&quot;')}">${inner}</${tag}>`,
+  );
 
   // ★★★ Strip the inline IAL suffix `{: style="…"}` that SiYuan attaches.
   //
@@ -626,6 +826,35 @@ export function kramdownToHtml(kd: string): string {
   //     so no later regex ever sees the "span end + IAL" combination again (hit in practice).
   s = s.replace(/\{:\s*style="[^"]*"\}/g, '');
   s = s.replace(/\{:\s*style='[^']*'\}/g, '');
+
+  // tag
+  //
+  // ★★ Runs **after** the IAL has been dealt with, not before, and with every tag present
+  //   stashed again while it matches.
+  //
+  //   Two ways this rule used to reach inside an attribute value and rewrite it as a tag:
+  //     1. the bare IAL — `{: style="color: #dc2a2a;"}` is text, so a hex colour became
+  //        `{: style="color: <span data-tag="dc2a2a;">#dc2a2a;"}`. Measured: the node's text
+  //        became that garbage and the next save wrote it back, destroying the colour for good.
+  //     2. a tag this function produced itself — the IAL fold above leaves
+  //        `<b style="color: #dc2a2a;">`, and `<b>` is not in `KEEP_TAG`, so the colour was
+  //        rewritten there too.
+  //   Stashing everything that is left of the string closes both, and a tag in the **text**
+  //   is still recognised —— that is the point of the rule.
+  {
+    const tags: string[] = [];
+    const masked = s.replace(/<[^<>]+>/g, (m) => {
+      tags.push(m);
+      return `\u0003${tags.length - 1}\u0003`;
+    });
+    s = masked
+      .replace(/(^|[\s(])#([^\s#]+)/g, (_m, pre: string, name: string) => `${pre}<span data-tag="${name}">#${name}</span>`)
+      .replace(/\u0003(\d+)\u0003/g, (_m, i: string) => tags[Number(i)] ?? '');
+  }
+
+  // ★ Restore the stashed tags **last**: until here no text rule above could see a real `<…>`,
+  //   which is what keeps `style="color: #dc2a2a;"` from being read as a tag. See KEEP_TAG.
+  s = s.replace(/\u0002(\d+)\u0002/g, (_m, i: string) => keep[Number(i)] ?? '');
 
   // ★ The outer fallback span is added only when it is **really needed**.
   //

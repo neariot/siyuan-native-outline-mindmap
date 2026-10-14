@@ -32,6 +32,18 @@ import { renderFormula } from './katex';
 import { t } from '../i18n';
 import { tooltip } from '../tooltip';
 
+/**
+ * What kind of change the outline is reporting, and therefore what it owes the document.
+ *
+ * ★ `view` exists because collapsing used to be reported as `struct`.
+ *
+ *   Collapsing a branch changes nothing SiYuan can hold: `collapsed` is not in the document.
+ *   Reporting it as `struct` therefore cost an **undo step** (so Ctrl+Z after collapsing
+ *   undid the collapse instead of the user's last edit) and a **full write-back** to the kernel
+ *   on every expand. `view` is the honest answer: update the tree, write nothing, undo nothing.
+ */
+export type ChangeKind = 'struct' | 'text' | 'view';
+
 export interface FocusReq {
   id: string;
   offset: number | 'start' | 'end';
@@ -40,7 +52,7 @@ export interface FocusReq {
 interface OutlinerProps {
   nodes: OutlineNode[];
   externRev: number;
-  onChange: (next: OutlineNode[], kind?: 'struct' | 'text') => void;
+  onChange: (next: OutlineNode[], kind?: ChangeKind) => void;
   onUndo: () => void;
   onRedo: () => void;
   docs: DocMeta[];
@@ -504,7 +516,6 @@ export default function Outliner(props: OutlinerProps) {
   const [touchDragging, setTouchDragging] = useState(false);
   const [panel, setPanel] = useState<null | 'emoji' | 'mention' | 'noderef' | 'table' | 'shortcuts'>(null);
   const [panelQ, setPanelQ] = useState('');
-  const [tableRC, setTableRC] = useState({ r: 3, c: 3 });
   const [find, setFind] = useState({ open: false, q: '', rep: '', total: 0 });
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   /**
@@ -994,6 +1005,19 @@ export default function Outliner(props: OutlinerProps) {
     onChange(draft, 'struct');
   };
 
+  /**
+   * A change the document cannot see: collapsing, expanding, collapse-by-level.
+   *
+   * ★ Same effect on the tree as `mutate`, but reported as `view` so it takes no undo step and
+   *   triggers no write-back (see `ChangeKind`).
+   */
+  const mutateView = (fn: (draft: OutlineNode[]) => void): void => {
+    const draft = cloneNodes(nodesRef.current);
+    fn(draft);
+    nodesRef.current = draft;
+    onChange(draft, 'view');
+  };
+
   // ---------- structural ops ----------
   const splitNode = (id: string): void => {
     const el = elMap.current.get(id);
@@ -1274,13 +1298,13 @@ export default function Outliner(props: OutlinerProps) {
   // Collapse/expand. The implementation lives in pure functions in `tree-ops.ts` (offline-unit-testable, see
   // the "collapse granularity" section of tree-ops.test.ts) -- here we only wrap it in mutate.
   const toggleCollapse = (id: string, recursive: boolean): void => {
-    mutate((draft) => {
+    mutateView((draft) => {
       toggleCollapseAt(draft, id, recursive);
     });
   };
 
   const setCollapseAll = (v: boolean): void => {
-    mutate((draft) => {
+    mutateView((draft) => {
       const walk = (list: OutlineNode[]) => {
         for (const n of list) {
           if (n.children.length > 0) n.collapsed = v;
@@ -1292,7 +1316,7 @@ export default function Outliner(props: OutlinerProps) {
   };
 
   const setCollapseByLevel = (targetLevel: number): void => {
-    mutate((draft) => {
+    mutateView((draft) => {
       const walk = (list: OutlineNode[], currentLevel: number) => {
         for (const n of list) {
           if (n.children.length > 0) {
@@ -2690,7 +2714,19 @@ export default function Outliner(props: OutlinerProps) {
     const el = document.activeElement as HTMLElement | null;
     const r = lastRange.current;
     if (el && el.isContentEditable && rootRef.current?.contains(el) && r) {
-      insertHtml(r, el, `${before}${after}`);
+      // ★★★ The selected text has to be carried **into** the replacement.
+      //
+      //   `insertHtml` replaces whatever the range covers, and it was handed only
+      //   `` `${before}${after}` `` —— the selection was never read. So every wrapper button
+      //   **deleted the text it was asked to mark up**: selecting a node's text and pressing the
+      //   inline-code button left an empty element, and SiYuan was handed an empty node.
+      //   Measured end to end; the text was gone from the document too, not just from the view.
+      //
+      //   `cloneContents()` takes a partial selection correctly: it copies only the text the
+      //   range really covers, as its own nodes.
+      const box = document.createElement('div');
+      box.appendChild(r.cloneContents());
+      insertHtml(r, el, `${before}${box.innerHTML}${after}`);
       const id = el.getAttribute('data-node-id');
       if (id) {
         // move caret between
@@ -2730,56 +2766,95 @@ export default function Outliner(props: OutlinerProps) {
     })();
   };
 
-  const clearFormat = (id: string): void => {
-    const n = nodeById.get(id);
-    if (!n) return;
-    document.execCommand('removeFormat', false);
-    // unwrap custom spans but keep formula/img/table/link
-    const div = document.createElement('div');
-    div.innerHTML = n.text;
-    div.querySelectorAll('span').forEach((s) => {
-      if (s.hasAttribute('data-formula') || s.querySelector('img,table')) return;
-      if (s.hasAttribute('data-tag') || s.hasAttribute('data-mention') || s.hasAttribute('data-noderef')) {
-        // ⚠️ Do not call this `t` -- it is the i18n lookup function
-        const textNode = document.createTextNode(s.textContent || '');
-        s.replaceWith(textNode);
-        return;
-      }
-      s.removeAttribute('style');
-      if (!s.attributes.length) {
-        const frag = document.createDocumentFragment();
-        while (s.firstChild) frag.appendChild(s.firstChild);
-        s.replaceWith(frag);
-      }
-    });
-    div.querySelectorAll('[style]').forEach((x) => x.removeAttribute('style'));
-    div.querySelectorAll('b,i,s,u,code').forEach((x) => {
+  /**
+ * Clear the formatting of a node.
+ *
+ * ★ The node is resolved from the **focused** element first, the way every other toolbar
+ *   action resolves its target (`fmt` / `fmtSafe` both use `document.activeElement`).
+ *   It used to come from `activeId` alone. `activeId` is not necessarily the node being
+ *   edited when the button is pressed, and when it was not, the button either cleared a node
+ *   that was not in view or did nothing at all —— with no message either way. Measured: after
+ *   bolding a node and pressing "clear format", the document still held `**…**`.
+ */
+const clearFormat = (): void => {
+    const focused = document.activeElement as HTMLElement | null;
+    const id = focused?.getAttribute?.('data-node-id') || activeId;
+    if (!id) return;
+    // ★ Work from the **live element**, not from a copy rebuilt out of the model.
+    //
+    //   The old version ran `removeFormat` (which mutates the DOM) and then rebuilt its copy
+    //   from the model value read **before** that call — so the browser's work was thrown away
+    //   and the two could disagree. Reading the element that is actually on screen removes the
+    //   disagreement instead of trying to reconcile it.
+    const el = elMap.current.get(id);
+    const box = document.createElement('div');
+    box.innerHTML = el ? el.innerHTML : (nodeById.get(id)?.text ?? '');
+
+    // Everything that is formatting, from **either** direction: the browser's output and the
+    // forms this plugin's own reader produces. `s` alone was not enough — a strikethrough made
+    // by the browser is `<strike>`, so it survived "clear format" and came back on reload.
+    const MARK_TAGS = 'b,strong,i,em,s,del,strike,u,code,mark,sup,sub,font,kbd';
+    // Kept on purpose: a formula, an image, a table, a block reference and a link are content
+    // the user put there, not decoration.
+    const isContent = (x: Element): boolean =>
+      x.querySelector('[data-formula], img, table') !== null ||
+      x.hasAttribute('data-noderef') ||
+      x.hasAttribute('data-mention') ||
+      x.hasAttribute('data-tag') ||
+      x.tagName === 'A' ||
+      /(^|\s)a(\s|$)/.test(x.getAttribute('data-type') ?? '');
+    const unwrap = (x: Element): void => {
       const frag = document.createDocumentFragment();
       while (x.firstChild) frag.appendChild(x.firstChild);
       x.replaceWith(frag);
+    };
+    // Styles first: a mark written as CSS (`font-weight: bold`, which is what the toolbar
+    // produces) is removed by dropping the attribute, and a mark written as a SiYuan span
+    // (`data-type="strong"`) by dropping the element.
+    box.querySelectorAll('[style]').forEach((x) => x.removeAttribute('style'));
+    box.querySelectorAll(MARK_TAGS).forEach((x) => {
+      if (!isContent(x)) unwrap(x);
     });
+    box.querySelectorAll('span[data-type]').forEach((x) => {
+      if (!isContent(x)) unwrap(x);
+    });
+
+    if (el) {
+      el.innerHTML = box.innerHTML;
+      hydrateEditable(el);
+      syncText(id);
+      return;
+    }
     mutate((draft) => {
       // ⚠️ Do not call this `t` -- it is the i18n lookup function
       const node = findNode(draft, id);
       if (node) {
-        node.text = div.innerHTML;
+        node.text = box.innerHTML;
         touch(node);
       }
     });
   };
 
-  const insertTable = (id: string, r: number, c: number): void => {
-    let rows = '';
-    for (let i = 0; i < r; i++) {
-      rows += `<tr>${'<td>&nbsp;</td>'.repeat(c)}</tr>`;
-    }
-    const el = elMap.current.get(id);
-    if (el) {
-      insertHtml(lastRange.current, el, `<table><tbody>${rows}</tbody></table><div><br></div>`);
-      syncText(id);
-    }
-    closePanel();
-  };
+  /**
+   * Insert a table into a node.
+   *
+   * ★★★ Refuses, and says so, instead of inserting something that cannot be stored.
+   *
+   *   A SiYuan table is its own **block**; it is not inline content a paragraph can hold.
+   *   Measured against the running kernel: writing a `<table>` into a paragraph's inline DOM
+   *   comes back as the literal text `<protyle-html>`, and `insertBlock` with a `NodeTable` DOM
+   *   answers `code: 0` while creating nothing at all.
+   *
+   *   So what this used to do -- inject `<table><tbody>...<td>&nbsp;</td>` into the node's text --
+   *   produced a node whose text the write path stripped down to one `&nbsp;` per cell plus a
+   *   zero-width space: **the table was gone and the node was polluted with invisible
+   *   characters** (measured on `htmlToSiyuanDom` for a 2x2 table:
+   *   `<span>\u524d</span><table>...</table>` -> `<span>\u524d</span>&nbsp;&nbsp;&nbsp;&nbsp;\u200b`).
+   *
+   *   Making tables work means representing them as their own block, which the node model does
+   *   not have yet; the design and its measurements are in `docs/todo/inline-markup-sync.md`.
+   *   Until then a message is the honest behaviour; a silently broken document is not.
+   */
 
   // ---------- find & replace ----------
   /**
@@ -3564,7 +3639,7 @@ export default function Outliner(props: OutlinerProps) {
             onChange={(e) => fmt('hiliteColor', e.target.value)}
           />
         </label>
-        <button title={t('tipClearFormat')} onClick={() => activeId && clearFormat(activeId)}>⌫</button>
+        <button title={t('tipClearFormat')} onClick={() => clearFormat()}>⌫</button>
         <span className="sep" />
         <button title={t('tipHyperlink')} onClick={() => {
           const url = prompt(t('phLinkUrl'), 'https://');
@@ -3734,11 +3809,16 @@ export default function Outliner(props: OutlinerProps) {
           </div>
         </div>
       )}
+      {/* ★ Table panel: says why there is nothing to choose.
+          A SiYuan table is its own **block**, not inline content a paragraph can hold — measured:
+          writing `<table>` into a paragraph's inline DOM comes back as the literal text
+          `<protyle-html>`, and `insertBlock` with a `NodeTable` DOM answers `code: 0` while
+          creating nothing. The panel this replaces injected a table into the node's text, where
+          the write path stripped it down to one `&nbsp;` per cell: the table was lost and the node
+          was left holding invisible characters. See `docs/todo/inline-markup-sync.md`. */}
       {panel === 'table' && (
         <div ref={panelBoxRef} tabIndex={-1} onKeyDown={panelKeyDown} style={{ padding: '8px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-          {t('lblRows')} <input type="number" min={1} max={20} value={tableRC.r} onChange={(e) => setTableRC((s) => ({ ...s, r: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
-          {t('lblCols')} <input type="number" min={1} max={10} value={tableRC.c} onChange={(e) => setTableRC((s) => ({ ...s, c: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
-          <button className="btn primary" onClick={() => activeId && insertTable(activeId, tableRC.r, tableRC.c)}>{t('cmdInsert')}</button>
+          <span>{t('msgTableUnsupported')}</span>
           <button onClick={() => closePanel()}>{t('cmdClose')}</button>
         </div>
       )}
@@ -4190,7 +4270,7 @@ export default function Outliner(props: OutlinerProps) {
               type="button"
               className="m-btn ariaLabel"
               aria-label={t('tipInsertTable')} title={t('tipInsertTable')}
-              onClick={() => currentActiveId && insertTable(currentActiveId, 3, 3)}
+              onClick={() => openPanel('table')}
             >
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2.5" y="2.5" width="15" height="15" rx="2" />

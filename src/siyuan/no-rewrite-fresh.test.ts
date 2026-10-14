@@ -127,7 +127,13 @@ async function main(): Promise<void> {
   console.log('Scenario 3: index caught up with identical text → skipped as before');
   {
     const c = new FakeClient();
-    c.indexRows = [{ id: PARA, content: '乙', markdown: '- 乙' }];
+    // ★ The **paragraph** block's markdown is the paragraph text; the `- ` marker belongs to
+    //   the listItem row above it. Measured against the kernel:
+    //     type p  markdown='乙'      type i  markdown='- 乙'
+    //   `saveNodesIncremental` maps a node to the paragraph block, so that is what goes here.
+    //   The fixture said `'- 乙'`, which only passed while the comparison read the plain
+    //   `content` column and ignored `markdown`; it would have described the wrong block.
+    c.indexRows = [{ id: PARA, content: '乙', markdown: '乙' }];
     const store = mkStore(c);
     await store.loadBlockMap('doc1');
     (store as any).freshlyInserted.add(PARA);

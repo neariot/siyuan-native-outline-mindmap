@@ -18,7 +18,7 @@ import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes, findNode, findPath } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine } from '../core/map';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine, markdownToInlineDom } from '../core/map';
 import { treeToBlockDom, paragraphBlockFragment } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 import { updateTaskMarkerWithFallback } from './host-compat';
@@ -872,6 +872,39 @@ export class SiYuanStore {
   private writtenTask = new Map<string, number>();
 
   /**
+   * The inline DOM **this session wrote** for a paragraph block, while the read has not caught
+   * up: "block ID → SiYuan inline DOM".
+   *
+   * ★★★ Same reasoning as `writtenTask`, applied to the block's text, and it is what makes the
+   *   change detector trustworthy.
+   *
+   *   `saveNodesIncremental` decides "does this block need rewriting?" by comparing the node with
+   *   what the block holds, and what the block holds is read from the **SQL index** — which lags
+   *   the kernel by 1~3 seconds, exactly like the task flag above. Measured on the outline: bold a
+   *   node and press "clear format" immediately afterwards. The node's text becomes plain, the
+   *   index still reports the *pre-bold* plain text, both sides match, and nothing is written:
+   *   the document keeps `**…**` while the outline shows it cleared. A second later the same two
+   *   steps work, because the index has caught up.
+   *
+   *   When the index disagrees with what we last wrote, the index is the one that is behind, so its
+   *   answer is not the block's content — ours is. An index that agrees retires the entry, and the
+   *   document becomes the authority again. This also keeps an external edit visible: someone else
+   *   rewriting the block makes the index disagree with us **and** carry their value, and the next
+   *   read agrees with neither, so the node is written over them.
+   */
+  /**
+   * How long a remembered write outranks the SQL index.
+   *
+   * ★ The index trails the kernel by 1~3 seconds (measured, and the same window `writtenTask`
+   *   documents). Inside it, an index that contradicts us is simply behind. Outside it, the
+   *   index is the authority again — otherwise a change somebody else made would be masked for
+   *   as long as this session had ever touched the block.
+   */
+  private static readonly WRITTEN_TEXT_WINDOW_MS = 5_000;
+
+  private writtenText = new Map<string, { dom: string; at: number }>();
+
+  /**
    * Node IDs that **currently have attached paragraph blocks in SiYuan**.
    *
    * ★★★ Why this set is required (fixes "deleting an empty attached paragraph is not synced"):
@@ -1249,7 +1282,7 @@ export class SiYuanStore {
     const flat: OutlineNode[] = flatNodes(nodes);
 
     // first read the current text of each block, for comparison
-    const current = new Map<string, string>();
+    const current = new Map<string, string | undefined>();
     // ★ The to-do state is read here too, and not from `content`: measured, a task's `content` is
     //   ` x` —— the marker has been reduced to a space —— while its `markdown` is `- [ ] x`. And the
     //   mapping's value is the **paragraph** block, which never carries the marker, so the listItem ids
@@ -1265,7 +1298,42 @@ export class SiYuanStore {
         Math.max(wanted.length, 1),
       );
       for (const r of rows) {
-        current.set(r.id, (r.content ?? '').trim());
+        // ★★ What is stored here is the block's **inline DOM**, not its text.
+        //
+        //   It used to be `r.content`, and `blocks.content` is **plain text** — measured: a
+        //   paragraph reads back as the same stripped string whether it is bold, struck
+        //   through, coloured or not. Comparing that against a serialised node text made
+        //   every markup-only edit look like "no change", so `updateBlockDom` was skipped and
+        //   removing a mark never reached the document (measured on the outline: the UI showed
+        //   the text unformatted, the document still held `font-weight: bold`, and a reload
+        //   brought the format back).
+        //
+        //   Comparing in SiYuan inline DOM — the form the write actually sends — fixes that
+        //   and keeps the check a fixed point for unchanged nodes; both properties are pinned
+        //   in `src/core/inline-sync.test.ts`.
+        //
+        //   A row with no markdown yet is recorded as **unknown** rather than as plain text:
+        //   unknown means "write it", which is the safe direction (see the note below on why an
+        //   unknown value must not be skipped).
+        //
+        //   ★★ And an index that contradicts our own last write is **behind**, not authoritative:
+        //   the SQL index trails the kernel by 1~3s, so right after this session wrote a block it
+        //   still answers with the previous text. Believing it made a change look like "no change"
+        //   and the write was dropped (measured: bold, then clear format straight after — the
+        //   outline showed plain text and the document kept `**…**`).
+        //
+        //   The window matters in the other direction too: past it the index is the authority, so a
+        //   change somebody else made is seen rather than masked by our own last write.
+        const fromIndex = r.markdown ? markdownToInlineDom(r.markdown) : undefined;
+        const ours = this.writtenText.get(r.id);
+        const fresh =
+          ours !== undefined && Date.now() - ours.at < SiYuanStore.WRITTEN_TEXT_WINDOW_MS;
+        current.set(
+          r.id,
+          fresh && fromIndex !== undefined && fromIndex !== ours!.dom ? ours!.dom : fromIndex,
+        );
+        // The index has caught up with us: the document is the authority again.
+        if (ours !== undefined && fromIndex === ours.dom) this.writtenText.delete(r.id);
         aliveIds.add(r.id);
         const read = taskStateOfKramdownLine(r.markdown ?? '');
         storedTask.set(r.id, read);
@@ -1368,7 +1436,10 @@ export class SiYuanStore {
         continue;
       }
       // note: structural changes are syncStructure's job; this loop only syncs text
-      const newText = htmlToKramdown(n.text ?? '');
+      // ★★ The new text is compared in **SiYuan inline DOM** — the same space `current` holds
+      //   and the same `updateBlockDom` below sends. Comparing serialised forms that mean the
+      //   same thing only by accident makes the check a coin flip: see `markdownToInlineDom`.
+      const newText = htmlToSiyuanDom(n.text ?? '');
       const oldText = current.get(blockId);
       // ★★★ oldText === undefined must not simply be skipped (a measured **text does not get written** bug).
       //
@@ -1414,6 +1485,13 @@ export class SiYuanStore {
         //   SiYuan-native forms such as `<span data-type="strong">`).
         const dom = paragraphBlockFragment(n.text ?? '');
         await this.client.updateBlockDom(blockId, dom);
+        // ★ Remember what this block now holds, so the next pass does not read a **stale** index
+        //   and conclude the node is unchanged (see `writtenText`).
+        this.writtenText.set(blockId, { dom: newText, at: Date.now() });
+        if (this.writtenText.size > 500) {
+          const oldest = this.writtenText.keys().next().value;
+          if (oldest !== undefined) this.writtenText.delete(oldest);
+        }
         updated++;
       } else {
         skipped++;

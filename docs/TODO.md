@@ -13,6 +13,11 @@ As of 2026-10-13, all primary defect queues are **0 open**:
 - **Tooling gaps queue**: 0 open items (all automated test & gate gaps resolved).
 - **Audit queue (`docs/AUDIT-FINDINGS.md`)**: 0 open of 193 entries (all 193 struck and verified).
 
+One item from the inline-markup audit of 2026-10-14 is still open and is tracked in its
+topic file: **tables cannot live in a node** (a SiYuan table is its own block, and the node
+model has no such kind yet). The insert-table entry point says so instead of corrupting a
+node; the design and the measurements are in `docs/todo/inline-markup-sync.md` §D9.
+
 Historical notes on resolved defects, retargeted citations (e.g. from `.logs/API-GOTCHAS.md` to `docs/kernel-api.md`), and fixed audit findings are committed in git history, `docs/AUDIT-FINDINGS.md`, and `docs/pitfalls/`.
 
 ---
@@ -26,6 +31,7 @@ Detailed backlogs and architectural notes are divided into topic sub-files:
 | **HAL Convergence** | [`docs/todo/hal-convergence.md`](todo/hal-convergence.md) | Phased execution plan for wiring `IHostDriver` and `TreeReconciler` into `mount.ts` and `store.ts` |
 | **Modularity & Refactoring** | [`docs/todo/modularity.md`](todo/modularity.md) | File footprints (`Outliner.tsx`, `store.ts`, `mount.ts`), safety rule unification, stateful tree walks |
 | **Deferred Features** | [`docs/todo/deferred.md`](todo/deferred.md) | Technical rationales and constraints for deliberately deferred features (free positioning, sibling ordering) |
+| **Inline markup & toolbar sync** | [`docs/todo/inline-markup-sync.md`](todo/inline-markup-sync.md) | Measured write/read asymmetries that make formatting edits vanish or corrupt the document |
 
 ---
 

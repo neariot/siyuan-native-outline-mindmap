@@ -11,7 +11,7 @@ import { joinsUndoWindow } from '../core/undo-window';
 import * as ReactDOM from 'react-dom/client';
 import type { Custom } from 'siyuan';
 import Mindmap from '../mindmap/Mindmap';
-import Outliner from './outline/Outliner';
+import Outliner, { type ChangeKind } from './outline/Outliner';
 import { setOutlineImageClient } from './outline/images';
 import type { OutlineNode } from '../model/types';
 import { toggleTaskStatus } from '../model/types';
@@ -1213,7 +1213,22 @@ function OmTabApp({
   }, [docId]);
 
   const handleOutlineChange = React.useCallback(
-    async (next: OutlineNode[], kind?: 'struct' | 'text'): Promise<void> => {
+    async (next: OutlineNode[], kind?: ChangeKind): Promise<void> => {
+      // ★★ A view-only change: collapsing, expanding, collapse-by-level.
+      //
+      //   `collapsed` is not in the document, so there is nothing to write and nothing to undo.
+      //   These used to arrive as `kind: 'struct'`, which cost an undo step (Ctrl+Z after a
+      //   collapse undid the collapse, not the last edit) and a full write-back to the kernel
+      //   on every expand —— measured: collapsing sent a `saveNodesIncremental` for a tree whose
+      //   text had not changed.
+      //
+      //   Returning here also skips `mergeKey`, which `JSON.stringify`s both trees — pure waste
+      //   for a change that is not going to be recorded anywhere.
+      if (kind === 'view') {
+        setNodes(next);
+        nodesRef.current = next;
+        return;
+      }
       // Merge window: consecutive edits to the same node within a short time count as a single undo step
       const mergeKey = (() => {
         try {
@@ -2122,7 +2137,7 @@ function OmTabApp({
           onDocParagraphsChange: (p: string[]) => {
             void handleDocParagraphsChange(p);
           },
-          onChange: (next: OutlineNode[], kind?: 'struct' | 'text') => {
+          onChange: (next: OutlineNode[], kind?: ChangeKind) => {
             // ★ `kind` must be passed through to handleOutlineChange:
             //   This used to read `(next) => { void handleOutlineChange(next); }`,
             //   dropping the second argument —— so structural operations (indent/move up/delete/…)
