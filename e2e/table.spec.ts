@@ -470,14 +470,11 @@ test('★★★ a cell edit reaches the table block and survives a reload', asyn
 
     // ── Step 1: the precondition edit. Its result is NOT asserted as proof of anything. ──
     //
-    // ★ ★★ Retried **once**, and that is deliberate rather than a papered-over flake: the
-    //   precondition is here to make the second edit meaningful, and the pre-existing residual
-    //   race documented in `docs/todo/inline-markup-sync.md` §4 can swallow *any* edit made in
-    //   this window (measured under full-suite load: a lone `moveBlock`, no `updateBlock`, and
-    //   `syncTableCells` never entered). A test about which writer owns a table body must not be
-    //   taken red by a defect it is not testing —— but it also must not hide it, so the second
-    //   edit below is asserted **once** and never retried, and the precondition records that it
-    //   needed a retry when that happens.
+    // ★ The precondition is here to make the second edit meaningful, and **neither** edit is
+    //   retried: a test about which writer owns a table body must not be taken red by a defect it
+    //   is not testing, and it must not hide one either. An earlier version retried the
+    //   precondition while an unexplained race was suspected; that hypothesis was disproved (§4,
+    //   §7) and the retry went with it.
     const seen = async (): Promise<string> => {
       const kd = (await kramdown(api, docId)).replace(/\n\{:[^}]*\}/g, '');
       return `kd=${kd} writes=${writes.join(' ;; ')} warn=${omWarn.join(' ;; ')}`;
