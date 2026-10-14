@@ -447,6 +447,7 @@ export default function Outliner(props: OutlinerProps) {
   const [marqueeRect, setMarqueeRect] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [tableRC, setTableRC] = useState({ r: 3, c: 3 });
   const [anchor, setAnchor] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -2767,6 +2768,38 @@ export default function Outliner(props: OutlinerProps) {
   };
 
   /**
+   * Insert a table, as a node that is a **block of its own**.
+   *
+   * ★ Why it is a node and not markup inside a node's text.
+   *
+   *   A SiYuan table cannot be inline content: writing `<table>` into a paragraph's inline DOM
+   *   is stored as the literal text `<protyle-html>`, and `insertBlock` with a `NodeTable` DOM
+   *   answers `code: 0` while creating nothing. The only route the kernel accepts is a
+   *   **markdown** table, which becomes a real block hung off the document.
+   *
+   *   So the table is a node carrying `table`, placed at **document root** -- a `NodeList` cannot
+   *   contain a table, which is also why it is never a child of the active node. The cells are
+   *   not editable in the outline: what this restores is the block being created and preserved,
+   *   which is what was broken.
+   */
+  const insertTable = (): void => {
+    const rows: string[][] = [];
+    for (let i = 1; i < tableRC.r; i++) rows.push(new Array(tableRC.c).fill(''));
+    const node: OutlineNode = {
+      id: makeSiyuanId(),
+      modified: now(),
+      text: '',
+      table: { header: new Array(tableRC.c).fill(''), rows },
+      children: [],
+    };
+    mutate((draft) => {
+      draft.push(node);
+      return undefined;
+    });
+    closePanel();
+  };
+
+  /**
  * Clear the formatting of a node.
  *
  * ★ The node is resolved from the **focused** element first, the way every other toolbar
@@ -3270,6 +3303,33 @@ const clearFormat = (): void => {
             <span className="num-badge">{numIdx}.</span>
           )}
           <div className="node-body">
+            {/*
+              ★ A table node has no paragraph to edit: it is a block of its own (see
+              `insertTable`). It is drawn read-only, and it is deliberately **not** a
+              `.node-text` element -- every helper that walks `.node-text` (caret, selection,
+              copy, paste, `syncText`) assumes a contenteditable paragraph, and giving a table
+              one of those is how a block with no text carrier ends up written as text.
+            */}
+            {n.table ? (
+              <table className="om-node-table" aria-label={t('tipTable')}>
+                <thead>
+                  <tr>
+                    {n.table.header.map((h, ci) => (
+                      <th key={ci}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {n.table.rows.map((r, ri) => (
+                    <tr key={ri}>
+                      {r.map((c, ci) => (
+                        <td key={ci}>{c}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
             <div
               ref={(el) => {
                 if (el) {
@@ -3336,6 +3396,7 @@ const clearFormat = (): void => {
                 }
               }}
             />
+            )}
             {/*
               Attached paragraphs: one node → N editable boxes, **one per paragraph**.
               Paragraphs are carried by several `.node-para` elements,
@@ -3818,7 +3879,9 @@ const clearFormat = (): void => {
           was left holding invisible characters. See `docs/todo/inline-markup-sync.md`. */}
       {panel === 'table' && (
         <div ref={panelBoxRef} tabIndex={-1} onKeyDown={panelKeyDown} style={{ padding: '8px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span>{t('msgTableUnsupported')}</span>
+          {t('lblRows')} <input type="number" min={1} max={20} value={tableRC.r} onChange={(e) => setTableRC((s) => ({ ...s, r: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
+          {t('lblCols')} <input type="number" min={1} max={10} value={tableRC.c} onChange={(e) => setTableRC((s) => ({ ...s, c: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
+          <button className="btn primary" onClick={() => insertTable()}>{t('cmdInsert')}</button>
           <button onClick={() => closePanel()}>{t('cmdClose')}</button>
         </div>
       )}

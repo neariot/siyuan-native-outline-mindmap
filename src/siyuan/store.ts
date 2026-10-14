@@ -18,7 +18,7 @@ import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes, findNode, findPath } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine, markdownToInlineDom } from '../core/map';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine, markdownToInlineDom, tableToKramdown } from '../core/map';
 import { treeToBlockDom, paragraphBlockFragment } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 import { updateTaskMarkerWithFallback } from './host-compat';
@@ -623,6 +623,17 @@ export class SiYuanStore {
         this.lastListItems.set(key, key);
         this.lastByBlock.set(child, key);
         this.lastByBlock.set(key, key);
+      }
+      // ★★ Table blocks are their own carrier (measured: no listItem, no paragraph).
+      //
+      //   The node id **is** the table block id, and it is mapped in all three tables so that
+      //   every later stage finds it by the same rules as a list item's node: otherwise
+      //   `syncStructure` would judge an existing table "new" and insert a second copy of it,
+      //   and `syncDeletions` would delete it as "in the document but not in the tree".
+      for (const tid of parsedDom.rootTableIds) {
+        map.set(tid, tid);
+        this.lastListItems.set(tid, tid);
+        this.lastByBlock.set(tid, tid);
       }
       // The block id of an entry is its **value** in the first two tables (node → block) and its **key**
       // in the reverse table (block → node) —— the rule itself is in `isUnseenButOurs`.
@@ -1279,7 +1290,18 @@ export class SiYuanStore {
     nodes: OutlineNode[],
   ): Promise<{ updated: number; skipped: number; structural: boolean }> {
     const blockMap = await this.loadBlockMap(docId);
-    const flat: OutlineNode[] = flatNodes(nodes);
+    // ★★ A table node has **no paragraph block**: its body is the table block itself, which
+    //   `syncStructure` owns (created by the markdown route, rewritten when the cells change).
+    //   Running the text path over one would look for a paragraph that does not exist, judge the
+    //   node "new in the UI", and insert a duplicate beside the table.
+    const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table);
+
+    // ★ Table blocks are mapped (a table is a node) but are **not** text nodes: `flat` excludes
+    //   them, so they must not count towards "the tree and the document disagree". Skipping this
+    //   made every pass over a document containing a table look structural, and a plain text edit
+    //   was routed through the whole structural write for nothing.
+    const tableBlocks = new Set(this.lastDomTree?.rootTableIds ?? []);
+    const textMapped = [...blockMap.values()].filter((b) => !tableBlocks.has(b)).length;
 
     // first read the current text of each block, for comparison
     const current = new Map<string, string | undefined>();
@@ -1397,7 +1419,9 @@ export class SiYuanStore {
       // ★★★ For a pure text edit the node count equals the block count (flat.length === blockMap.size),
       //   so "sibling blocks destroyed by a structural operation" can never happen (defect #53 only occurs on structural changes).
       //   On a text edit the suspect re-query and the 400ms sleep are skipped, so no keypress is slowed down.
-      if (suspects.length && suspectedStructuralChange(flat.length, blockMap.size)) {
+      // ★ Same correction as below: table blocks are mapped but are not text nodes, so they
+      //   must not count towards "the tree and the document disagree".
+      if (suspects.length && suspectedStructuralChange(flat.length, textMapped)) {
         // second confirmation: wait for the index to catch up and query again; only two misses declare it dead
         await new Promise((r) => setTimeout(r, 400));
         const ids = [...new Set(suspects.map(([, b]) => b))];
@@ -1426,7 +1450,15 @@ export class SiYuanStore {
     let skipped = 0;
     let structural = false;
     // structural check: node count vs existing block count differ → something was added or deleted, the layer above decides
-    if (flat.length !== blockMap.size) structural = true;
+    //
+    // ★ Count only the mappings that are **not** table blocks.
+    //
+    //   `loadBlockMap` maps a table's own block to its node (a table is a node now), so
+    //   `blockMap.size` counts it while `flat` deliberately excludes it — a document with one
+    //   table therefore looked structural on *every* pass, and a plain text edit was routed
+    //   through the whole structural write for no reason. Measured: editing a node in such a
+    //   document lost the edit some of the time.
+    if (flat.length !== textMapped) structural = true;
 
     for (const n of flat) {
       const blockId = blockMap.get(n.id);
@@ -2098,7 +2130,9 @@ export class SiYuanStore {
     //     So re-read once first: if the second read's coverage is clearly better, it was lag and execution continues;
     //     only two incomplete reads decide that the mapping really is incomplete and abort.
     {
-      const flat: OutlineNode[] = flatNodes(nodes);
+      // ★ Table nodes are excluded: they are mapped by their own block id and are written by the
+      //   branch below, so counting them here would only make a complete mapping look broken.
+      const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table);
       // only validate when "the tree is clearly larger than SiYuan's default cap of 64",
       // otherwise small documents (which are all new nodes anyway) would be wrongly blocked.
       const looksBroken = (m: Map<string, string>): boolean =>
@@ -2137,6 +2171,48 @@ export class SiYuanStore {
       for (const n of list) {
         if (!n.id || !SIYUAN_ID_RE.test(n.id)) n.id = makeSiyuanId();
         const myBlock = blockMap.get(n.id);
+
+        // ★★ A table node: its carrier is the table block itself, created by the **markdown**
+        //   route (measured — `insertBlock` with a `NodeTable` **DOM** answers `code: 0` and
+        //   creates nothing at all, which is the one failure shape that must never be shipped).
+        //
+        //   Anchored at the document root, because a `NodeList` cannot contain a table; the
+        //   kernel is asked for a root-level block after the last top-level list item.
+        if (n.table) {
+          const md = tableToKramdown(n.table);
+          if (!myBlock) {
+            // ★ Always at the **document**, never after a list item.
+            //
+            //   Anchoring on a top-level list item asks the kernel for a sibling position
+            //   *inside* the `NodeList`, and a `NodeList` cannot contain a table (measured) — so
+            //   the insert is refused or lands somewhere else. A table is appended under the
+            //   document root, which is the only structure the kernel accepts.
+            const tparentID = docId;
+            const tpreviousID = '';
+            try {
+              const res = await this.client.insertBlock(md, tparentID, tpreviousID);
+              const tid = String(res ?? '').trim();
+              if (tid) {
+                // The kernel mints the id, and a table node's id **is** its block id.
+                n.id = tid;
+                blockMap.set(tid, tid);
+                this.lastListItems.set(tid, tid);
+                this.lastByBlock.set(tid, tid);
+                this.freshlyInserted.add(tid);
+                count++;
+              }
+            } catch {
+              // A table that cannot be created must not abort the whole write-back; the
+              // remaining nodes are still written. The node stays unmapped, so the next
+              // pass tries again rather than treating it as done.
+            }
+          } else {
+            // Content change: the markdown is the table block's whole body.
+            await this.client.updateBlock(myBlock, md);
+          }
+          continue;
+        }
+
         if (!myBlock) {
           const text = htmlToKramdown(n.text ?? '') || '\u200b';
           // ★★★ The insert **must carry the node's own ID** (measured, defect #54).

@@ -19,7 +19,7 @@
 //   <img data-img>         → ![alt](assets/...) ⚠️ requires asset management
 
 import { flatNodes } from '../model/tree';
-import type { OutlineNode } from '../model/types';
+import type { OutlineNode, TableData } from '../model/types';
 
 /** SiYuan block ID format: 14-digit timestamp + '-' + 7 lowercase alphanumerics */
 export const SIYUAN_ID_RE = /^\d{14}-[0-9a-z]{7}$/;
@@ -657,6 +657,68 @@ export function htmlToSiyuanDom(fragment: string): string {
   return s;
 }
 
+// ---------------------------------------------------------------- tables
+//
+// ★ A SiYuan table is a **block of its own**, not inline content.
+//
+// Measured: the kernel stores a table with `parent_id` = the document, never inside a
+// `NodeList`; writing `<table>` into a paragraph's inline DOM is stored as `<protyle-html>`,
+// and `insertBlock` with a `NodeTable` **DOM** answers `code: 0` while creating nothing.
+// The only route that works is the **markdown** form, which is what these two functions speak.
+//
+// The kernel's own export (measured) is:
+//
+//     |h1|h2|
+//     | ----| ----|
+//     |a|b|
+//     {: id="…xm58ged" updated="…" colgroup="|"}
+//
+// so: consecutive `|`-lines, the **second** of which is the separator, and the block id on the
+// attribute line that follows them.
+
+/** One `|a|b|` line → its cells, with the leading/trailing pipe and padding removed. */
+function tableRowCells(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  if (!trimmed) return [];
+  return trimmed.split('|').map((c) => c.trim());
+}
+
+/** Is this line the `| ---| --- |` separator between a table's header and its body? */
+function isTableSeparator(line: string): boolean {
+  const cells = tableRowCells(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+}
+
+/**
+ * A run of `|`-lines → a table, or `null` when the run is not one.
+ *
+ * ★ A run must be **at least two lines with a separator second**: a single line starting with `|`
+ *   is ordinary text that happens to begin with a pipe, and treating it as a table would delete
+ *   the user's words.
+ */
+export function parseTableLines(lines: string[]): TableData | null {
+  if (lines.length < 2 || !isTableSeparator(lines[1])) return null;
+  const header = tableRowCells(lines[0]);
+  if (header.length === 0) return null;
+  const width = header.length;
+  const rows: string[][] = [];
+  for (const line of lines.slice(2)) {
+    const cells = tableRowCells(line);
+    // Pad or trim to the header's width, so a ragged export cannot produce a ragged table.
+    while (cells.length < width) cells.push('');
+    rows.push(cells.slice(0, width));
+  }
+  return { header, rows };
+}
+
+/** A table → the markdown the kernel accepts (the separator is always emitted). */
+export function tableToKramdown(t: TableData): string {
+  const esc = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const line = (cells: string[]): string => `|${cells.map(esc).join('|')}|`;
+  const sep = `|${t.header.map(() => ' ---').join('|')}|`;
+  return [line(t.header), sep, ...t.rows.map(line)].join('\n');
+}
+
 // ---------------------------------------------------------------- Kramdown → HTML
 
 /**
@@ -937,6 +999,16 @@ export function pasteLineInfo(raw: string): { body: string; numbered: boolean } 
  */
 function walkNodesToLines(list: OutlineNode[], depth: number, lines: string[]): void {
   for (const n of list) {
+    // ★ A table node emits its **markdown table**, not a list item.
+    //
+    //   A `NodeList` cannot contain a table (measured: the kernel stores one with `parent_id`
+    //   = the document), so indenting these lines would ask the kernel for an invalid structure.
+    //   They therefore always sit flush left, and a table node has no children by construction.
+    if (n.table) {
+      lines.push(tableToKramdown(n.table));
+      lines.push('');
+      continue;
+    }
     const line = nodeToLine(n);
     const indent = '  '.repeat(depth);
     // Measured: the attribute must be on the "same line" as the list item, after `- `,
@@ -1117,9 +1189,43 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   let sawFirstBlock = false;
   // Whether the previous "meaningful" line was a block attribute line — used to recognise **empty attached paragraphs** (see below)
   let prevWasAttr = false;
+  // ★ Consecutive `|`-lines waiting to be judged as one table block (see `parseTableLines`).
+  let tableRun: string[] = [];
+  /** Push a collected table run as a node, using the id from the attribute line that closed it. */
+  const flushTable = (idFromAttr: string | null): void => {
+    const lines = tableRun;
+    tableRun = [];
+    const table = parseTableLines(lines);
+    if (!table) {
+      // Not a table after all: these are ordinary lines, and dropping them would delete the
+      // user's text. They are re-emitted as plain body lines of the nearest node above.
+      for (const l of lines) {
+        const t = kramdownToHtml(l.replace(/^\|/, '').trim());
+        if (lastNode) {
+          if (!lastNode.paragraphs) lastNode.paragraphs = [];
+          lastNode.paragraphs.push(t);
+        } else {
+          titleParagraphs.push(t);
+        }
+      }
+      return;
+    }
+    roots.push({
+      id: idFromAttr ?? '',
+      modified: 0,
+      // A table has no paragraph of its own; `text` is unused and stays empty.
+      text: '',
+      table,
+      children: [],
+    });
+    lastNode = null;
+  };
 
   for (const rawLine of kramdown.split('\n')) {
-    if (!rawLine.trim()) continue;
+    if (!rawLine.trim()) {
+      flushTable(null);
+      continue;
+    }
 
     // Block attribute lines: SiYuan exports "two" attribute lines per listItem:
     //   1) inner (deeper indent): belongs to the paragraph block inside the listItem
@@ -1127,6 +1233,17 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
     // Hence the rule: **take only the outermost** id=, so the paragraph's id does not
     // overwrite the node (listItem)'s own block ID.
     if (/^\s*\{:/.test(rawLine)) {
+      // ★ A table's id sits on the attribute line **after** its rows, not before them
+      //   (`… |a|b| / {: … colgroup="|"}`), which is the opposite of every other block.
+      //   `colgroup="|"` is what marks it as a table's line, so it cannot be confused with a
+      //   listItem's own closing attribute line.
+      if (tableRun.length && /\bcolgroup="/.test(rawLine)) {
+        const id = /\bid="([^"]+)"/.exec(rawLine)?.[1] ?? null;
+        flushTable(id);
+        prevWasAttr = true;
+        continue;
+      }
+      flushTable(null);
       // ★★ Recognising an empty attached paragraph (measured).
       //
       // SiYuan's `getBlockKramdown` **does not export an empty paragraph's body line**, but it does export its
@@ -1164,6 +1281,18 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
       continue;
     }
     prevWasAttr = false;
+
+    // ★★ A table's rows are consecutive `|`-lines, and they are **not** list items.
+    //
+    //   Collected here, before any other branch can claim them: further down, a non-list
+    //   flush-left line is folded into the node above as an attached paragraph, which would
+    //   have turned the table into a line of garbage text on the node and lost it on the next
+    //   save. `flushTable` decides what the run was, once it ends.
+    if (/^\s*\|/.test(rawLine)) {
+      tableRun.push(rawLine);
+      continue;
+    }
+    flushTable(null);
 
     // ★ A flush-left `# X` has two identities that must be told apart: a **document title block** vs a **real h1 node**.
     //
@@ -1330,6 +1459,10 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
     nodeDepth.set(node, depth);
     lastNode = node;
   }
+
+  // ★ A table run that never met a closing attribute line is still a table run: judge it now,
+  //   so a document whose last block is a table does not lose it.
+  flushTable(null);
 
   // Fallback: give a SiYuan-style ID to nodes for which the whole text never provided an ID
   for (const n of flatNodes(roots)) if (!n.id) n.id = makeSiyuanId();

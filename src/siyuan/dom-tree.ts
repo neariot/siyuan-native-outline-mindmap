@@ -22,6 +22,15 @@ export interface BlockTreeState {
   topListId: string;
   /** listItem block ID -> task state (1: not done, 2: done) */
   itemTaskStatus: Map<string, number>;
+  /**
+   * Document-root **table** block IDs, in document order.
+   *
+   * ★ A table is not a list item: it has no `NodeListItem`, so none of the tables above can
+   *   hold it. Measured — the kernel stores a table with `parent_id` = the document and block
+   *   type `t`, and writing one inside a paragraph's inline DOM is stored as `<protyle-html>`.
+   *   Without this list a table in a document is invisible to the whole write path.
+   */
+  rootTableIds: string[];
   /** when the document has no list at all, the ID of SiYuan's default empty paragraph block under the document root (cleaned up when the first node is inserted) */
   emptyRootParagraphs: string[];
 }
@@ -39,6 +48,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
   const childrenOf = new Map<string, string[]>();
   const aliveIds = new Set<string>();
   const itemTaskStatus = new Map<string, number>();
+  const rootTableIds: string[] = [];
   let topListId = '';
 
   if (!domHtml) {
@@ -50,6 +60,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
       aliveIds,
       topListId,
       itemTaskStatus,
+      rootTableIds,
       emptyRootParagraphs: [],
     };
   }
@@ -109,6 +120,12 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
           if (!topListId) topListId = id;
         }
 
+        // ★ A root-level table: measured, the kernel hangs it off the document, never off a
+        //   NodeList, and it is the only thing here that has no listItem parent.
+        if (type === 'NodeTable' && (parent.type === 'NodeDocument' || parent.id === rootDocId)) {
+          rootTableIds.push(id);
+        }
+
         stack.push({ id, type });
       } else {
         // Non-block div, such as <div class="protyle-action"> or <div contenteditable="true">
@@ -143,6 +160,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
     aliveIds,
     topListId,
     itemTaskStatus,
+    rootTableIds,
     emptyRootParagraphs,
   };
 }

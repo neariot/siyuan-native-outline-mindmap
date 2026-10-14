@@ -15,7 +15,17 @@
 //   mention/@        <span data-mention="docId">@name</span>
 //   block ref        <span data-noderef="target">name</span>
 //   image            <img data-img="id" src=".." alt=".." style="width:..%" />
-//   table            <table><tbody><tr><td>..</td>..</tr>..</tbody></table>
+//
+// ★ Tables are **not** inline markup and have no `text` form. A SiYuan table is its own
+//   block at document root (measured: the kernel stores it with `parent_id` = the document,
+//   never inside a `NodeList`), so a table node carries its cells in `table` and has no
+//   paragraph at all. See `docs/todo/inline-markup-sync.md` §D9.
+
+/** A table's contents: a header row plus body rows, each a list of cell strings. */
+export interface TableData {
+  header: string[];
+  rows: string[][];
+}
 
 export interface OutlineNode {
   id: string;
@@ -59,6 +69,16 @@ export interface OutlineNode {
   // either, so they were never persisted: they were session-local view state that vanished on reload, while
   // the UI went on offering them. They are removed rather than left looking supported (section 8).
   numbered?: boolean;
+  /**
+   * ★ Set on a node that is a **table**, which is a block of its own rather than a list item.
+   *
+   * A node with `table` has no paragraph: `text` is unused, and the write path creates and
+   * updates the block by its markdown form (measured: that is the only route the kernel
+   * accepts — `insertBlock` with a `NodeTable` **DOM** answers `code: 0` and creates
+   * nothing, while a markdown table produces a real block). A table therefore only ever
+   * appears at document root, because a `NodeList` cannot contain one.
+   */
+  table?: TableData;
   children: OutlineNode[];
 }
 

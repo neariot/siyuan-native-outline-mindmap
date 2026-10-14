@@ -126,6 +126,13 @@ export function indentNodes(nodes: OutlineNode[], ids: readonly string[]): numbe
     if (idx <= 0) continue;
     const [moved] = list.splice(idx, 1);
     const prev = list[idx - 1];
+    // ★ A table is a block of its own and cannot become a child: measured, the kernel hangs a
+    //   table off the document and refuses it inside a `NodeList`. Leaving it where it is is
+    //   the only correct answer -- and it is silent either way, so it is stated here.
+    if (prev.table || moved.table) {
+      list.splice(idx, 0, moved);
+      continue;
+    }
     prev.children.push(moved);
     // ★ After attaching, the previous sibling must be expanded, otherwise the child is hidden by the collapsed state,
     //   and the user will think "I pressed Tab but the node disappeared".

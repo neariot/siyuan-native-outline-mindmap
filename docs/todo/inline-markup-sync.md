@@ -4,9 +4,7 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: D1–D8, D10, D11, D13–D16 **fixed and verified** (unit + E2E + red proofs).
-**D9 (tables) is open** and is the only remaining item; it is a feature, not a bug fix,
-and §3/D9 says why it is not being forced into this pass.
+Status: **all of D1–D16 fixed and verified** (unit + E2E + red proofs), D9 included.
 
 ---
 
@@ -270,9 +268,9 @@ build for the two UI ones.
 | D14 | the reader emitted a third image shape | `kramdownToHtml` emits `data-img`, the writer's own carrier | the round trip |
 | D15 | the detector believed a **stale** index | `writtenText` remembers what this session wrote; the index only outranks it inside the measured 1–3 s window | `text-write-lag` + redproof |
 | D16 | clear-format acted on `activeId`, not the focused node | it resolves the node from `document.activeElement` first, like every other toolbar action | `toolbar-sync` case 7 |
-| **D9** | **tables** | **open** — see below | — |
+| **D9** | **tables** | a table node with `table` cells, written as a markdown table block | `table-markup` + redproof + `e2e/table.spec.ts` |
 
-### D9 — tables: why it is not being forced into this pass
+### D9 — tables: a node kind, because a table is a block
 
 The facts, all measured:
 
@@ -280,23 +278,42 @@ The facts, all measured:
   `<protyle-html>`; so is a `NodeTable` div nested in one.
 - `insertBlock` with a `NodeTable` **DOM** answers `code: 0` and creates nothing — the
   worst failure shape there is, because the caller is told it worked.
-- `insertBlock` with a **markdown** table does create a real table block. That is the
-  only route that works.
-- The reader keeps only list items and headings, so a table block's lines are not part
-  of the node tree at all (`kramdownToTree` on a table's kramdown yields no node).
-- The old button injected a table into a node's text, where the write path stripped it
-  to one `&nbsp;` per cell plus a zero-width space: the table was lost **and** the node
-  was left holding invisible characters.
+- `insertBlock` with a **markdown** table does create a real table block, and the kernel
+  hangs it off the **document** (`parent_id` = the doc id, block type `t`).
+- The reader kept only list items and headings, so a table block's lines were not part of
+  the node tree at all — `kramdownToTree` on a table's kramdown yielded **no node**.
+- The old button injected a table into a node's text, where the write path stripped it to
+  one `&nbsp;` per cell plus a zero-width space: the table was lost **and** the node was
+  left holding invisible characters.
 
-So working tables need a **node kind that maps to a table block**, not a regex:
-`OutlineNode` would carry the rows, `kramdownToTree` would recognise the block,
-`syncStructure` / `saveNodesIncremental` would create and update it by the markdown
-route and skip the text path for it, the tree operations would have to treat it as
-childless, and the row would need a renderer. That touches the structural sync that
-currently works, and it is a feature with its own plan and its own regression suite.
+What shipped, and why each piece is where it is:
 
-What shipped instead: the panel now says why there is nothing to choose. Shipping a
-table button that corrupts the node was the alternative, and that is not a fix.
+- `OutlineNode.table` (`{ header, rows }`) — a table is a node, not markup. `text` is unused;
+  a node with no text carrier must not be given one, or a block gets written as text.
+- `kramdownToTree` collects consecutive `|`-lines and judges them with `parseTableLines`.
+  A run of one line, or one with no separator second, is **ordinary text** and is kept as
+  such — otherwise a paragraph starting with a pipe would be deleted.
+- The block id comes from the attribute line **after** the rows (measured: `colgroup="|"`
+  marks it), which is the opposite of every other block. Reading it from the wrong side
+  makes an existing table look new, and the next write inserts a second copy.
+- `loadBlockMap` maps a table's own block to its node in all three tables, so
+  `syncStructure` finds it and `syncDeletions` does not delete it as "in the document but
+  not in the tree".
+- `syncStructure` creates it with `insertBlock(markdown)` **anchored on the document** —
+  anchoring after a list item asks for a sibling position inside a `NodeList`, which the
+  kernel refuses — and rewrites it with `updateBlock(markdown)` when the cells change.
+- `saveNodesIncremental` **excludes** table nodes: they have no paragraph block, so the text
+  path would look for one, call the node new, and insert a duplicate beside the table.
+  The structural check counts only non-table mappings for the same reason — otherwise every
+  pass over a document containing a table looked structural and a plain text edit was
+  routed through the whole structural write for nothing.
+- The row renders read-only, and is deliberately **not** a `.node-text` element: every
+  helper that walks `.node-text` assumes a contenteditable paragraph.
+- `indentNodes` leaves a table where it is, because a `NodeList` cannot contain one.
+
+Cells are **not editable in the outline yet**: what is fixed is that a table is created, is
+stored as a real block, loads back, survives edits to its neighbours, and can be deleted.
+Editing cells in place is the obvious next step and needs its own round-trip tests.
 
 ## 5. Standing rules for the fix
 
