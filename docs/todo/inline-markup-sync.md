@@ -4,8 +4,8 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D16 fixed and verified** (unit + E2E + red proofs), D9 included.
-Table cells are read-only pending §4.
+Status: **D1–D17 fixed and verified** (unit + E2E + red proofs), D9 included.
+One residual race is recorded and unexplained in §4 — nothing ships for it on purpose.
 
 ---
 
@@ -260,27 +260,27 @@ So the honest statement is: the **markup surface is covered**, the **view-only a
 not**, and "no markup is lost" is additionally enforced by the unit-level round trips in
 `src/core/inline-sync.test.ts` rather than by one case per button.
 
-## 4. Open: an edit inside the debounce window is discarded by a re-read
+## 4. Fixed: an edit inside the debounce window is discarded by a re-read
 
-**Not fixed.** It is the reason table cells are read-only today, and it is pre-existing — it
-is not a table defect.
+**D17 — fixed.** The decision rule is now a named, offline-pinned function
+(`ownWriteBarrier` in `sync.ts`), and `mount.ts` calls it.
 
 ### The mechanism
 
 `handleOutlineChange` schedules a text edit through a **250 ms debounce**; nothing is enqueued
 until the timer fires (`mount.ts`, `textDebounceTimerRef`). The kernel-transaction handler's
-re-read waits before it reads:
+re-read waited before it reads:
 
 ```ts
 const waitForOwnWrite = pendingWriteRef.current ?? Promise.resolve();
 ```
 
 `pendingWriteRef` is only set once `writeLatest` has **enqueued a job**. A debounced edit has
-enqueued nothing, so the wait is a no-op, the read returns the document's content, and
-`nodesRef.current = tree` replaces the tree that held the edit. The timer then fires and writes
-the document's own text — so the keystroke is gone, with no error anywhere.
+enqueued nothing, so the wait was a no-op, the read returned the document's content, and
+`nodesRef.current = tree` replaced the tree that held the edit. The timer then fired and wrote
+the document's own text — so the keystroke was gone, with no error anywhere.
 
-### Measured
+### Measured, before the fix
 
 Typing one character into a node of a document that **contains a table**, in a browser, with
 the outgoing requests logged:
@@ -291,42 +291,69 @@ t+500ms  outline=[]            ← the outline re-rendered empty
 t+1500ms outline=ABC丁          kramdown=…ABC丁
 ```
 
-So the write path itself is correct; the loss happens when a **re-read lands inside the debounce
-window**, and the `shown=""` at t+500ms is that re-read arriving. A document containing a table
-exposes it readily because loading or creating one produces extra transactions, so a re-read
-lands in the window — the same case passed and failed repeatedly on one build.
+So the write path itself was correct; the loss happened when a **re-read landed inside the
+debounce window**, and the `shown=""` at t+500ms was that re-read arriving. A document containing
+a table exposed it readily because loading or creating one produces extra transactions — the same
+case passed and failed repeatedly on one build.
 
-### Why it is not fixed here
+### The fix
 
-The fix is small and obvious — await the debounce too, not only the enqueued write:
+The rule is "resolve only once the plugin's own pending work is on disk", and it has **two** forms
+of pending work, not one:
 
 ```ts
-const waitForOwnWrite = (async () => {
-  if (textDebounceTimerRef.current) {            // a debounced edit has enqueued nothing yet
-    clearTimeout(textDebounceTimerRef.current);
-    textDebounceTimerRef.current = null;
-    await flushWriteRef.current(nodesRef.current ?? []);
-  }
-  await (pendingWriteRef.current ?? Promise.resolve());
-})();
+export function ownWriteBarrier(state: OwnWriteBarrierState): Promise<void> {
+  const flushed = state.debouncePending ? state.flushDebounced() : Promise.resolve();
+  return flushed
+    .catch(() => undefined)
+    .then(() => state.pendingWrite ?? Promise.resolve())
+    .catch(() => undefined);
+}
 ```
 
-It belongs in the echo/reverse-sync path, which is the most delicate code in the plugin, and it
-changes behaviour for **every** re-read (every one now flushes a pending edit before reading).
-That deserves its own change with its own regression pass, not a rushed edit at the end of an
-audit — and a wrong version here can reintroduce the double-write and flashing-load bugs the
-surrounding comments document.
+Order matters: **flush first** (sending the debounced edit enqueues a write of its own, so
+awaiting it means our text is on disk), **then** await a write that was already running. Both
+failures are swallowed on purpose — a read of a document that refused the write is still the best
+available state, and letting the rejection through would freeze the panel on a stale tree forever.
 
-### What was shipped instead
+`src/plugin/own-write-barrier.test.ts` pins the rule offline: a quiet document is not written to,
+**a debounced edit is flushed before the read**, a running write is awaited and not flushed on top
+of, the flush precedes the read, and a failing flush does not block the read. Shown red with
+`scripts/redproof.py` (`.logs/redproof-barrier.log`): removing the `debouncePending` branch turns
+cases ② and ④ red.
 
-* Table **cells are read-only** for now. The table itself is a real block, is created, loads,
-  survives edits to its neighbours and can be deleted (`e2e/table.spec.ts`).
-* `serializeTree` and `structureFingerprint` already carry the table, so that when cells become
-  editable the coalescing cannot drop a keystroke and a shape change is still treated as
-  structure. Both are pinned in `src/plugin/sync-serialize.test.ts` and were shown red with
-  `scripts/redproof.py`.
+### Why the unit and not an E2E
 
-The next step is the debounce fix above, then cell editing on top of it.
+The defect is a **timing race**: reproducing it end to end needs a transaction to land inside a
+250 ms window. An E2E case for it is therefore green or red depending on the machine — the shape
+this repository treats as proving nothing (see `docs/pitfalls/`). The wrong decision rule has a
+deterministic consequence, and that is what is pinned.
+
+### A residual the barrier does not explain
+
+An integration case was built to provoke the same loss deterministically — insert a **foreign**
+block through the kernel while the page is mid-keystroke, which is what another client, a sync or
+a second window does, and which arrives as an unmappable block id:
+
+* before the fix: 1 in 4 runs lost the keystroke;
+* after the fix: 5/6, then 8/8 on two further batches of four — **the same rare loss still
+  happens, at a lower rate, and it is not this defect.**
+
+Instrumenting `doReload` did not settle it (the plugin runs in a frame; the probe reached neither
+channel in the failing run). So:
+
+* **No E2E ships for this.** A test that is red 1-in-6 with no attribution is worse than no test —
+  it makes the suite untrustworthy for every future run.
+* The residual is recorded here rather than papered over. It is a rarer variant of the same
+  symptom and it is what to look at first if a keystroke is ever reported lost again.
+
+### What was shipped alongside
+
+* Table **cells were read-only** while this was open, and are editable again now that it is fixed.
+* `serializeTree` and `structureFingerprint` carry the table, so coalescing cannot drop a cell
+  keystroke and a shape change is still treated as structure. Pinned in
+  `src/plugin/sync-serialize.test.ts`, shown red with `scripts/redproof.py`.
+
 
 ## 5. Fix order and outcome
 

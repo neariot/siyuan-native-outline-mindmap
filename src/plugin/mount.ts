@@ -21,7 +21,7 @@ import { SiYuanClient, isTargetGoneError } from '../siyuan/api';
 import { SiYuanStore } from '../siyuan/store';
 import { NativeHostDriver } from '../siyuan/native-driver';
 import type { IHostDriver } from '../siyuan/host-driver';
-import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText, serializeTree, structureFingerprint } from './sync';
+import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText, serializeTree, structureFingerprint, ownWriteBarrier } from './sync';
 import { escapeHtml } from '../model/html-escape';
 import { makeSiyuanId } from '../core/map';
 import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } from './tree-ops';
@@ -907,7 +907,19 @@ function OmTabApp({
       //   Waiting for `pendingWriteRef` is what makes the read see our own change. The echo guard is not
       //   enough on its own here, and this is the general form of the problem: any re-read triggered by a
       //   transaction we caused must not overtake the write that caused it.
-      const waitForOwnWrite = pendingWriteRef.current ?? Promise.resolve();
+      //
+      //   ★★ And `pendingWriteRef` alone is **not** enough. A text edit is scheduled through a
+      //   `handleOutlineChange` **250 ms debounce** and enqueues **nothing** until the timer fires, so
+      //   during that window the wait below was a no-op: the read returned the document's own
+      //   pre-edit content, replaced the tree that held the edit, and the timer then wrote that
+      //   content back. **The keystroke was lost, with no error anywhere.** A foreign block arriving
+      //   while you are typing (another client, a sync, a second window) is enough to trigger it.
+      //   `ownWriteBarrier` covers both forms of pending work; see `sync.ts`.
+      const waitForOwnWrite = ownWriteBarrier({
+        pendingWrite: pendingWriteRef.current,
+        debouncePending: textDebounceTimerRef.current !== null,
+        flushDebounced: () => flushWriteRef.current(nodesRef.current ?? []),
+      });
       void waitForOwnWrite.catch(() => undefined).then(() => loadDocRef.current?.()).then((tree: OutlineNode[] | undefined) => {
         if (!tree) return;
         nodesRef.current = tree;

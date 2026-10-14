@@ -731,3 +731,51 @@ export function structureFingerprint(tree: OutlineNode[]): string {
   walk(tree);
   return parts.join('\u0001');
 }
+
+/**
+ * Everything a re-read has to get past before it may read the document.
+ */
+export interface OwnWriteBarrierState {
+  /** The write-back that is already **enqueued and running** (`pendingWriteRef`), if any. */
+  pendingWrite: Promise<void> | null;
+  /** Whether a debounced text edit is scheduled —— and has therefore enqueued **nothing** yet. */
+  debouncePending: boolean;
+  /** Send that debounced edit now. */
+  flushDebounced: () => Promise<void>;
+}
+
+/**
+ * ★★★ Resolve only once the plugin's own pending work is on disk.
+ *
+ * A re-read triggered by a kernel transaction replaces the whole node tree. If it reads before
+ * this plugin's own write has landed, it faithfully returns the **pre-write** document and
+ * overwrites a correct local tree —— and nothing catches it, because by then the local edit
+ * looks finished.
+ *
+ * Waiting for `pendingWriteRef` alone is not enough, and that was the defect:
+ *
+ *   • `handleOutlineChange` schedules a text edit through a **250 ms debounce** and enqueues
+ *     nothing until the timer fires, so during that window `pendingWriteRef` is `null` and the
+ *     wait is a no-op. The read returned the document's content, replaced the tree that held the
+ *     edit, and the timer then wrote the document's own text back: **the keystroke was lost, with
+ *     no error anywhere.**
+ *
+ *   • Measured in a browser with the outgoing requests logged (typing into a document that
+ *     contains a table, so load-time transactions land a re-read inside the window):
+ *     `t+500ms outline=[]` — the re-read arriving — while the document was already correct.
+ *
+ * So the barrier covers both forms of pending work, in the order that matters: **flush first**
+ * (sending the debounced edit enqueues a write of its own and awaiting it means our own text is
+ * on disk), **then** await a write that was already running.
+ *
+ * A failing flush is swallowed on purpose: a read of a document that did not accept the write is
+ * still the best available state, and letting the rejection through would freeze the panel on a
+ * stale tree forever.
+ */
+export function ownWriteBarrier(state: OwnWriteBarrierState): Promise<void> {
+  const flushed = state.debouncePending ? state.flushDebounced() : Promise.resolve();
+  return flushed
+    .catch(() => undefined)
+    .then(() => state.pendingWrite ?? Promise.resolve())
+    .catch(() => undefined);
+}
