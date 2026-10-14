@@ -308,3 +308,53 @@ test('★★ collapsing a node in the map hides the branch and survives a reopen
     await api.dispose();
   }
 });
+
+/**
+ * ★★ The attached-paragraph overlay: open, close, and commit.
+ *
+ * Measured: `mm-para-overlay`, `commitParagraphs`, `cancelParagraphs` and `startParagraphEdit` had
+ * **zero** spec references. The overlay is the map's only way to read a node's attached paragraphs,
+ * and its commit path is the one that writes them back — so a dead button there loses text.
+ */
+test('★★ the paragraph overlay opens, and its commit reaches the document', async ({ page }) => {
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await openMap(page, '- 甲\n  - 甲一\n- 乙\n', api);
+
+    // Give the root an attached paragraph **in SiYuan**, so the badge appears and the overlay has
+    // something real to show. Writing it through the API keeps this case about the overlay.
+    const kd0 = await api.call('/api/block/getBlockKramdown', { id: docId });
+    // Append a paragraph under the root's **list item** — that is what an "attached paragraph" is.
+    const li = String((kd0.data as { kramdown?: string })?.kramdown ?? '').match(/^-\s*\{:[^}]*id="([^"]+)"/m);
+    expect(li, 'precondition: the first list item id was read').not.toBeNull();
+    await api.call('/api/block/insertBlock', {
+      dataType: 'markdown',
+      data: '备注一',
+      parentID: String(li![1]),
+      previousID: '',
+      nextID: '',
+    });
+
+    await openDoc(page, docId);
+    await toMindmapView(page);
+    await expect(page.locator('.mm-node').first()).toBeVisible({ timeout: 30_000 });
+
+    const badge = page.locator('.mm-para-badge').first();
+    await expect(badge, 'a node with paragraphs must show the paragraph badge').toBeAttached({ timeout: 20_000 });
+    // The badge is a small floating circle; hover first so it is the topmost hit target.
+    await page.locator('.mm-node').first().hover();
+    await badge.click({ force: true });
+
+    const overlay = page.locator('.mm-para-overlay');
+    await expect(overlay, 'the overlay must open').toBeVisible({ timeout: 10_000 });
+    await expect(overlay, 'the overlay must show the attached paragraph').toContainText('备注一');
+
+    // ★ The close button must close it. A close that left the overlay up would trap the user in it.
+    await overlay.locator('.mm-para-close').click();
+    await expect(overlay, 'the close button must close the overlay').toHaveCount(0, { timeout: 10_000 });
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
