@@ -4,7 +4,8 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D17 fixed and verified** (unit + E2E + red proofs), D9 included.
+Status: **D1–D17 fixed and verified** (unit + E2E + red proofs), D9 included, and table cells
+are editable (D18, §7).
 One residual race is recorded and unexplained in §4 — nothing ships for it on purpose.
 
 ---
@@ -331,25 +332,45 @@ deterministic consequence, and that is what is pinned.
 
 ### A residual the barrier does not explain
 
-An integration case was built to provoke the same loss deterministically — insert a **foreign**
-block through the kernel while the page is mid-keystroke, which is what another client, a sync or
-a second window does, and which arrives as an unmappable block id:
+An integration case provokes the same loss deterministically — insert a **foreign** block through
+the kernel while the page is mid-keystroke, which is what another client, a sync or a second window
+does, and which arrives as an unmappable block id:
 
-* before the fix: 1 in 4 runs lost the keystroke;
-* after the fix: 5/6, then 8/8 on two further batches of four — **the same rare loss still
-  happens, at a lower rate, and it is not this defect.**
+* before the barrier: 1 in 4 runs lost the keystroke;
+* after it: 1 in 6.
 
-Instrumenting `doReload` did not settle it (the plugin runs in a frame; the probe reached neither
-channel in the failing run). So:
+★ **The residual is narrower than "a keystroke is lost", and the later cell-editing work
+attributed it.** While diagnosing D18 (§7) the failing runs were instrumented at every stage of
+the write-back, and the shape is always the same:
 
-* **No E2E ships for this.** A test that is red 1-in-6 with no attribution is worse than no test —
-  it makes the suite untrustworthy for every future run.
-* The residual is recorded here rather than papered over. It is a rarer variant of the same
-  symptom and it is what to look at first if a keystroke is ever reported lost again.
+```
+writes = [ moveBlock … ]          ← the structural pass ran
+(no updateBlock)
+syncTableCells was never entered, saveNodesIncremental was never entered,
+and writeLatest's task never started
+```
+
+So the debounced write-back is **cancelled or superseded before it runs** — the edit is in the
+model, the DOM shows it, and the write that would carry it never begins. It is not "the write
+went out and was refused", and it is not the debounce-window race the barrier fixed. It is
+in the hand-off between `handleOutlineChange`'s debounce and `writeLatest`, and it affects an
+**ordinary node edit** exactly as it affects a cell edit.
+
+What is known and what is not:
+
+* It is rare (1 in ~6 whole-suite runs of the table spec, and it has not been reproduced in
+  isolation), so it is a timing window on a loaded machine.
+* A page-side probe cannot reach it: the plugin runs in a frame whose `window` the test cannot
+  read, and Playwright surfaced `console` from that frame only intermittently. The probe that
+  **did** work was `console.warn` from the plugin, and that is the tool to use next time.
+* **No E2E ships for it.** A case that is red 1 in 6 with no attribution makes the suite
+  untrustworthy for every future run, which is worse than no case (see `docs/pitfalls/`).
+* It is recorded rather than papered over, and it is the first thing to look at if a lost
+  keystroke is ever reported again.
 
 ### What was shipped alongside
 
-* Table **cells were read-only** while this was open, and are editable again now that it is fixed.
+* Table **cells are editable** (§7) now that the debounce race is fixed.
 * `serializeTree` and `structureFingerprint` carry the table, so coalescing cannot drop a cell
   keystroke and a shape change is still treated as structure. Pinned in
   `src/plugin/sync-serialize.test.ts`, shown red with `scripts/redproof.py`.
@@ -410,19 +431,55 @@ What shipped, and why each piece is where it is:
   not in the tree".
 - `syncStructure` creates it with `insertBlock(markdown)` **anchored on the document** —
   anchoring after a list item asks for a sibling position inside a `NodeList`, which the
-  kernel refuses — and rewrites it with `updateBlock(markdown)` when the cells change.
+  kernel refuses. It owns the table's **existence** and nothing else.
+- `syncTableCells` owns a table's **content**: one baseline per table
+  (`lastTableMarkdown`, the markdown the block is known to hold) and a whole-body
+  `updateBlock(markdown)` when it differs. A failure leaves the baseline alone, so the
+  next pass retries instead of recording a refused write as saved.
 - `saveNodesIncremental` **excludes** table nodes: they have no paragraph block, so the text
   path would look for one, call the node new, and insert a duplicate beside the table.
   The structural check counts only non-table mappings for the same reason — otherwise every
   pass over a document containing a table looked structural and a plain text edit was
   routed through the whole structural write for nothing.
-- The row renders read-only, and is deliberately **not** a `.node-text` element: every
+- Each cell is a leaf contenteditable `.om-node-cell` **inside** the `th`/`td`, addressed by
+  `tableCellKey(node, row, col)`, and deliberately **not** a `.node-text` element: every
   helper that walks `.node-text` assumes a contenteditable paragraph.
 - `indentNodes` leaves a table where it is, because a `NodeList` cannot contain one.
 
-Cells are **not editable in the outline yet**: what is fixed is that a table is created, is
-stored as a real block, loads back, survives edits to its neighbours, and can be deleted.
-Editing cells in place is the obvious next step and needs its own round-trip tests.
+Cells are **editable** (see §7). The addressing, the "a write must not grow the table" rule
+and the "no write when nothing changed" rule live in `outline/table-cells.ts`, pinned offline
+with `table-cells.test.ts`; two mutations were shown red with `scripts/redproof.py`.
+
+## 7. D18 — two writers for one table body made the regression case vacuous
+
+The cell-edit E2E case stayed **green with `syncTableCells` disabled** (measured). Two
+independent causes, and the second is the interesting one:
+
+1. The first write-back after a document opens has a **null baseline**, so it takes the
+   structural route, and the create branch wrote the whole table body on its way through.
+   The case therefore had to be split: make an edit whose purpose is to establish the
+   baselines, then assert on a **second** edit that only the writer under test can explain.
+2. Even so, a document holding a table is judged **structural on every write-back**, so the
+   structural route runs for every keystroke — and while that route also wrote the body, no
+   case could distinguish the two writers at all.
+
+The fix is ownership: `syncStructure` owns existence, `syncTableCells` owns content. The
+red proof is now real — disabling the writer turns the second edit red and the file restores
+byte-identical (`.logs/redproof-cells-owner.log`).
+
+### A defect the diagnosis found in the render
+
+The `ref` callback runs only when React re-renders **that** element, so a cell whose model
+changed while it was untouched kept its old text. Measured, with the plugin's own console:
+
+```
+after editing cell 0:0 (a → a丙), clicking 0:1 and typing:
+[om-dbg] syncCell …:0:0 value="a丙"   ← the FIRST cell firing, with its stale text
+```
+
+The keystroke in 0:1 never reached the model at all, and 0:0's text was written back a second
+time. The model now wins on `focus` — the moment a cell becomes the one being typed in —
+which is synchronous and therefore before any keystroke can be read.
 
 ## 6. Standing rules for the fix
 

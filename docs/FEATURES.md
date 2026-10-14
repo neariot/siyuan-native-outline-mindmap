@@ -18,7 +18,8 @@
   SiYuan takes a heading level only from a non-list line (`docs/pitfalls/data.md`). The outline used to
   offer H1/H2/H3/¶ buttons and a `# ` + space shortcut for exactly that; both did nothing and were removed.
 - Hyperlinks / images (paste, drag in, or pick; stored in SiYuan assets) /
-  tables / formulas (KaTeX) / emoji / `#tags` / `@cross-document references` /
+  tables (**a real table block**; its cells are editable in place, `Tab` walks them) /
+  formulas (KaTeX) / emoji / `#tags` / `@cross-document references` /
   bidirectional links
 - Clipboard: structured copy, multi-line paste nests automatically, rich-text
   paste is reduced to plain text

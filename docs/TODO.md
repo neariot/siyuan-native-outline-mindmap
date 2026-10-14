@@ -15,7 +15,12 @@ As of 2026-10-13, all primary defect queues are **0 open**:
 
 One item from the inline-markup audit of 2026-10-14 was open and is now closed: **tables
 cannot live inside a node** (a SiYuan table is its own block). A table is now a node of its
-own, written as a markdown table block; cell editing in the outline is the obvious next step.
+own, written as a markdown table block, and **its cells are editable in place** (D18 fixed
+the two-writers defect that made the regression case vacuous, plus a render defect that
+wrote one cell's stale text back while the user typed in another).
+One residual timing race remains open and unattributed — a debounced write-back is
+occasionally cancelled before it runs, losing the edit; it is recorded with its measured
+shape in `docs/todo/inline-markup-sync.md` §4 and deliberately ships with no test.
 Design and measurements: `docs/todo/inline-markup-sync.md`.
 
 Historical notes on resolved defects, retargeted citations (e.g. from `.logs/API-GOTCHAS.md` to `docs/kernel-api.md`), and fixed audit findings are committed in git history, `docs/AUDIT-FINDINGS.md`, and `docs/pitfalls/`.
