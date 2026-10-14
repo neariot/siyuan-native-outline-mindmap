@@ -332,10 +332,15 @@ deterministic consequence, and that is what is pinned.
 
 ### A residual the barrier does not explain, and what it turned out to be
 
-An integration case provokes the same symptom deterministically — insert a **foreign** block
-through the kernel while the page is mid-keystroke, which is what another client, a sync or a
-second window does, and which arrives as an unmappable block id. Before the barrier it lost the
-keystroke in 1 of 4 runs; after it, 1 in 6.
+An integration case was built to provoke the same symptom — insert a **foreign** block through the
+kernel while the page is mid-keystroke, which is what another client, a sync or a second window
+does, and which arrives as an unmappable block id. Before the barrier it lost the keystroke in 1 of
+4 runs; after it, 1 in 6.
+
+★ **That case is not in the suite and was not kept.** A case that is red 1 run in 6 with no
+attribution makes every future run of the suite untrustworthy, and at the time nothing explained
+it; the attribution below arrived later, from different work. It is described here so the next
+person can rebuild it from the recipe rather than guess, and so the measurement is not lost.
 
 ★ **The cell-editing work then attributed it, and disproved part of this section's first
 reading.** The earlier version of this note said the debounced write-back "never begins". That was
