@@ -261,6 +261,35 @@ So the honest statement is: the **markup surface is covered**, the **view-only a
 not**, and "no markup is lost" is additionally enforced by the unit-level round trips in
 `src/core/inline-sync.test.ts` rather than by one case per button.
 
+### The mind map's own bar — the same gap, found later
+
+★ The same measurement was then run over the **mind map** bar, and it was worse: `cmdFit`,
+`cmdExportImage`, `cmdExportMm`, `tipZoomIn`, `tipZoomOut`, `tipResetZoom`, `tipToggleTheme`,
+`tipFitCanvas`, `cmdBackToFullMap`, `lblShape`, the theme swatches, `mm-para-overlay`,
+`commitParagraphs`, `cancelParagraphs` and `startParagraphEdit` all had **zero** spec references.
+`e2e/mindmap.spec.ts` covers the bar's *layout* (wrapping, the collapse toggle, the container
+query) and never clicks a control to see what it does — and a button wired to nothing looks exactly
+like one that works, until somebody presses it.
+
+`e2e/mindmap-bar.spec.ts` now drives 8 of them, each asserting the **effect** rather than the
+click: the canvas transform moves and reset really returns 100%; fit rescales and the map's bounds
+end up inside the canvas; a swatch changes the node fill and marks itself active; the dock cycles
+the palette; the shape selector re-lays the nodes out; both exports produce a file with the right
+extension; a fold survives a reopen; and the paragraph overlay opens, shows the paragraph and
+closes. Four were shown red with `scripts/redproof.py`, each hitting its own case.
+
+Two traps the writing hit, both already documented here and both worth not rediscovering: the bar
+starts **collapsed** (every click on a hidden control times out), and the collapse badge is
+**covered by the node's own rect** (`click('.mm-badge')` is judged intercepted and retried for two
+minutes — `clickBadgeOn`/`firstBadgeOwner` already existed for `e2e/export.spec.ts`).
+
+★ One assertion was wrong and is recorded rather than quietly changed: the fold was first checked
+for `fold="1"` in the block's kramdown. Folding is **not persisted** — `model/types.ts` says
+`collapsed` is "view state, deliberately not saved" and the map keeps it in `localStorage` under
+`om-mm-collapsed:<doc>`. The case now asserts the promise the code makes (remembered across a
+reopen); demanding the document hold it would have been a request to write view state into the
+user's file.
+
 ## 4. Fixed: an edit inside the debounce window is discarded by a re-read
 
 **D17 — fixed.** The decision rule is now a named, offline-pinned function
