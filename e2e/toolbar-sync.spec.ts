@@ -23,6 +23,7 @@
  */
 import { test, expect, type Page } from './fixtures';
 import { openDoc, toOutlineView } from './mindmap';
+import { waitForStableOutline } from './outline';
 import { kernelApi, createTempDoc, removeDoc, resolveTestNotebook } from './testdoc';
 import { siyuanUrl, siyuanToken } from './env';
 
@@ -137,6 +138,7 @@ async function reloadAndRead(page: Page, docId: string): Promise<string> {
   await openDoc(page, docId);
   await toOutlineView(page);
   await expect(page.locator(NODE_TEXT).first()).toBeVisible({ timeout: 30_000 });
+  await waitForStableOutline(page);
   return nodeHtml(page);
 }
 
@@ -155,6 +157,9 @@ async function withDoc(
     await openDoc(page, docId);
     await toOutlineView(page);
     await expect(page.locator(NODE_TEXT).first()).toBeVisible({ timeout: 30_000 });
+    // ★ Wait for the tree to settle: measured, the outline can render zero rows for a moment
+    //   after loading, and an edit made then is typed into nothing.
+    await waitForStableOutline(page);
     await openToolbar(page);
     await body({ api, docId });
   } finally {
@@ -270,6 +275,60 @@ test('★★ clear format removes formatting from the document, not only from th
 
     const after = await reloadAndRead(page, docId);
     expect(after, 'the bold must not come back after a reload').not.toContain('font-weight');
+  });
+});
+
+// ---------------------------------------------------------------- D7: semantic spans that used to be dropped
+
+test('★★ a tag inserted from the outline is stored as a tag', async ({ page }) => {
+  await withDoc(page, '- 甲乙丙\n', async ({ api, docId }) => {
+    // The `#` button asks for the name with `prompt()`, which Playwright dismisses by
+    // default -- a dismissed dialog returns null and the button silently does nothing.
+    page.once('dialog', (d) => void d.accept('proj'));
+
+    await selectNodeText(page);
+    await page.locator('.om-outline-wrap button[title="# 标签"]').first().click();
+
+    const held = await expectKernelHolds(
+      api,
+      docId,
+      '#proj',
+      'the document must hold the tag as text; a span with an attribute the kernel drops does not',
+    );
+    expect(held, 'the tag must not be stored as an empty styled span').not.toContain('data-type="text">#');
+
+    const after = await reloadAndRead(page, docId);
+    expect(after, 'the tag must come back as a tag').toContain('#proj');
+  });
+});
+
+test('★★ a block reference inserted from the outline survives as a reference', async ({ page }) => {
+  await withDoc(page, '- 甲乙丙\n- 第二行\n', async ({ api, docId }) => {
+    // Put the caret at the end of the second node, then reference the first one.
+    await page.locator(NODE_TEXT).nth(1).click();
+    await page.keyboard.press('End');
+
+    await page.locator('.om-outline-wrap button[title="双向链接（本文档节点）"]').first().click();
+    const item = page.locator('.om-outline-wrap .match-item').first();
+    await expect(item, 'the node-reference panel must list a node to pick').toBeVisible({ timeout: 10_000 });
+    await item.click();
+
+    // ★ Measured before the fix: the reference arrived as `<span data-type="text">甲乙丙</span>`
+    //   -- the `((id "text"))` was gone and the reference destroyed with it.
+    await expect
+      .poll(async () => kramdown(api, docId), {
+        message: 'the document must hold a block reference `((id "text"))`, not plain text',
+        timeout: 20_000,
+      })
+      .toMatch(/\(\([0-9]{14}-[0-9a-z]{7} "[^"]*"\)\)/);
+    // ★ Scoped to the **reference's own label**: a bare `<span>` is legitimately stored as
+    //   `<span data-type="text">` (that is how the kernel holds plain text), so asserting on
+    //   the whole document would condemn the node's own text instead of the reference.
+    const after2 = await kramdown(api, docId);
+    expect(
+      after2,
+      'the reference must not degrade to a plain span carrying its label',
+    ).not.toMatch(/data-type="text">甲乙丙/);
   });
 });
 

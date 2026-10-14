@@ -147,3 +147,37 @@ export async function dragRowOnto(
   }
   await page.mouse.up();
 }
+
+/**
+ * Wait until the outline stops changing row count.
+ *
+ * ★ A precondition, not a delay.
+ *
+ *   Measured: a moment after the document is opened the outline can render **zero** rows while
+ *   it re-reads the tree, even though `ensureOutlineReady` has already passed. A click landing
+ *   in that window types into nothing, and the case then reports "the edit never reached the
+ *   document" -- a claim about the write path that is really about the test's timing.
+ *
+ *   The criterion is stability (the same count twice in a row), so it waits for the condition
+ *   and lets a slow machine take longer rather than making the case lie.
+ */
+export async function waitForStableOutline(
+  page: Page,
+  opts: { samples?: number; intervalMs?: number; timeout?: number } = {},
+): Promise<void> {
+  const samples = opts.samples ?? 2;
+  const intervalMs = opts.intervalMs ?? 400;
+  let previous = -1;
+  let stable = 0;
+  const deadline = Date.now() + (opts.timeout ?? 20_000);
+  while (Date.now() < deadline) {
+    const count = await page.locator('.om-outline-wrap .node-row:not(.node-row-empty)').count();
+    stable = count === previous ? stable + 1 : 0;
+    previous = count;
+    if (stable >= samples && count > 0) return;
+    await page.waitForTimeout(intervalMs);
+  }
+  throw new Error(
+    `the outline never settled (last row count ${previous}); an edit made now could be typed into nothing`,
+  );
+}

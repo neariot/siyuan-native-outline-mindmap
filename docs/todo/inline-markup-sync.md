@@ -238,13 +238,26 @@ cleared a node out of view or did nothing, with no message.
 
 No E2E spec exercised bold, italic, strikethrough, underline, clear-format, inline
 code, emoji, tag, mention, node-ref, collapse-all or select-all. That is why D1, D3,
-D4 and D5 were reachable by a released build.
+D4, D5 and D7 were reachable by a released build.
 
-Now covered by `e2e/toolbar-sync.spec.ts` (8 cases, each asserting the kernel's answer
-and what comes back after a reload). Still **not** covered, and still to do: emoji, tag,
-mention, node-ref, collapse-all, select-all, undo/redo from the toolbar. The unit-level
-serializer cases in `src/core/inline-sync.test.ts` do cover tag / block-reference /
-formula round trips, but nothing drives those buttons.
+`e2e/toolbar-sync.spec.ts` now drives **10** of them end to end, each asserting the
+kernel's answer and what comes back after a reload: inline code, the four marks, mark
+removal, clear-format, a tag, a block reference, and a colour. `e2e/table.spec.ts` adds
+2 more for D9.
+
+Still **not** driven by a case, and therefore still unverified as *behaviour*:
+
+| Action | Why it is not simply covered by another case |
+|---|---|
+| emoji | inserts plain text at the caret — the same write path as typing, which the typing cases cover; no markup of its own |
+| mention | SiYuan has no inline mark for one (measured: every `data-mention` becomes plain text), so this is the tag case with a different label |
+| collapse-all / expand-all | view-only by design (`ChangeKind`); what was wrong was the write-back and the undo slot, and that is what `view` fixed |
+| select-all, zoom, find, undo/redo | no document round trip of their own |
+| highlight picker | the colour case covers the colour input; the highlight input is the same `fmt(..., 'hiliteColor')` path |
+
+So the honest statement is: the **markup surface is covered**, the **view-only actions are
+not**, and "no markup is lost" is additionally enforced by the unit-level round trips in
+`src/core/inline-sync.test.ts` rather than by one case per button.
 
 ## 4. Fix order and outcome
 
