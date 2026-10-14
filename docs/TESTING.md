@@ -761,6 +761,9 @@ npm run check        # all the fast gates at once, with a verdict and a cost per
 npm run timings      # what each script actually costs, from .logs/script-usage.log
 npm run redproof -- --file <f> --from <text> --to <text> --run "<check>"
                      # show that a check can go red, then put the tree back
+                     #   add --repeat N for a defect that is a **race**: one run per side cannot
+                     #   tell "fails half the time" from "the fix works", and the tool says so
+                     #   with the count rather than passing on a partial rate
 ```
 
 ## The process layer
@@ -770,7 +773,7 @@ now, and each tool has a demonstrated failure path.
 
 | Tool | Rule it enforces | Its own failure path |
 |---|---|---|
-| `scripts/redproof.py` | "a new test must be shown to fail" | stays red-proof-able: a mutation that lands nowhere is refused *before* a test run, and a check that stays green is reported as a failed red proof |
+| `scripts/redproof.py` | "a new test must be shown to fail" | stays red-proof-able: a mutation that lands nowhere is refused *before* a test run, and a check that stays green is reported as a failed red proof. ★ `--repeat N` exists because a **race** broke the one-run assumption: the tool reported "stayed green" for a defect that fails half the time, which would have thrown the fix away. With `--repeat`, a partial rate is a **failure** in both directions —— "3 of 6 red" is refused, because a green run cannot be told apart from a fix that works, and a clean tree that goes red sometimes is refused as flaky. Demonstrated: a deliberately half-flaky stand-in is refused, and a deterministic check passes at `--repeat 3` |
 | `scripts/script_log.py` | "a test whose duration is not known runs in the background" | records `ok` / `failed exit N` / `error` / `interrupted signal N`; a `SIGKILL` leaves nothing, which the docstring states |
 | `scripts/check.py` | the fast gates, in one command | exits non-zero for any gate that ran and failed; a skip prints why, and a report-only gate says so |
 | `scripts/check-docs-index.py` | every entry the pitfall index advertises exists | exits 1 and names each dangling reference |

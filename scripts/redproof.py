@@ -203,10 +203,37 @@ class RedProof:
         print(f"mutated {self.args.file}: {len(self.original) - len(mutated):+d} bytes")
 
     def run(self, label, want_red):
-        print(f"\n$ {self.args.run}   ({label})", flush=True)
-        done = subprocess.run(self.args.run, shell=True, cwd=REPO_ROOT)
-        red = done.returncode != 0
-        print(f"exit {done.returncode} -> {'red' if red else 'green'}")
+        repeats = getattr(self.args, "repeat", 1) or 1
+        reds = 0
+        for i in range(repeats):
+            suffix = f"   ({label}{'' if repeats == 1 else f', run {i + 1}/{repeats}'})"
+            print(f"\n$ {self.args.run}{suffix}", flush=True)
+            done = subprocess.run(self.args.run, shell=True, cwd=REPO_ROOT)
+            red = done.returncode != 0
+            print(f"exit {done.returncode} -> {'red' if red else 'green'}")
+            reds += 1 if red else 0
+            # ★ With --repeat, a race is what is being proved, so keep going until every run is done:
+            #   stopping at the first red would report "it can go red" from one sample of a flaky
+            #   check, and stopping at the first green would hide how often it really fails.
+        if repeats > 1:
+            print(f"\n{reds} of {repeats} run(s) {'went red' if want_red else 'stayed green'}")
+            if want_red and reds != repeats:
+                # ★★ "It can go red" is not the claim. A check that goes red on 3 of 6 runs cannot
+                #    discriminate: the three greens are indistinguishable from a fix that works, so
+                #    the mutation would be accepted as proved while the check misses half its cases.
+                self.fail(
+                    f"the check went red on only {reds} of {repeats} runs with the mutation in place —— "
+                    "a partial rate does not discriminate, because a green run cannot be told apart "
+                    "from a fix that works (AGENTS.md section 7)"
+                )
+            if not want_red and reds != 0:
+                self.fail(
+                    f"the check went red on {reds} of {repeats} runs of the CLEAN tree —— it is flaky "
+                    "on its own, so it cannot be evidence about the mutation"
+                )
+        # ★ `red` means "the check failed", in both directions —— the messages below are what
+        #   distinguish "it should not have failed" from "it should have".
+        red = reds > 0
 
         if want_red and not red:
             self.fail(
@@ -260,6 +287,18 @@ def main():
         "--deploy",
         action="store_true",
         help="rebuild and deploy into the isolated test instance only, before and after the mutation",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help=(
+            "run the check N times per side. Use this for a defect that is a **race**: with one run, a "
+            "check that fails only half the time reports 'stayed green' and the fix it guards is thrown "
+            "away. Every run must go red (mutated) / green (clean) for the proof to pass, and the count "
+            "is printed so the rate is on the record. Measured cost: a quick unit check repeats freely; "
+            "an E2E case costs its own duration per run."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="report occurrences and lines, run nothing")
     args = parser.parse_args()
