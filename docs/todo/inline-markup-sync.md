@@ -4,9 +4,9 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D17 fixed and verified** (unit + E2E + red proofs), D9 included, and table cells
-are editable (D18, §7).
-One residual race is recorded and unexplained in §4 — nothing ships for it on purpose.
+Status: **D1–D19 fixed and verified**, D9 included, and table cells are editable.
+D19 (§7) is the one defect here whose proof is **run counts, not `redproof.py`** — said so where
+it belongs, because the tool runs the check once per side and this defect is a race.
 
 ---
 
@@ -330,43 +330,31 @@ The defect is a **timing race**: reproducing it end to end needs a transaction t
 this repository treats as proving nothing (see `docs/pitfalls/`). The wrong decision rule has a
 deterministic consequence, and that is what is pinned.
 
-### A residual the barrier does not explain
+### A residual the barrier does not explain, and what it turned out to be
 
-An integration case provokes the same loss deterministically — insert a **foreign** block through
-the kernel while the page is mid-keystroke, which is what another client, a sync or a second window
-does, and which arrives as an unmappable block id:
+An integration case provokes the same symptom deterministically — insert a **foreign** block
+through the kernel while the page is mid-keystroke, which is what another client, a sync or a
+second window does, and which arrives as an unmappable block id. Before the barrier it lost the
+keystroke in 1 of 4 runs; after it, 1 in 6.
 
-* before the barrier: 1 in 4 runs lost the keystroke;
-* after it: 1 in 6.
+★ **The cell-editing work then attributed it, and disproved part of this section's first
+reading.** The earlier version of this note said the debounced write-back "never begins". That was
+an inference from probes that had run out of budget, and instrumentation later showed the opposite:
 
-★ **The residual is narrower than "a keystroke is lost", and the later cell-editing work
-attributed it.** While diagnosing D18 (§7) the failing runs were instrumented at every stage of
-the write-back, and the shape is always the same:
+* the cell edit **did** reach `syncTableCells`, with a valid `blockId` and `known != md`;
+* the `updateBlock` **did** go out, carrying the new markdown;
+* the kernel answered **`{"code": 0}`** — accepted;
+* and the document still held the old text, because a **later** `moveBlock` wrote the table's old
+  cells back over it (§7).
 
-```
-writes = [ moveBlock … ]          ← the structural pass ran
-(no updateBlock)
-syncTableCells was never entered, saveNodesIncremental was never entered,
-and writeLatest's task never started
-```
+So the cause was the ordering of two writes, not a write that never happened — and it is fixed.
+The probe that finally worked is worth recording: a page-side probe cannot see the plugin (it runs
+in a frame whose `window` the test cannot read), but **`console.warn` from the plugin** does reach
+Playwright. Two earlier attempts used channels that could not answer and produced "no output",
+which was mistaken for "the code did not run".
 
-So the debounced write-back is **cancelled or superseded before it runs** — the edit is in the
-model, the DOM shows it, and the write that would carry it never begins. It is not "the write
-went out and was refused", and it is not the debounce-window race the barrier fixed. It is
-in the hand-off between `handleOutlineChange`'s debounce and `writeLatest`, and it affects an
-**ordinary node edit** exactly as it affects a cell edit.
-
-What is known and what is not:
-
-* It is rare (1 in ~6 whole-suite runs of the table spec, and it has not been reproduced in
-  isolation), so it is a timing window on a loaded machine.
-* A page-side probe cannot reach it: the plugin runs in a frame whose `window` the test cannot
-  read, and Playwright surfaced `console` from that frame only intermittently. The probe that
-  **did** work was `console.warn` from the plugin, and that is the tool to use next time.
-* **No E2E ships for it.** A case that is red 1 in 6 with no attribution makes the suite
-  untrustworthy for every future run, which is worse than no case (see `docs/pitfalls/`).
-* It is recorded rather than papered over, and it is the first thing to look at if a lost
-  keystroke is ever reported again.
+After the fix: `e2e/table.spec.ts` passed **14 of 14** runs, where the same case had been failing
+about 1 run in 4.
 
 ### What was shipped alongside
 
@@ -446,11 +434,11 @@ What shipped, and why each piece is where it is:
   helper that walks `.node-text` assumes a contenteditable paragraph.
 - `indentNodes` leaves a table where it is, because a `NodeList` cannot contain one.
 
-Cells are **editable** (see §7). The addressing, the "a write must not grow the table" rule
+Cells are **editable** (see §6 and §7). The addressing, the "a write must not grow the table" rule
 and the "no write when nothing changed" rule live in `outline/table-cells.ts`, pinned offline
 with `table-cells.test.ts`; two mutations were shown red with `scripts/redproof.py`.
 
-## 7. D18 — two writers for one table body made the regression case vacuous
+## 6. D18 — two writers for one table body made the regression case vacuous
 
 The cell-edit E2E case stayed **green with `syncTableCells` disabled** (measured). Two
 independent causes, and the second is the interesting one:
@@ -481,7 +469,70 @@ The keystroke in 0:1 never reached the model at all, and 0:0's text was written 
 time. The model now wins on `focus` — the moment a cell becomes the one being typed in —
 which is synchronous and therefore before any keystroke can be read.
 
-## 6. Standing rules for the fix
+## 7. D19 — a cell edit was written and then reverted by the next pass
+
+★ This one was found only because a failing run was instrumented at every stage; the symptom
+("the cell edit did not reach the document") was a lie three times over before it was.
+
+### What was measured
+
+With the outgoing requests logged, the failing order was exactly:
+
+```
+moveBlock              <- a structural pass
+updateBlock "a丙"      <- syncTableCells, and the kernel answered {"code": 0}
+moveBlock              <- the NEXT pass, writing the table's old cells back
+```
+
+So the edit **was** written, was **accepted**, and was then overwritten. `moveBlock` carries a
+block's content from the tree the pass was given, and that pass's tree predated the edit.
+
+### The fix, and why `redproof.py` cannot prove it
+
+`moveNodes` must not move a table node. Nothing is lost by skipping it: a table is a root-level
+block, a `NodeList` cannot contain one, and `indentNodes` already refuses to move it (the D9
+notes).
+
+★ **This defect is a race, so `scripts/redproof.py` cannot express its proof.** That tool runs the
+check **once per side** (green → mutate → red → restore), and a defect that fails half the time
+reports "stayed green" on a single run. It reported exactly that, twice, and would have thrown the
+fix away. The mutation has to be run enough times to beat the flake rate:
+
+| `e2e/table.spec.ts` | runs | result |
+|---|---|---|
+| `if (!n.table) plan.push(…)` (the fix) | 14 | 14 passed |
+| `if (true) plan.push(…)` (the mutation) | 8 | 4 passed, 4 failed |
+
+★ **And a purpose-built case did not help.** A new case was written for this defect — edit a cell,
+then make a structural change, assert the edit is still there — and it passed **6 of 6** runs
+**with the mutation in place**. It defended nothing, so it was deleted rather than kept as
+reassurance. Only the counts in the table above discriminate.
+
+### Two changes made while chasing this, and what each is worth
+
+* **`writeLatest(treeToWrite)`** — the write-back now writes the tree its caller handed it instead
+  of reading `nodesRef.current`, which a re-render can replace between the edit and the timer.
+  Measured with the change disabled: **8 of 8 passed**, so it is **not** what this case defends.
+  It is kept, and is defensible on its own terms (a caller knows the tree its change produced;
+  `nodesRef.current` is a view that may have moved on), but it is **not** claimed as this fix and
+  no criterion depends on it. `redproof.py` reported "stayed green" for it too — correctly.
+* **`moveNodes` skipping tables** — the fix, with the measurement above.
+
+### What was ruled out on the way, each by measurement
+
+* *"the cell never reached the model"* — an instrumented `syncCell` showed it did, with the right
+  key and the cell focused.
+* *"`syncTableCells` skipped the write"* — it did not: `known != md`, `blockId` was valid, and the
+  `updateBlock` went out.
+* *"the kernel refused it"* — `{"code": 0}`.
+* *"the debounce lost the edit"* — the capture fix above was added for that hypothesis, and the
+  measurement then showed it was not the cause of this failure.
+
+The lesson is the one this repository keeps re-learning: the symptom's location is not the cause's
+location. Three "fixes" were written and two were discarded because the evidence did not support
+them.
+
+## 8. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.

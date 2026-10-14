@@ -405,7 +405,7 @@ function OmTabApp({
     }
   }, [plugin]);
 
-  const writeLatestRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
+  const writeLatestRef = React.useRef<(tree?: OutlineNode[]) => Promise<void>>(() => Promise.resolve());
   /**
    * Snapshot of the tree the last write-back **actually wrote to SiYuan**.
    *
@@ -516,7 +516,7 @@ function OmTabApp({
       });
     return raw;
   }, []);
-  const writeLatest = React.useCallback((): Promise<void> => {
+  const writeLatest = React.useCallback((treeToWrite?: OutlineNode[]): Promise<void> => {
     const docIdNow = docIdRef.current;
     const store = storeRef.current;
     if (!docIdNow || !store) return Promise.resolve();
@@ -557,7 +557,19 @@ function OmTabApp({
       return wait;
     }
     const p = enqueue(async () => {
-      const tree = nodesRef.current ?? [];
+      // ★★★ The tree the caller handed in wins over `nodesRef.current`.
+      //
+      //   Measured defect: a debounced edit was **lost**. `flushWrite(treeToWrite)` awaited the
+      //   write-back with the edited tree, but this task read `nodesRef.current` —— which a
+      //   re-render had already replaced with the document's copy —— so the document was sent the
+      //   text as it was *before* the keystroke. The instrumented run is unambiguous: the cell edit
+      //   reached `syncTableCells` with the right `known`, sent `updateBlock` with the new markdown,
+      //   the kernel answered `code: 0`, and the document still held the old text.
+      //
+      //   The caller knows the tree its change produced; `nodesRef.current` is a *view* that may
+      //   have moved on. Passing it through is what makes a write-back write the edit that asked
+      //   for it.
+      const tree = treeToWrite ?? nodesRef.current ?? [];
       // ★★★ Register "the values to be written at this instant" immediately, **before any request goes out**
       //   (the measured false-conflict bug).
       //
@@ -1181,7 +1193,7 @@ function OmTabApp({
           () => collectWrittenValues(nodesRef.current ?? []),
           async () => {
             conflictRef.current.noteAllSynced(treeToWrite);
-            await writeLatest();
+            await writeLatest(treeToWrite);
           },
         );
         // ★ Record the tree the write-back **actually wrote**, not the argument this call was given.
@@ -1302,9 +1314,27 @@ function OmTabApp({
         if (textDebounceTimerRef.current) {
           clearTimeout(textDebounceTimerRef.current);
         }
+        // ★★★ The tree that **this edit produced** is captured now, and written later.
+        //
+        //   The debounce used to write `nodesRef.current` when it fired, which is wrong for the
+        //   same reason the re-read was wrong before it: between the keystroke and the timer
+        //   another pass can replace the tree. Measured, on a document holding a table (where a
+        //   reload follows every write): cell `:0:1` was edited, the model held `b丁`, and 250ms
+        //   later the document was sent the **previous** cell's text `a丙` —— the edit was gone
+        //   before it was ever written, and nothing reported it.
+        //
+        //   `next` is the tree `handleOutlineChange` was handed, which includes the edit and every
+        //   earlier keystroke in this debounce window; a later keystroke replaces the timer and
+        //   therefore its own `next`, so coalescing still merges them into one write.
+        //
+        //   ★ It is **not** simply `next` forever: a refresh that legitimately brings in someone
+        //   else's change must still win, which is what `writeLatest`'s "did the tree change since
+        //   we wrote it" catch-up is for. Capturing is about not losing *this* edit, not about
+        //   pinning the tree.
+        const treeWithEdit = next;
         textDebounceTimerRef.current = setTimeout(() => {
           textDebounceTimerRef.current = null;
-          void flushWriteRef.current(nodesRef.current ?? next);
+          void flushWriteRef.current(treeWithEdit);
         }, 250);
       }
     },

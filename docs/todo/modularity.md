@@ -5,9 +5,9 @@
 ## 1. Large File Footprints
 
 The three largest files in the repository represent the primary targets for gradual modularization:
-- `Outliner.tsx` 4,940 lines
-- `store.ts` 3,501 lines
-- `mount.ts` 2,394 lines
+- `Outliner.tsx` 4,969 lines
+- `store.ts` 3,530 lines
+- `mount.ts` 2,424 lines
 
 *(Measured and monitored by `scripts/check-todo-counts.py` to prevent untracked code bloat).*
 

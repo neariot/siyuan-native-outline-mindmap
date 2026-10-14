@@ -1967,6 +1967,17 @@ export default function Outliner(props: OutlinerProps) {
     if (!ref) return;
     const el = cellMap.current.get(key);
     if (!el) return;
+    // ★★★ Only the cell that **holds the caret** may write.
+    //
+    //   Measured defect: the caret stayed in cell 0:0 while the user clicked and typed in 0:1, and
+    //   an `input` event from the stale element wrote `a丙` (0:0's text) to the document — the
+    //   keystroke in 0:1 never reached the model at all. That is the classic data-loss shape of a
+    //   contenteditable list: a stale element that still carries a listener.
+    //
+    //   The caret is the authority on "which cell is being edited", so it is the guard. It is
+    //   also the one condition that cannot be satisfied by an element the user is not in, so it
+    //   holds whatever the browser did with focus.
+    if (document.activeElement !== el) return;
     const value = el.textContent ?? '';
     const current = findNode(nodesRef.current, ref.nodeId);
     // ★ Never silent. A cell that cannot find its node swallows the keystroke: the element keeps
@@ -2019,8 +2030,17 @@ export default function Outliner(props: OutlinerProps) {
     col: number,
     readOnly: boolean,
   ): React.ReactElement => {
-    const key = tableCellKey(n.id, row, col);
+    // ★ The React key carries the **text**, not only the address. A contenteditable's child text
+    //   node belongs to the browser and React never touches it, so a cell whose model changed while
+    //   the user was elsewhere keeps its stale text and can write it back later. Keying on the text
+    //   makes React replace that element outright the moment the value changes —— the browser's
+    //   stale node cannot survive a remount, and no event handler has to win a race to prevent it.
+    //
+    //   Measured: without this, editing 0:0 then typing in 0:1 wrote `a丙` (0:0's text) to the
+    //   document while 0:1's keystroke was lost.
+    const address = tableCellKey(n.id, row, col);
     const value = readTableCell(n.table!, row, col);
+    const key = `${address}\u0001${value}`;
     // ★ Bound once, per cell, at render time. `n` is the node object captured by **this** render,
     //   so `syncCell` reads the table this cell was drawn from. Resolving the node by id would be
     //   the other way round, and it is wrong: a pass that replaces the tree mid-typing would then
@@ -2030,39 +2050,48 @@ export default function Outliner(props: OutlinerProps) {
     const props: any = {
       ref: (el: HTMLDivElement | null) => {
         if (el) {
-          cellMap.current.set(key, el);
+          cellMap.current.set(address, el);
+          // The model wins for any cell the user is not typing in. The key above already forces a
+          // remount when the value changes, so this is the belt to that pair of braces —— and it is
+          // what keeps a stale element from ever writing a neighbouring cell's text.
           if (el.textContent !== value && document.activeElement !== el) el.textContent = value;
         } else {
-          cellMap.current.delete(key);
+          cellMap.current.delete(address);
         }
       },
       className: 'om-node-cell',
       contentEditable: !readOnly,
       suppressContentEditableWarning: true,
       spellCheck: false,
-      'data-cell': key,
+      'data-cell': address,
       'data-node-id': nodeId,
-      // ★★★ The model wins whenever the cell is **not** the one being typed in.
+      // ★★★ The element carries a **unique token per rendered text**, so the browser's own
+      //   reconciliation cannot leave a stale cell behind.
       //
-      //   Measured defect: after editing cell 0:0 (`a` → `a丙`), clicking cell 0:1 and typing
-      //   reported `syncCell key=…:0:0 value="a丙"` —— the second cell's keystroke never reached the
-      //   model at all, and the first cell's text was written back a second time. The cause is that
-      //   the `ref` callback above runs only when React re-renders **that** element, so an element
-      //   whose model changed while it was untouched keeps its old text and can write it back later.
+      //   Measured defect: after editing cell 0:0 (`a` → `a丙`), typing in cell 0:1 wrote **`a丙`**
+      //   to the document —— the second cell's keystroke never reached the model and the first
+      //   cell's text was written again. React reconciles the *element*, but a contenteditable's
+      //   child text node is owned by the browser and React does not touch it.
       //
-      //   `onFocus` is where that has to be repaired: it is the moment the cell becomes the one
-      //   being typed in, and it is synchronous, before any keystroke can be read.
-      onFocus: (e: React.FocusEvent<HTMLDivElement>) => {
-        const el = e.currentTarget;
-        if (el.textContent !== value) el.textContent = value;
-      },
+      //   Repairing it from a handler does not work and the measurements say why:
+      //   • `focus` does not fire on an element that already has focus;
+      //   • writing `textContent` inside `mousedown` destroys the text node the browser was about
+      //     to put the caret in, so the click leaves the caret in the **previous** cell
+      //     (`focusAtType=…:0:0` while the test typed into `0:1`);
+      //   • and a repair that lags the caret can still be overwritten by the next keystroke.
+      //
+      //   So ownership is moved to React: `text` is set **by the renderer** and the browser's own
+      //   text node is discarded whenever the model's value changes, which is the one moment a
+      //   stale value can exist. This is a DOM write during render of a leaf the user is not
+      //   typing in — guarded by the caret check, so the cell being edited is never touched.
+      'data-cell-text': value,
       onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
         // A blur with uncommitted text still commits, so the panel and the document cannot drift
         // apart while nothing is focused in this cell.
         const typed = e.currentTarget.textContent ?? '';
-        if (typed !== value) syncCell(key);
+        if (typed !== value) syncCell(address);
       },
-      onInput: () => syncCell(key),
+      onInput: () => syncCell(address),
       onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key !== 'Tab') return;
         // ★ `preventDefault` first: left alone the browser moves focus out of the contenteditable

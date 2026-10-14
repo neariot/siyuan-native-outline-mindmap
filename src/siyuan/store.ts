@@ -2563,6 +2563,7 @@ export class SiYuanStore {
       for (const n of list) {
         if (n.table) {
           const md = tableToKramdown(n.table);
+          
           // ★ No block mapping → the table does not exist in the document yet, and an
           //   `updateBlock` against nothing would be a silent no-op. The mapping is written by
           //   `loadBlockMap` from the document's own table blocks, so its absence means the create
@@ -2633,7 +2634,35 @@ export class SiYuanStore {
     const plan: Array<{ nodeId: string; wantPid: string; index: number }> = [];
     const collect = (list: OutlineNode[], parentId: string): void => {
       list.forEach((n, i) => {
-        plan.push({ nodeId: n.id, wantPid: parentId, index: i });
+        // ★★★ A table node is **not** moved here. This is a lost-edit fix, measured.
+        //
+        //   A cell edit was written correctly and then reverted: the instrumented request order was
+        //
+        //     moveBlock              ← a structural pass
+        //     updateBlock "a丙"      ← `syncTableCells`, kernel answered `code: 0`
+        //     moveBlock              ← the NEXT pass, rewriting the table from a tree without the edit
+        //
+        //   `moveBlock` carries the block's content from the tree the pass was given, so a pass whose
+        //   tree predates the edit writes the old cells back over it. The user sees the edit
+        //   acknowledged and then silently gone.
+        //
+        //   Nothing is lost by skipping: a table is a root-level block, a `NodeList` cannot contain
+        //   one, and `indentNodes` already refuses to move it (the D9 notes) —— so a move has nothing
+        //   to achieve.
+        //
+        //   ★ Measured, and this is why the check is not "any failure counts": including tables here
+        //   fails **4 of 8** runs of `e2e/table.spec.ts`; excluding them passes **14 of 14**. A
+        //   one-run or two-run red proof of this line reports "stayed green" and would have thrown
+        //   the fix away —— `scripts/redproof.py` runs the check once per side, so this defect
+        //   **cannot** be proved with it. The mutation has to be run enough times to beat the flake
+        //   rate, which is what the counts above are; the runs are listed in
+        //   `docs/todo/inline-markup-sync.md` §8.
+        //
+        //   ★★ And do not trust a *new* case just because it was written for this: a case built to
+        //   catch it (edit a cell, then make a structural change, assert the edit is still there)
+        //   passed 6 of 6 runs **with the mutation in place**, so it defended nothing and was
+        //   deleted. Only the run counts above discriminate.
+        if (!n.table) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
         if (n.children?.length) collect(n.children, n.id);
       });
     };
