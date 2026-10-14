@@ -108,17 +108,15 @@ async function editCellFocused(
 ): Promise<void> {
   const sel = `.om-outline-wrap .om-node-cell[data-cell$=":${rowCol}"]`;
   await expect(page.locator(sel).first()).toHaveText(expectBefore, { timeout: 15_000 });
-  const report = await page.locator(sel).first().evaluate(
+  await page.locator(sel).first().evaluate(
     (el, text) => {
       const box = el as HTMLElement;
       box.focus();
       box.textContent = text;
       box.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      return `dataCell=${box.getAttribute('data-cell')} focused=${document.activeElement === box}`;
     },
     expectBefore + typed,
   );
-  console.warn('[e2e] editCellFocused', report);
 }
 
 /**
@@ -551,6 +549,39 @@ test('★★★ a cell edit reaches the table block and survives a reload', asyn
     //   exists to prevent.
     expect(kd, 'both cells hold their own edit').toMatch(/\|\s*a丙\s*\|\s*b丁\s*\|/);
     expect(kd, 'the header must not be touched').toMatch(/\|\s*h1\s*\|\s*h2\s*\|/);
+
+    // ── Step 3b: a **later structural pass** must not write the old cells back ──
+    //
+    // ★★★ This is the trigger for D19, and without it the case is only a partial guard (measured:
+    //   3 of 5 runs red under the mutation, which `redproof.py --repeat` correctly refuses).
+    //
+    //   `moveBlock` carries a block's content from the tree the pass was given, so a structural pass
+    //   whose tree predates a cell edit writes the old cells back over it. Adding a node forces
+    //   exactly such a pass, and the edits above must survive it.
+    await page.locator('.om-outline-wrap .node-text').first().click();
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.className ?? ''), {
+        message: 'a node must be active before adding a sibling',
+        timeout: 10_000,
+      })
+      .toContain('node-text');
+    const addSibling = page.locator('.om-dock button.add-btn').first();
+    await expect(addSibling, 'the add-sibling button must be reachable').toBeVisible({ timeout: 15_000 });
+    await addSibling.click();
+    await expect
+      .poll(async () => (await blockTypes(api, docId)).filter((x) => x === 'i').length, {
+        message: 'the structural change must reach the document',
+        timeout: 25_000,
+      })
+      .toBeGreaterThan(2);
+
+    // ★ Both cell edits are still there after that pass. This is the assertion D19 needs.
+    await expect
+      .poll(async () => (await kramdown(api, docId)).replace(/\n\{:[^}]*\}/g, ''), {
+        message: 'a later structural pass must not write a table\'s old cells back over a saved edit',
+        timeout: 25_000,
+      })
+      .toMatch(/\|\s*a丙\s*\|\s*b丁\s*\|/);
 
     // ── Step 4: and it survives a reload, which is what "synced" has to mean ──
     //

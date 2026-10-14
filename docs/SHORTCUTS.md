@@ -39,6 +39,17 @@
 | `Alt+Enter` | Insert image |
 | `Ctrl+Alt+T` | Insert table |
 
+## In a table
+
+| Keys | Action |
+|---|---|
+| `Tab` | Move to the next cell (the header row first, then each row in turn) |
+| `Shift+Tab` | Move to the previous cell |
+
+★ `Tab` stops at the last cell instead of leaving the table: an escaped caret lands in the document
+body, where the next write-back would store it. Every other key is the browser's — a cell holds plain
+text, so a `|` or a `<` you type is escaped and stored rather than swallowed.
+
 ## Markdown at line start + space
 
 `- ` → remove the prefix; `1. ` → numbered.

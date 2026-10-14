@@ -493,15 +493,31 @@ block's content from the tree the pass was given, and that pass's tree predated 
 block, a `NodeList` cannot contain one, and `indentNodes` already refuses to move it (the D9
 notes).
 
-★ **This defect is a race, so `scripts/redproof.py` cannot express its proof.** That tool runs the
-check **once per side** (green → mutate → red → restore), and a defect that fails half the time
-reports "stayed green" on a single run. It reported exactly that, twice, and would have thrown the
-fix away. The mutation has to be run enough times to beat the flake rate:
+★ **This defect is a race, so `scripts/redproof.py` could not express its proof.** The tool ran the
+check **once per side** (green → mutate → red → restore), and a defect that fails about half the
+time reported "stayed green" on a single run. It reported exactly that, twice, which would have
+thrown the fix away. `--repeat N` was added for this (see `docs/TESTING.md`) and makes a partial
+rate a failure in both directions; re-run with it:
 
 | `e2e/table.spec.ts` | runs | result |
 |---|---|---|
-| `if (!n.table) plan.push(…)` (the fix) | 14 | 14 passed |
-| `if (true) plan.push(…)` (the mutation) | 8 | 4 passed, 4 failed |
+| clean tree | 5 | 0 red |
+| `if (!n.table) plan.push(…)` (the fix) | 23 | 23 passed |
+| `if (true) plan.push(…)` (the mutation) | 6 (+8 earlier) | 2 of 6 red; 4 of 8 failed → ~45% |
+
+★★ **`redproof.py --repeat` REFUSES this proof, and that refusal is correct.** 3 of 5 is not 5 of
+5: a green run under the mutation cannot be told apart from a fix that works, so **the case catches
+this defect only about 45% of the time**. It is a partial detector, not a criterion, and saying so
+is the point — the honest statement is "the fix removes the failure (23/23 vs 8/16) and the case is
+a partial guard", not "the case proves the fix". `--repeat` exists precisely so this distinction is
+visible instead of papered over by a single lucky run.
+
+★ A step was then added to the case to raise that rate — after the cell edits, force a structural
+pass and re-assert they survived — and it **did not help**: in every failing run the case is already
+red one step *earlier*, at the second edit. Whether a reverting pass follows an edit at all is what
+the timing decides, so no amount of asserting after the fact changes the rate. The step is kept
+because it states the D19 invariant directly, not because it detects the defect; the counts are the
+evidence, and they are what to re-measure if this regresses.
 
 ★ **And a purpose-built case did not help.** A new case was written for this defect — edit a cell,
 then make a structural change, assert the edit is still there — and it passed **6 of 6** runs
