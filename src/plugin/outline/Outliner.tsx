@@ -22,6 +22,14 @@ import {
   outdentNodes as outdentInTree,
 } from './indent';
 import { shouldRollBackScroll } from './auto-scroll';
+import {
+  HEADER_ROW,
+  nextTableCell,
+  parseTableCellKey,
+  readTableCell,
+  tableCellKey,
+  writeTableCell,
+} from './table-cells';
 import { MOBILE_MAX_WIDTH } from '../../core/layout';
 
 import { genId, now } from '../../model/ids';
@@ -416,6 +424,17 @@ export default function Outliner(props: OutlinerProps) {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleParaRefs = useRef<(HTMLDivElement | null)[]>([]);
   const elMap = useRef(new Map<string, HTMLDivElement>());
+  /**
+   * Editable table cells, keyed by `tableCellKey(nodeId, row, col)` (`row === HEADER_ROW` is the
+   * header).
+   *
+   * ★ A separate map, deliberately: `elMap` is the node→paragraph rule that every helper that
+   *   walks `.node-text` relies on (caret, selection, copy, paste, `syncText`), and a table cell
+   *   is not a paragraph block —— putting one in there is exactly how a block with no text carrier
+   *   ends up written as text. The addressing itself, and the three data-loss shapes around it,
+   *   are pinned in `outline/table-cells.ts`.
+   */
+  const cellMap = useRef(new Map<string, HTMLElement>());
   /**
    * Editable divs for a node's attached paragraphs, **an array per node** (index = paragraph index).
    *
@@ -1931,6 +1950,140 @@ export default function Outliner(props: OutlinerProps) {
     onChange(draft, 'text');
   };
 
+  /**
+   * Copy a cell's on-screen text into the model.
+   *
+   * ★ Reported as `'text'`, not `'struct'`. The change **is** a content change (the store diffs
+   *   the table's markdown and writes the block), and `'struct'` would additionally push an undo
+   *   point and route the document through `syncStructure` —— which rewrites every table in the
+   *   document wholesale on a shape change, so one cell edit would touch tables nobody edited.
+   *
+   * `writeTableCell` reports whether anything changed, so re-focusing a cell without typing writes
+   * nothing. Without that the pass would rewrite the whole table block on every focus, and each
+   * write is a transaction whose arrival blanks the panel for ~500ms (measured).
+   */
+  const syncCell = (key: string): void => {
+    const ref = parseTableCellKey(key);
+    if (!ref) return;
+    const el = cellMap.current.get(key);
+    if (!el) return;
+    const value = el.textContent ?? '';
+    const current = findNode(nodesRef.current, ref.nodeId);
+    // ★ Never silent. A cell that cannot find its node swallows the keystroke: the element keeps
+    //   the character, no write is sent, and the panel looks correct until a reload proves
+    //   otherwise. That is the one failure shape this feature must not have, so it says so.
+    if (!current?.table) {
+      console.warn('[om] a table cell has no matching table node in the tree:', key);
+      return;
+    }
+    const draft = cloneNodes(nodesRef.current);
+    const node = findNode(draft, ref.nodeId);
+    if (!node?.table) return;
+    if (!writeTableCell(node.table, ref.row, ref.col, value)) return;
+    touch(node);
+    nodesRef.current = draft;
+    onChange(draft, 'text');
+  };
+
+  /**
+   * Move the caret to the next (or previous) cell of the same table.
+   *
+   * ★ `Tab` must not escape the table. Left to the browser it leaves the contenteditable and
+   *   lands in the document body, so the cell is abandoned half-written and the caret position
+   *   ends up in the **next node** —— which the next write-back then stores.
+   */
+  const focusAdjacentCell = (nodeId: string, row: number, col: number, forward: boolean): void => {
+    const node = findNode(nodesRef.current, nodeId);
+    if (!node?.table) return;
+    const next = nextTableCell(node.table, row, col, forward);
+    if (!next) return;
+    const el = cellMap.current.get(tableCellKey(nodeId, next.row, next.col));
+    if (!el) return;
+    setCaret(el, 'end');
+  };
+
+  /**
+   * One editable table cell.
+   *
+   * ★ Rendered as a `<div>` **inside** the `<th>`/`<td>` rather than as one, for the same reason
+   *   `node-text` is a div: a contenteditable `<table>` element makes every keystroke a structural
+   *   edit of the table, and the browser will happily let the user delete a row. A leaf div cannot.
+   *
+   * `onKeyDown` handles `Tab` only. Every other key is the browser's, because the cell holds
+   * **plain text** (`TableData` cells are strings): a `|`, a newline or a `<` must reach the model
+   *   and be escaped by `tableToKramdown`, not be swallowed by a handler that "knows better".
+   */
+  const renderTableCell = (
+    n: OutlineNode,
+    row: number,
+    col: number,
+    readOnly: boolean,
+  ): React.ReactElement => {
+    const key = tableCellKey(n.id, row, col);
+    const value = readTableCell(n.table!, row, col);
+    // ★ Bound once, per cell, at render time. `n` is the node object captured by **this** render,
+    //   so `syncCell` reads the table this cell was drawn from. Resolving the node by id would be
+    //   the other way round, and it is wrong: a pass that replaces the tree mid-typing would then
+    //   diff the element's text against a table the cell does not belong to.
+    const nodeId = n.id;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props: any = {
+      ref: (el: HTMLDivElement | null) => {
+        if (el) {
+          cellMap.current.set(key, el);
+          if (el.textContent !== value && document.activeElement !== el) el.textContent = value;
+        } else {
+          cellMap.current.delete(key);
+        }
+      },
+      className: 'om-node-cell',
+      contentEditable: !readOnly,
+      suppressContentEditableWarning: true,
+      spellCheck: false,
+      'data-cell': key,
+      'data-node-id': nodeId,
+      // ★★★ The model wins whenever the cell is **not** the one being typed in.
+      //
+      //   Measured defect: after editing cell 0:0 (`a` → `a丙`), clicking cell 0:1 and typing
+      //   reported `syncCell key=…:0:0 value="a丙"` —— the second cell's keystroke never reached the
+      //   model at all, and the first cell's text was written back a second time. The cause is that
+      //   the `ref` callback above runs only when React re-renders **that** element, so an element
+      //   whose model changed while it was untouched keeps its old text and can write it back later.
+      //
+      //   `onFocus` is where that has to be repaired: it is the moment the cell becomes the one
+      //   being typed in, and it is synchronous, before any keystroke can be read.
+      onFocus: (e: React.FocusEvent<HTMLDivElement>) => {
+        const el = e.currentTarget;
+        if (el.textContent !== value) el.textContent = value;
+      },
+      onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
+        // A blur with uncommitted text still commits, so the panel and the document cannot drift
+        // apart while nothing is focused in this cell.
+        const typed = e.currentTarget.textContent ?? '';
+        if (typed !== value) syncCell(key);
+      },
+      onInput: () => syncCell(key),
+      onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key !== 'Tab') return;
+        // ★ `preventDefault` first: left alone the browser moves focus out of the contenteditable
+        //   and the caret lands in the document body, where the next write-back stores it.
+        e.preventDefault();
+        focusAdjacentCell(nodeId, row, col, !e.shiftKey);
+      },
+    };
+    // ★ The key must be on the `th`/`td`, not on the inner div: `{...props}` carries its own
+    //   `key`-free div, and React needs the key on the element of the list (the cells).
+    return row === HEADER_ROW ? (
+      <th key={key}>
+        <div {...props} />
+      </th>
+    ) : (
+      <td key={key}>
+        <div {...props} />
+      </td>
+    );
+  };
+
   /** Matches X's official nodeWordLimit=2000: over-limit plain text is truncated and written back to the focused DOM via corrected. */
   const enforceLimit = (t: OutlineNode): void => {
     const plain = htmlToText(t.text);
@@ -3304,27 +3457,29 @@ const clearFormat = (): void => {
           )}
           <div className="node-body">
             {/*
-              ★ A table node has no paragraph to edit: it is a block of its own (see
-              `insertTable`). It is drawn read-only, and it is deliberately **not** a
-              `.node-text` element -- every helper that walks `.node-text` (caret, selection,
-              copy, paste, `syncText`) assumes a contenteditable paragraph, and giving a table
-              one of those is how a block with no text carrier ends up written as text.
+              ★★ A table node has no paragraph: it is a block of its own (see `insertTable`), so
+              its cells are editable through their own addressing and it is still deliberately
+              **not** a `.node-text` element -- every helper that walks `.node-text` (caret,
+              selection, copy, paste, `syncText`) assumes a contenteditable paragraph, and giving a
+              table one of those is how a block with no text carrier ends up written as text.
+
+              Each cell is its own `.om-node-cell` box, registered under `tableCellKey(node, row,
+              col)` in `cellMap`. The model is the authority for the text: the ref callback writes
+              `textContent` in only when the element is not the focused one, which is the same rule
+              `node-text` uses and for the same reason -- overwriting a focused contenteditable
+              while the user types in it is how a character is eaten.
             */}
             {n.table ? (
               <table className="om-node-table" aria-label={t('tipTable')}>
                 <thead>
                   <tr>
-                    {n.table.header.map((h, ci) => (
-                      <th key={ci}>{h}</th>
-                    ))}
+                    {n.table.header.map((_h, ci) => renderTableCell(n, HEADER_ROW, ci, readOnly))}
                   </tr>
                 </thead>
                 <tbody>
-                  {n.table.rows.map((r, ri) => (
+                  {n.table.rows.map((_r, ri) => (
                     <tr key={ri}>
-                      {r.map((c, ci) => (
-                        <td key={ci}>{c}</td>
-                      ))}
+                      {n.table!.rows[ri].map((_c, ci) => renderTableCell(n, ri, ci, readOnly))}
                     </tr>
                   ))}
                 </tbody>

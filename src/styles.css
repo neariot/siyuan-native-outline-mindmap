@@ -1534,3 +1534,23 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
   vertical-align: top;
 }
 .om-outline .om-node-table th { background: var(--b3-theme-background, #f6f6f6); font-weight: 600; }
+
+/* An editable table cell is a **leaf** contenteditable div inside the th/td, never the cell itself.
+   A contenteditable <table> lets the browser treat every keystroke as a structural edit — delete a
+   row, split a cell — and the outline has no path that could undo it: the model is a plain
+   string[][] (`TableData`). */
+.om-outline .om-node-cell {
+  min-height: 1.2em;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.om-outline .om-node-cell:focus {
+  /* The caret has to be findable without a border that changes the cell's own box, which is how a
+     one-column table ends up a different width in the document than in the panel. */
+  box-shadow: inset 0 0 0 1px var(--b3-primary-color, #3370ff);
+}
+.om-outline .om-node-cell:empty::before {
+  content: '';
+  display: inline-block;
+}

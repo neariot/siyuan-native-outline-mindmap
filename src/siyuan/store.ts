@@ -484,10 +484,20 @@ export class SiYuanStore {
     //   Without it, the **first** clearing of attached paragraphs after the user loads a document would not be written back
     //   (see the declaration of `nodesWithParas` for the criterion).
     this.nodesWithParas.clear();
+    // ★ Cleared, not merged: a table deleted since the last load must not keep a baseline, or the
+    //   node id is reused by a **different** table and the first cell edit is compared against a
+    //   body the document never held.
+    this.lastTableMarkdown.clear();
     {
       const seed = (list: OutlineNode[]): void => {
         for (const n of list) {
           if ((n.paragraphs?.length ?? 0) > 0) this.nodesWithParas.add(n.id);
+          // ★★ A table's baseline, recorded at the same moment and for the same reason: this is the
+          //   markdown the document holds **right now**, so the table writer can tell a cell the
+          //   user edited from one they did not. Without a baseline the first pass after opening
+          //   cannot distinguish "unchanged" from "changed", and rewriting every table on every
+          //   load is a transaction per table plus a re-read that blanks the panel each time.
+          if (n.table) this.lastTableMarkdown.set(n.id, tableToKramdown(n.table));
           if (n.children?.length) seed(n.children);
         }
       };
@@ -939,6 +949,21 @@ export class SiYuanStore {
    *   In the set → call even when the target is empty (to delete); not in it → and the target is empty too, then there really is nothing to do.
    */
   private nodesWithParas = new Set<string>();
+
+  /**
+   * Node id → the exact markdown its table block is known to hold.
+   *
+   * ★ A table block's **whole body** is the carrier, so a cell edit is a whole-table write and the
+   *   only honest way to avoid one is an exact comparison against what the document held last.
+   *   Seeded by `loadDoc` from the tree it just parsed, advanced after every successful write and
+   *   **left alone when a write fails**, so a failure retries on the next pass instead of being
+   *   recorded as done.
+   *
+   * Why a string and not a flag: the cells are editable, and a flag cannot say *which* cells
+   * changed — so every pass would rewrite every table. A whole-body comparison is one `join` and
+   * no query, which is the same bargain `nodesWithParas` makes for attached paragraphs.
+   */
+  private lastTableMarkdown = new Map<string, string>();
 
   /**
    * Node IDs that have ever appeared in the node tree (cumulative, not reset by loadBlockMap).
@@ -1654,6 +1679,15 @@ export class SiYuanStore {
         await this.syncParagraphs(n.id, liId, wantParas);
       }
     }
+    // ★★ Table cells are editable, and they cannot ride the text loop above.
+    //
+    //   That loop's `flat` **excludes** table nodes on purpose: a table has no paragraph block, so
+    //   running the text path over one looks for a paragraph that does not exist, judges the node
+    //   "new in the UI", and inserts a second table beside it (measured).
+    //
+    //   So the diff is its own pass, with its own baseline (`lastTableMarkdown`) and a
+    //   **whole-body** write, because a table block's body is the whole table.
+    await this.syncTableCells(nodes);
     return { updated, skipped, structural };
   }
 
@@ -2199,6 +2233,9 @@ export class SiYuanStore {
                 this.lastListItems.set(tid, tid);
                 this.lastByBlock.set(tid, tid);
                 this.freshlyInserted.add(tid);
+                // ★ The block now holds this exact markdown —— record it, or the next pass
+                //   compares against nothing and rewrites the table it has only just created.
+                this.lastTableMarkdown.set(tid, md);
                 count++;
               }
             } catch {
@@ -2206,10 +2243,16 @@ export class SiYuanStore {
               // remaining nodes are still written. The node stays unmapped, so the next
               // pass tries again rather than treating it as done.
             }
-          } else {
-            // Content change: the markdown is the table block's whole body.
-            await this.client.updateBlock(myBlock, md);
           }
+          // ★★★ An **existing** table is deliberately NOT rewritten in this branch.
+          //
+          //   It used to be, and two writers for one block body is what made the cell-edit
+          //   regression case toothless: with `syncTableCells` disabled the case stayed **green**,
+          //   because this branch wrote the cells on its way through (measured).
+          //
+          //   Ownership: this walk owns the table's **existence**, `syncTableCells` owns its
+          //   **content**. Cell editing cannot change a table's shape (cells are plain strings in
+          //   `TableData`), so a structural pass has nothing to say about the body.
           continue;
         }
 
@@ -2489,7 +2532,56 @@ export class SiYuanStore {
     // ★ After the structure is filled in, the **position** must be fixed too: "moves" like indent / outdent / drag-to-reparent
     //   create no new blocks, so the walk above ignores them entirely (see the moveNodes comment).
     const moved = await this.moveNodes(docId, nodes, placeholders);
+    // ★★★ Table **content** is flushed here, at the end of the function that runs on every
+    //   write-back. `saveNodesIncremental` also calls it (for the text-only pass), but this is the
+    //   call that matters: a document that holds a table reports a structural change on every
+    //   write-back (measured —— the text mapping count cannot include the table, so the fingerprint
+    //   differs every time), so this path is taken for each keystroke and a table cell edit must
+    //   ride it.
+    //
+    //   ★★ It is deliberately **not** written in the create branch above instead. That branch runs
+    //   only when the block is missing, which is true exactly once per table; a cell edit is made
+    //   long afterwards, when the block exists and the branch is skipped. That is precisely the
+    //   defect that made the cell-edit regression case pass with its own code removed (measured).
+    await this.syncTableCells(nodes);
     return { inserted: count + moved, map: inserted, pending: [] };
+  }
+
+  /**
+   * Write every table block whose cells changed since the last round.
+   *
+   * ★ Written as **markdown** through `updateBlock`, which is the only route the kernel accepts for
+   *   this block type (measured: `insertBlock` with a `NodeTable` **DOM** answers `code: 0` and
+   *   creates nothing).
+   *
+   * A failure is warned about and the baseline is **not** advanced, so the next write-back retries
+   * the same cell edit instead of treating it as saved —— the alternative is a cell the user can
+   * see edited and that silently never reached the document.
+   */
+  private async syncTableCells(nodes: OutlineNode[]): Promise<void> {
+    const walk = async (list: OutlineNode[]): Promise<void> => {
+      for (const n of list) {
+        if (n.table) {
+          const md = tableToKramdown(n.table);
+          // ★ No block mapping → the table does not exist in the document yet, and an
+          //   `updateBlock` against nothing would be a silent no-op. The mapping is written by
+          //   `loadBlockMap` from the document's own table blocks, so its absence means the create
+          //   has not happened yet (or the read is still lagging); either way this pass waits.
+          const blockId = this.lastListItems.get(n.id) || '';
+          const known = this.lastTableMarkdown.get(n.id);
+          if (blockId && known !== undefined && known !== md) {
+            try {
+              await this.client.updateBlock(blockId, md);
+              this.lastTableMarkdown.set(n.id, md);
+            } catch (e) {
+              console.warn('[om] could not write the table cells of', n.id, e);
+            }
+          }
+        }
+        if (n.children?.length) await walk(n.children);
+      }
+    };
+    await walk(nodes);
   }
 
   /**
