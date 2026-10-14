@@ -4,7 +4,8 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **all of D1–D16 fixed and verified** (unit + E2E + red proofs), D9 included.
+Status: **D1–D16 fixed and verified** (unit + E2E + red proofs), D9 included.
+Table cells are read-only pending §4.
 
 ---
 
@@ -259,7 +260,75 @@ So the honest statement is: the **markup surface is covered**, the **view-only a
 not**, and "no markup is lost" is additionally enforced by the unit-level round trips in
 `src/core/inline-sync.test.ts` rather than by one case per button.
 
-## 4. Fix order and outcome
+## 4. Open: an edit inside the debounce window is discarded by a re-read
+
+**Not fixed.** It is the reason table cells are read-only today, and it is pre-existing — it
+is not a table defect.
+
+### The mechanism
+
+`handleOutlineChange` schedules a text edit through a **250 ms debounce**; nothing is enqueued
+until the timer fires (`mount.ts`, `textDebounceTimerRef`). The kernel-transaction handler's
+re-read waits before it reads:
+
+```ts
+const waitForOwnWrite = pendingWriteRef.current ?? Promise.resolve();
+```
+
+`pendingWriteRef` is only set once `writeLatest` has **enqueued a job**. A debounced edit has
+enqueued nothing, so the wait is a no-op, the read returns the document's content, and
+`nodesRef.current = tree` replaces the tree that held the edit. The timer then fires and writes
+the document's own text — so the keystroke is gone, with no error anywhere.
+
+### Measured
+
+Typing one character into a node of a document that **contains a table**, in a browser, with
+the outgoing requests logged:
+
+```
+t+500ms  outline=[]            ← the outline re-rendered empty
+         writes=["block/updateBlock …NodeTable…", "block/updateBlock …NodeParagraph ABC丁"]
+t+1500ms outline=ABC丁          kramdown=…ABC丁
+```
+
+So the write path itself is correct; the loss happens when a **re-read lands inside the debounce
+window**, and the `shown=""` at t+500ms is that re-read arriving. A document containing a table
+exposes it readily because loading or creating one produces extra transactions, so a re-read
+lands in the window — the same case passed and failed repeatedly on one build.
+
+### Why it is not fixed here
+
+The fix is small and obvious — await the debounce too, not only the enqueued write:
+
+```ts
+const waitForOwnWrite = (async () => {
+  if (textDebounceTimerRef.current) {            // a debounced edit has enqueued nothing yet
+    clearTimeout(textDebounceTimerRef.current);
+    textDebounceTimerRef.current = null;
+    await flushWriteRef.current(nodesRef.current ?? []);
+  }
+  await (pendingWriteRef.current ?? Promise.resolve());
+})();
+```
+
+It belongs in the echo/reverse-sync path, which is the most delicate code in the plugin, and it
+changes behaviour for **every** re-read (every one now flushes a pending edit before reading).
+That deserves its own change with its own regression pass, not a rushed edit at the end of an
+audit — and a wrong version here can reintroduce the double-write and flashing-load bugs the
+surrounding comments document.
+
+### What was shipped instead
+
+* Table **cells are read-only** for now. The table itself is a real block, is created, loads,
+  survives edits to its neighbours and can be deleted (`e2e/table.spec.ts`).
+* `serializeTree` and `structureFingerprint` already carry the table, so that when cells become
+  editable the coalescing cannot drop a keystroke and a shape change is still treated as
+  structure. Both are pinned in `src/plugin/sync-serialize.test.ts` and were shown red with
+  `scripts/redproof.py`.
+
+The next step is the debounce fix above, then cell editing on top of it.
+
+## 5. Fix order and outcome
 
 Test-first: every test was shown red — with `python3 scripts/redproof.py` for the
 serializer and detector changes, and by running the new E2E cases against the unfixed
@@ -328,7 +397,7 @@ Cells are **not editable in the outline yet**: what is fixed is that a table is 
 stored as a real block, loads back, survives edits to its neighbours, and can be deleted.
 Editing cells in place is the obvious next step and needs its own round-trip tests.
 
-## 5. Standing rules for the fix
+## 6. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.

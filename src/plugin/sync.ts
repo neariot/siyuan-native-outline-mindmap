@@ -668,6 +668,15 @@ export function serializeTree(tree: OutlineNode[]): string {
       //   of the "added a field instead of the shape" pitfall in this one function (note, paragraphs,
       //   taskStatus, now numbered).
       parts.push(`${n.id}:num=${n.numbered ? 1 : 0}`);
+      // ★★★ A table's cells are **content**, and they reach the document through a different
+      //   path than a paragraph (there is no paragraph block to write them into).
+      //
+      //   That is exactly what makes this line load-bearing: without it the two tables above
+      //   serialize **identically**, the first keystroke starts a write-back, every later one
+      //   compares equal and is dropped by the coalescing, and the document keeps only the first
+      //   character. This is the "added a field instead of the shape" pitfall again, and
+      //   `sync-serialize.test.ts` pins it.
+      if (n.table) parts.push(`${n.id}:table=${JSON.stringify(n.table)}`);
       if (n.children?.length) walk(n.children);
       parts.push(')');
     }
@@ -708,8 +717,13 @@ export function structureFingerprint(tree: OutlineNode[]): string {
       // Attached paragraphs each produce their own block, so they are structure.
       // Numbering too: `- x` vs `1. x` is an unordered vs ordered List (`l/u` vs `l/o`, measured),
       // so a numbered toggle must take the full structure path rather than the text-only one.
+      // ★ A table's **shape** is structure: its width and row count decide how many cells the
+      //   block has. Cell *content* deliberately stays out of this fingerprint —— putting it here
+      //   would put every keystroke in a cell back on the whole structural path, which is the
+      //   cost this function exists to avoid (measured: 189 API calls per typed character).
+      const shape = n.table ? `t${n.table.header.length}x${n.table.rows.length}` : '';
       parts.push(
-        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}n${n.numbered ? 1 : 0}`,
+        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}n${n.numbered ? 1 : 0}${shape}`,
       );
       if (n.children?.length) walk(n.children);
     }

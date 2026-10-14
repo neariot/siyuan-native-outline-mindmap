@@ -23,7 +23,7 @@
 //   this function tell a re-parented tree from a flat one". The second is the precondition of the first, and it
 //   is the one that was wrong for a long time.
 
-import { serializeTree } from './sync';
+import { serializeTree, structureFingerprint } from './sync';
 import type { OutlineNode } from '../model/types';
 
 let pass = 0;
@@ -169,6 +169,53 @@ const N = (id: string, text = id, children: OutlineNode[] = []): OutlineNode =>
   );
   check('text is included, so a rename is a change', serializeTree([N('a', 'x')]) !== serializeTree([N('a', 'y')]));
 }
+
+// ---------------------------------------------------------------- tables
+
+// ★ A table's cells are **content**, and this is the function that decides whether the write
+//   coalescing believes anything changed at all.
+//
+//   A table node has no paragraph block, so its body never reaches `htmlToSiyuanDom` and never
+//   appears in `saveNodesIncremental`'s text comparison. The only thing that makes a cell edit
+//   count as a change is here. Without it the sequence is the one this file exists to prevent:
+//   the first keystroke starts a write-back, the later ones compare **equal** and are dropped by
+//   the catch-up, and the document keeps only the first character.
+const T = (cells: string[][]): OutlineNode => ({
+  id: 't1',
+  modified: 0,
+  text: '',
+  table: { header: ['h1', 'h2'], rows: cells },
+  children: [],
+});
+
+check(
+  'a cell edit is a change (the first appearance of the pitfall, for table cells)',
+  serializeTree([T([['a', 'b']])]) !== serializeTree([T([['a', 'b2']])]),
+);
+check(
+  'adding a row is a change',
+  serializeTree([T([['a', 'b']])]) !== serializeTree([T([['a', 'b'], ['c', 'd']])]),
+);
+check(
+  'an unchanged table is not a change',
+  serializeTree([T([['a', 'b']])]) === serializeTree([T([['a', 'b']])]),
+);
+check(
+  'a table node is not equal to a text node of the same id',
+  serializeTree([T([['a', 'b']])]) !== serializeTree([{ ...T([['a', 'b']]), table: undefined }]),
+);
+
+// ★ And the table's **shape** is structure: a row or column count decides how many blocks
+//   exist, so it must not be judged by the text-only path.
+check(
+  'the structural fingerprint tells a 2-row table from a 3-row one',
+  structureFingerprint([T([['a', 'b']])]) !== structureFingerprint([T([['a', 'b'], ['c', 'd']])]),
+);
+check(
+  'the structural fingerprint does NOT change when only a cell is edited',
+  structureFingerprint([T([['a', 'b']])]) === structureFingerprint([T([['a2', 'b']])]),
+  'cell content is not structure; making it so would put every keystroke back on the structural path',
+);
 
 // ---------------------------------------------------------------- report
 
