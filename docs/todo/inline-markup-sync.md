@@ -4,7 +4,7 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D19 fixed and verified**, D9 included, and table cells are editable.
+Status: **D1–D20 fixed and verified**, D9 included, and table cells are editable.
 D19 (§7) is the one defect here whose proof is **run counts, not `redproof.py`** — said so where
 it belongs, because the tool runs the check once per side and this defect is a race.
 
@@ -214,6 +214,9 @@ The writer's carrier is `<img data-img="assets/a.png">`; the reader emitted
 `<img alt src>`. Neither is what the kernel stores, so the two never met: an image was
 not hydrated on load (`hydrateEditable` looks for `data-img`) and was rewritten into a
 bare `<img src>` the kernel answers with `<protyle-html>`.
+
+★ D14 fixed the **shapes** agreeing; a third of the same surface was still broken and is
+recorded as **D20** in §9. Do not read this entry as "images are fine".
 
 ### D15 — the change detector believed a stale index
 
@@ -582,7 +585,48 @@ The lesson is the one this repository keeps re-learning: the symptom's location 
 location. Three "fixes" were written and two were discarded because the evidence did not support
 them.
 
-## 8. Standing rules for the fix
+## 8. D20 — an image in an attached paragraph never loaded
+
+D14 made the reader and the writer agree on `<img data-img="assets/a.png">`, and that is the plugin's
+carrier for an asset path — **it is not `src`**, so the browser only loads the picture if something
+copies it across. `hydrateEditable` does exactly that, and every `.node-text` ref callback calls it.
+
+The `.node-para` ref callbacks did not. So an image in an **attached paragraph** rendered as an empty
+box, while the same markup in a node's own text displayed correctly — which is precisely what made it
+invisible: the two look identical in source, and only one of them had the call.
+
+Measured on the isolated instance, before the fix:
+
+```
+{"src": null, "dataImg": "assets/E2E-probe-image.png", "natural": "0x0", "rect": "28x17"}
+```
+
+After it:
+
+```
+{"src": "assets/E2E-probe-image.png", "natural": "2x2"}
+```
+
+Both paragraph renderers were missing the call — the node's and the document title's.
+
+### Why the criterion is `naturalWidth`, not "the `<img>` is there"
+
+Presence was **already true** while the user saw an empty box: the element, its `data-img` and its
+`alt` were all in the DOM. `naturalWidth > 0` is the one property that distinguishes "the browser
+fetched and decoded this" from "there is an element of that name", and no amount of markup satisfies
+it. `src` is asserted beside it, because a future rewrite could set `src` to a path that 404s and
+leave `naturalWidth` at 0 — the pair is what pins the defect.
+
+`e2e/image-render.spec.ts` covers it in both views (the outline paragraph box and the mind map's
+paragraph overlay), plus the other half: the reference **survives a write-back**, is not turned into
+`<protyle-html>`, and its path is not emptied. Shown red with `scripts/redproof.py` by removing that
+one call.
+
+★ This is the second time an image defect hid behind "the markup is present". The lesson is recorded
+where it recurs: for a rendered resource, the criterion is whether it **loaded**, not whether the tag
+was emitted.
+
+## 9. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.
