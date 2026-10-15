@@ -5,7 +5,7 @@
 ## 1. Large File Footprints
 
 The three largest files in the repository represent the primary targets for gradual modularization:
-- `Outliner.tsx` 4,969 lines
+- `Outliner.tsx` 4,981 lines
 - `store.ts` 3,530 lines
 - `mount.ts` 2,424 lines
 

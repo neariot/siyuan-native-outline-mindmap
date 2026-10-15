@@ -3604,6 +3604,15 @@ const clearFormat = (): void => {
                       paraMap.current.set(n.id, arr);
                       if (el && el.innerHTML !== (html || '') && document.activeElement !== el) {
                         el.innerHTML = html || '';
+                        // ★★★ Paragraphs must be hydrated like every other editable box.
+                        //
+                        //   Measured defect: an attached paragraph holding an image came back from the
+                        //   kernel as `<img data-img="assets/…">` — and `data-img` is **not `src`**, so
+                        //   the browser loaded nothing. The paragraph rendered as a 28x17 empty box
+                        //   (`naturalWidth 0`, `src` null) with the picture invisible, while the same
+                        //   markup in a **node's own text** displayed fine, because that ref callback
+                        //   does call `hydrateEditable` and this one did not.
+                        hydrateEditable(el);
                       }
                     }}
                     className="node-para"
@@ -4203,6 +4212,9 @@ const clearFormat = (): void => {
                     titleParaRefs.current[pi] = el;
                     if (el && el.innerHTML !== (html || '') && document.activeElement !== el) {
                       el.innerHTML = html || '';
+                      // ★ Same reason as the node-paragraph box above: without this an image in an
+                      //   attached paragraph never gets its `src` and shows as an empty box.
+                      hydrateEditable(el);
                     }
                   }}
                   className="node-para"
