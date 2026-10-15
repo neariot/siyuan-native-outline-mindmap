@@ -4,7 +4,7 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D20 fixed and verified**, D9 included, and table cells are editable.
+Status: **D1–D21 fixed and verified**, D9 included, and table cells are editable.
 D19 (§7) is the one defect here whose proof is **run counts, not `redproof.py`** — said so where
 it belongs, because the tool runs the check once per side and this defect is a race.
 
@@ -216,7 +216,7 @@ not hydrated on load (`hydrateEditable` looks for `data-img`) and was rewritten 
 bare `<img src>` the kernel answers with `<protyle-html>`.
 
 ★ D14 fixed the **shapes** agreeing; a third of the same surface was still broken and is
-recorded as **D20** in §9. Do not read this entry as "images are fine".
+recorded as **D20** in §8. Do not read this entry as "images are fine".
 
 ### D15 — the change detector believed a stale index
 
@@ -395,7 +395,7 @@ about 1 run in 4.
 
 ### What was shipped alongside
 
-* Table **cells are editable** (§7) now that the debounce race is fixed.
+* Table **cells are editable** (§6) now that the debounce race is fixed.
 * `serializeTree` and `structureFingerprint` carry the table, so coalescing cannot drop a cell
   keystroke and a shape change is still treated as structure. Pinned in
   `src/plugin/sync-serialize.test.ts`, shown red with `scripts/redproof.py`.
@@ -424,6 +424,7 @@ build for the two UI ones.
 | D15 | the detector believed a **stale** index | `writtenText` remembers what this session wrote; the index only outranks it inside the measured 1–3 s window | `text-write-lag` + redproof |
 | D16 | clear-format acted on `activeId`, not the focused node | it resolves the node from `document.activeElement` first, like every other toolbar action | `toolbar-sync` case 7 |
 | **D9** | **tables** | a table node with `table` cells, written as a markdown table block | `table-markup` + redproof + `e2e/table.spec.ts` |
+| **D21** | **a code block could not be deleted at all** | a code-block node (`OutlineNode.codeBlock`), read as its own block; created by the markdown route; deleted by a scan that includes `type='c'`; selectable by clicking its row | `code-block` (7 reader/writer cases) + redproof ×3 + `e2e/code-block.spec.ts` |
 
 ### D9 — tables: a node kind, because a table is a block
 
@@ -626,7 +627,68 @@ one call.
 where it recurs: for a rendered resource, the criterion is whether it **loaded**, not whether the tag
 was emitted.
 
-## 9. Standing rules for the fix
+## 9. D21 — a code block is a block: read it as one, or nothing can delete it
+
+Three independent causes stacked into one symptom ("a code block can't be deleted at all"), and each
+one alone was enough to keep it undeletable. All three were measured on the isolated instance.
+
+### Cause 1 — the reader folded the fence into the title (no node, nothing to delete)
+
+A document holding
+
+    ```js
+    const a = 1;
+    ```
+
+was read as **no node at all**: each line fell through to the generic reader branch, where a
+flush-left line becomes an attached paragraph of the nearest node, so `` ```js `` became
+`` <code></code>`js `` (the *inline*-code rule biting a fence) and the whole block landed in the
+**document title's** paragraphs. The fix follows the table precedent (§D9) exactly: a SiYuan code
+block is its own root-level block (`data-type="NodeCodeBlock"`, verified against the running
+kernel, no listItem), so it is collected as a run before any other branch can claim its lines and
+becomes a node carrying `codeBlock: { lang, code }`.
+
+★ Inside a fence **every** line is code: `|`, `#`, `-`, `{: …}` and blank lines alike. A sample
+that looks like markup must come back byte for byte — pinned by the "never parsed as markup" case.
+The fence is lengthened past the longest backtick run inside (`codeBlockToKramdown`), and the reader
+closes only on a fence at least as long as the opening one (CommonMark's rule) — otherwise a sample
+containing its own fence is cut off and the rest is lost. An unterminated fence still emits its
+lines: the kernel can hold one, and silently discarding the user's code is worse than showing it.
+
+### Cause 2 — the deletion scan never looked at code blocks
+
+`syncDeletions` scanned `WHERE type='i'` (listItems). A code block is `type='c'` — a root-level
+`NodeCodeBlock` with no listItem — so a removed code block was never a candidate: nothing was sent,
+no error was raised, and the block stayed in the document forever while the panel looked deleted.
+The scan is now `IN ('i','c')`. (A table, `type='t'`, is deliberately absent: written by
+`syncStructure` and removed by its own path.)
+
+### Cause 3 — a read-only row could never enter `selected`
+
+Delete only acts on `selected`, and a plain row click **cleared** it ("I want to edit this line").
+A code-block row has no editable element at all, so the keypress went nowhere and **no write was
+ever sent** — measured: deleting produced zero block API calls. Clicking a code-block row now
+selects it, which is also what reaches the bulk-delete bar. (Table rows are untouched: a click there
+lands in an editable cell, and selecting the whole row would fight cell editing.)
+
+Two companion corrections, same shape as the table ones: the `syncStructure` mapping gate and the
+`moveNodes` plan both excluded only tables (`!n.table`), so a document holding a code block either
+looked "incompletely mapped" or had its body reverted by `moveBlock` carrying a stale tree — the
+D19 mechanism exactly. Both now read `!n.table && !n.codeBlock`.
+
+### How it is pinned
+
+* `src/core/code-block.test.ts` — 7 cases: its own node with the id from the attribute line, verbatim
+  body, language tag, writer round trip (including a sample containing its own fence), unterminated
+  fence, and a table+code+node document where neither run claims the other's lines.
+* Three red proofs, each hitting its own assertion: the fence branch removed (all 7 unit cases red),
+  the scan narrowed back to `'i'` (the deletion case red), the row-select disabled (the new
+  `/selected/` assertion red) — every file restored byte-identical.
+* `e2e/code-block.spec.ts` — 3 cases, each asserting the **kernel** after the step: renders verbatim
+  as its own row (with `data-lang`), deletion removes the block (`type='c'` gone from the block list)
+  while the neighbours survive, and indent refuses it while the mind map shows it as a topic.
+
+## 10. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.

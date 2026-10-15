@@ -19,7 +19,7 @@
 //   <img data-img>         → ![alt](assets/...) ⚠️ requires asset management
 
 import { flatNodes } from '../model/tree';
-import type { OutlineNode, TableData } from '../model/types';
+import type { CodeBlockData, OutlineNode, TableData } from '../model/types';
 
 /** SiYuan block ID format: 14-digit timestamp + '-' + 7 lowercase alphanumerics */
 export const SIYUAN_ID_RE = /^\d{14}-[0-9a-z]{7}$/;
@@ -711,6 +711,29 @@ export function parseTableLines(lines: string[]): TableData | null {
   return { header, rows };
 }
 
+/**
+ * A code block → the markdown the kernel accepts.
+ *
+ * ★ Sources **verbatim**, never escaped, trimmed or re-indented. Two things decide the shape:
+ *
+ *   • the fence must be at least as long as the longest backtick run in the code, or a sample that
+ *     contains a fence of its own would close the block early and spill the rest as prose —
+ *     which is markup corruption of something the user stored as-is;
+ *   • the info string goes immediately after the fence with no space, which is the form the kernel
+ *     round-trips (` ```js `), and `''` for a plain fence.
+ *
+ * A trailing newline is always emitted: without it the closing fence would be glued to the last
+ * line of code.
+ */
+export function codeBlockToKramdown(c: CodeBlockData): string {
+  const code = c.code ?? '';
+  // The longest run of backticks in the body, so the opening fence always outruns it.
+  const longest = Math.max(0, ...[...code.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  const body = code.endsWith('\n') || code === '' ? code : `${code}\n`;
+  return `${fence}${c.lang ?? ''}\n${body}${fence}`;
+}
+
 /** A table → the markdown the kernel accepts (the separator is always emitted). */
 export function tableToKramdown(t: TableData): string {
   const esc = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
@@ -1191,6 +1214,33 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   let prevWasAttr = false;
   // ★ Consecutive `|`-lines waiting to be judged as one table block (see `parseTableLines`).
   let tableRun: string[] = [];
+  /**
+   * A fenced code block's lines, from the opening fence until the closing one.
+   *
+   * ★★★ Held here, before any other branch can claim them, and this is **not** tidiness.
+   *
+   *   Measured defect: a document holding
+   *
+   *       ```js
+   *       const a = 1;
+   *       ```
+   *
+   *   was read as *no node at all*. Each line fell through to the generic branch below, where a
+   *   flush-left line becomes an attached paragraph of the nearest node —— so the fence became
+   *   `` <code></code>`js `` (the inline-code rule biting a fence), the source became a plain
+   *   paragraph, and the whole block was **folded into the document title's paragraphs**. The block
+   *   appeared nowhere in the outline, and because it was not a node it could not be deleted: the
+   *   user reported it as "a code block can't be deleted at all".
+   *
+   *   `null` means "not inside a fence"; an array means the run is open.
+   */
+  let codeFence: string[] | null = null;
+  /** The backtick count of the fence that opened the current run (see the closing-fence rule). */
+  let openFence = 3;
+  /** Backticks at the start of a line, for the closing-fence comparison above. */
+  const fenceLen = (line: string): number => (line.match(/^\s*(`+)/)?.[1] ?? '').length;
+  /** A fence that has closed and is waiting for the attribute line that carries its block id. */
+  let pendingCode: string[] | null = null;
   /** Push a collected table run as a node, using the id from the attribute line that closed it. */
   const flushTable = (idFromAttr: string | null): void => {
     const lines = tableRun;
@@ -1221,8 +1271,65 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
     lastNode = null;
   };
 
+  /**
+   * Close an open fence and push it as a code-block node.
+   *
+   * ★ The block's **id comes from the attribute line that follows** the closing fence (SiYuan's
+   *   convention for a non-list block: ` ``` ` … `{: id="…"}`), so it is passed in rather than read
+   *   from the fence lines. Without the id the node would be judged "new in the UI" on every load
+   *   and re-inserted beside the original — the duplication shape this reader has hit before.
+   *
+   * A fence with **no closing line** is still emitted rather than dropped: the kernel can hold an
+   * unterminated fence, and silently discarding the user's code is worse than showing it.
+   */
+  const flushCode = (idFromAttr: string | null): void => {
+    const lines = pendingCode;
+    pendingCode = null;
+    if (lines === null) return;
+    const open = lines[0];
+    void open;
+    // The info string is whatever follows the opening backticks: ```js -> "js", ``` -> "".
+    const lang = (open.match(/^\s*`{3,}\s*([^`\s]*)/)?.[1] ?? '').trim();
+    const body = lines.slice(1);
+    // Drop the closing fence only when it really is one; otherwise the last line is source.
+    if (body.length && /^\s*`{3,}\s*$/.test(body[body.length - 1])) body.pop();
+    const node: OutlineNode = {
+      id: idFromAttr ?? '',
+      modified: 0,
+      text: '',
+      codeBlock: { lang, code: body.join('\n') },
+      children: [],
+    };
+    roots.push(node);
+    lastNode = null;
+  };
+
   for (const rawLine of kramdown.split('\n')) {
+    // ★★★ Inside a fence, **every** line belongs to the code block and nothing else may look at it.
+    //   This is the whole point: a code sample contains `|`, `#`, `-`, `{: …}` and blank lines,
+    //   all of which the branches below would happily claim as markup. Blank lines are part of the
+    //   code, and so is a line that looks exactly like an attribute line.
+    if (codeFence !== null) {
+      codeFence.push(rawLine);
+      // ★★★ The closing fence must be **at least as long as the opening one** — the CommonMark rule,
+      //   and the reason a writer that lengthens the fence works at all. Measured: a block whose
+      //   source contains a fence of its own is emitted with four backticks (` ````md ` ), and a
+      //   reader that closed on *any* three would cut it off at the first inner ` ``` ` and lose the
+      //   rest of the code. `openFence` holds the opening run for exactly this comparison.
+      if (/^\s*`{3,}\s*$/.test(rawLine) && fenceLen(rawLine) >= openFence) {
+        // The closing fence ends the run; the id arrives on the next attribute line, if there is one.
+        // `pendingCode` carries the finished block until that line is seen.
+        pendingCode = codeFence;
+        codeFence = null;
+      }
+      continue;
+    }
+    // ★ An **unterminated** fence is still a block: the loop above ends with the run open, and
+    //   closing it here keeps the user's code instead of dropping it. Measured: without this the
+    //   document read as zero nodes, because every line from the fence on was consumed and never
+    //   emitted —— the most silent possible form of losing a code block.
     if (!rawLine.trim()) {
+      flushCode(null);
       flushTable(null);
       continue;
     }
@@ -1240,6 +1347,16 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
       if (tableRun.length && /\bcolgroup="/.test(rawLine)) {
         const id = /\bid="([^"]+)"/.exec(rawLine)?.[1] ?? null;
         flushTable(id);
+        prevWasAttr = true;
+        continue;
+      }
+      // ★ A closed code fence is followed by **its own** attribute line, exactly like a table's —
+      //   and that line carries the block's id. Consumed here for the same reason the table's is:
+      //   without the id the node reads as "new in the UI" on every load and gets re-inserted
+      //   beside the original.
+      if (pendingCode !== null) {
+        const id = /\bid="([^"]+)"/.exec(rawLine)?.[1] ?? null;
+        flushCode(id);
         prevWasAttr = true;
         continue;
       }
@@ -1281,6 +1398,19 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
       continue;
     }
     prevWasAttr = false;
+
+    // ★★★ A code block opens with a fence at the start of a line (` ``` ` or ` ```lang `).
+    //   Claimed here, before the table run and before every other branch: the lines inside a fence
+    //   are code, and none of them is markup. Committed only once it is open, so a stray run of
+    //   backticks in prose cannot swallow the document.
+    if (/^\s*`{3,}/.test(rawLine)) {
+      flushTable(null);
+      flushCode(null);
+      codeFence = [rawLine];
+      openFence = fenceLen(rawLine) || 3;
+      prevWasAttr = false;
+      continue;
+    }
 
     // ★★ A table's rows are consecutive `|`-lines, and they are **not** list items.
     //
@@ -1463,6 +1593,14 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
   // ★ A table run that never met a closing attribute line is still a table run: judge it now,
   //   so a document whose last block is a table does not lose it.
   flushTable(null);
+  // An unterminated fence: the run is still open at EOF, and `flushCode` reads `pendingCode`, so
+  // the open run is handed over first. Dropping it would read the document as zero nodes from the
+  // fence onward —— the most silent possible way to lose a code block.
+  if (codeFence !== null) {
+    pendingCode = codeFence;
+    codeFence = null;
+  }
+  flushCode(null);
 
   // Fallback: give a SiYuan-style ID to nodes for which the whole text never provided an ID
   for (const n of flatNodes(roots)) if (!n.id) n.id = makeSiyuanId();

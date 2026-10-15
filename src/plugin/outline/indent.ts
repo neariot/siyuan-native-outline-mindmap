@@ -129,7 +129,9 @@ export function indentNodes(nodes: OutlineNode[], ids: readonly string[]): numbe
     // ★ A table is a block of its own and cannot become a child: measured, the kernel hangs a
     //   table off the document and refuses it inside a `NodeList`. Leaving it where it is is
     //   the only correct answer -- and it is silent either way, so it is stated here.
-    if (prev.table || moved.table) {
+    //   ★ A code block is the same shape (a root-level block, no listItem), so it is refused by
+    //   the same rule rather than a second one beside it -- one condition, two block kinds.
+    if (prev.table || moved.table || prev.codeBlock || moved.codeBlock) {
       list.splice(idx, 0, moved);
       continue;
     }

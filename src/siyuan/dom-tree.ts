@@ -31,6 +31,14 @@ export interface BlockTreeState {
    *   Without this list a table in a document is invisible to the whole write path.
    */
   rootTableIds: string[];
+  /**
+   * Document-root **code block** IDs, in document order.
+   *
+   * ★ Same shape as `rootTableIds` above and measured the same way: a SiYuan code block is its own
+   *   root-level block (`data-type="NodeCodeBlock"`) with no listItem, so none of the list tables
+   *   can hold it. Without this list a code block in a document is invisible to the write path.
+   */
+  rootCodeBlockIds: string[];
   /** when the document has no list at all, the ID of SiYuan's default empty paragraph block under the document root (cleaned up when the first node is inserted) */
   emptyRootParagraphs: string[];
 }
@@ -49,6 +57,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
   const aliveIds = new Set<string>();
   const itemTaskStatus = new Map<string, number>();
   const rootTableIds: string[] = [];
+  const rootCodeBlockIds: string[] = [];
   let topListId = '';
 
   if (!domHtml) {
@@ -61,6 +70,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
       topListId,
       itemTaskStatus,
       rootTableIds,
+      rootCodeBlockIds,
       emptyRootParagraphs: [],
     };
   }
@@ -126,6 +136,16 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
           rootTableIds.push(id);
         }
 
+        // ★★ A root-level **code block**, collected for the same reason and the same way.
+        //
+        //   Measured against the running kernel: a code block is
+        //   `<div data-type="NodeCodeBlock" class="code-block">` hung off the document, with no
+        //   listItem and no paragraph —— so, like a table, none of the tables above can hold it and
+        //   the whole write path is blind to it without this list.
+        if (type === 'NodeCodeBlock' && (parent.type === 'NodeDocument' || parent.id === rootDocId)) {
+          rootCodeBlockIds.push(id);
+        }
+
         stack.push({ id, type });
       } else {
         // Non-block div, such as <div class="protyle-action"> or <div contenteditable="true">
@@ -161,6 +181,7 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
     topListId,
     itemTaskStatus,
     rootTableIds,
+    rootCodeBlockIds,
     emptyRootParagraphs,
   };
 }

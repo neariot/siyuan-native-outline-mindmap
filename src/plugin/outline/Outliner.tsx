@@ -3282,8 +3282,23 @@ const clearFormat = (): void => {
       //
       //   The semantics of a plain click are "I want to edit this line", not "I want to add to the selection",
       //   so it should clear the selection. (Use Ctrl+click to accumulate.)
-      setSelected([]);
-      setAnchor(id);
+      //
+      //   ★★ Except a read-only block row (code block today): it has **no editable element at all**,
+      //   so "I want to edit this line" is meaningless and clearing the selection strands the row —
+      //   Delete only acts on `selected`, and nothing ever puts this row into it. Measured: click a
+      //   code-block row → press Delete → **no write is sent at all**, and the block stays in the
+      //   document with no error (the user reports "a code block can't be deleted at all").
+      //   Selecting it on click is what makes Delete/Backspace and the bulk bar reach it.
+      //   (Table rows are deliberately untouched: a click there lands in an editable cell, and
+      //   selecting the whole row on every cell click would fight cell editing.)
+      const clicked = flat.find((x) => x.node.id === id)?.node;
+      if (clicked?.codeBlock) {
+        setSelected([id]);
+        setAnchor(id);
+      } else {
+        setSelected([]);
+        setAnchor(id);
+      }
     }
   };
 
@@ -3513,6 +3528,34 @@ const clearFormat = (): void => {
                   ))}
                 </tbody>
               </table>
+            ) : n.codeBlock ? (
+              /*
+                ★★ A code block renders as a `<pre><code>`, read-only, and is deliberately **not**
+                a `.node-text` element.
+
+                Every helper that walks `.node-text` (caret, selection, copy, paste, `syncText`)
+                assumes a contenteditable paragraph; handing a code block one of those is how a
+                block with no text carrier ends up written as text. That is not hypothetical — it is
+                exactly the defect that made a code block **undeletable** (D21): the reader folded
+                the fence into an inline `<code>` on the document title's paragraph, so the block
+                was never a node and there was nothing to delete.
+
+                The source is inserted as `textContent`, never `innerHTML`: code is not markup, and
+                rendering it as markup is how a sample containing `<div>` disappears.
+              */
+              <pre className="om-node-code" data-lang={n.codeBlock.lang || undefined}>
+                <code
+                  ref={(el) => {
+                    if (el) {
+                      // ★ `textContent`, not `innerHTML` — a code sample is text, and any tag in it
+                      //   must show as the characters the user typed.
+                      if (el.textContent !== n.codeBlock!.code) el.textContent = n.codeBlock!.code;
+                    }
+                  }}
+                >
+                  {n.codeBlock.code}
+                </code>
+              </pre>
             ) : (
             <div
               ref={(el) => {

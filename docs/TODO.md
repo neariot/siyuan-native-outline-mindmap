@@ -18,9 +18,11 @@ cannot live inside a node** (a SiYuan table is its own block). A table is now a 
 own, written as a markdown table block, and **its cells are editable in place** (D18 fixed
 the two-writers defect that made the regression case vacuous, plus a render defect that
 wrote one cell's stale text back while the user typed in another).
-One residual timing race remains open and unattributed — a debounced write-back is
-occasionally cancelled before it runs, losing the edit; it is recorded with its measured
-shape in `docs/todo/inline-markup-sync.md` §4 and deliberately ships with no test.
+The "lost keystroke" residual recorded in `docs/todo/inline-markup-sync.md` §4 was then
+attributed — it was a later pass writing a table's old cells back over an accepted edit —
+and fixed as **D19** (§7). **D20** (§8) repaired images in attached paragraphs never loading,
+and **D21** (§9) made code blocks (the kernel's other root-level non-list block) readable as
+their own node, writable by the markdown route, and deletable.
 Design and measurements: `docs/todo/inline-markup-sync.md`.
 
 Historical notes on resolved defects, retargeted citations (e.g. from `.logs/API-GOTCHAS.md` to `docs/kernel-api.md`), and fixed audit findings are committed in git history, `docs/AUDIT-FINDINGS.md`, and `docs/pitfalls/`.

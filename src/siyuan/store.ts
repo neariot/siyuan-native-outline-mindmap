@@ -18,7 +18,7 @@ import { unescapeHtml } from '../model/html-escape';
 import { collectIds, flatNodes, findNode, findPath } from '../model/tree';
 import type { DocMeta, FolderMeta, OutlineNode } from '../model/types';
 import { SiYuanClient } from './api';
-import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine, markdownToInlineDom, tableToKramdown } from '../core/map';
+import { kramdownToTree, takeTitleParagraphs, htmlToKramdown, htmlToSiyuanDom, SIYUAN_ID_RE, makeSiyuanId, nodeSubtreeToKramdown, nodeInsertLine, taskStateOfKramdownLine, markdownToInlineDom, tableToKramdown, codeBlockToKramdown } from '../core/map';
 import { treeToBlockDom, paragraphBlockFragment } from '../core/blockdom';
 import { parseDomToTree, type BlockTreeState } from './dom-tree';
 import { updateTaskMarkerWithFallback } from './host-compat';
@@ -488,6 +488,7 @@ export class SiYuanStore {
     //   node id is reused by a **different** table and the first cell edit is compared against a
     //   body the document never held.
     this.lastTableMarkdown.clear();
+    this.lastCodeMarkdown.clear();
     {
       const seed = (list: OutlineNode[]): void => {
         for (const n of list) {
@@ -498,6 +499,7 @@ export class SiYuanStore {
           //   cannot distinguish "unchanged" from "changed", and rewriting every table on every
           //   load is a transaction per table plus a re-read that blanks the panel each time.
           if (n.table) this.lastTableMarkdown.set(n.id, tableToKramdown(n.table));
+          if (n.codeBlock) this.lastCodeMarkdown.set(n.id, codeBlockToKramdown(n.codeBlock));
           if (n.children?.length) seed(n.children);
         }
       };
@@ -644,6 +646,16 @@ export class SiYuanStore {
         map.set(tid, tid);
         this.lastListItems.set(tid, tid);
         this.lastByBlock.set(tid, tid);
+      }
+      // ★★ Code blocks are the same shape as tables and need the same mapping, for the same two
+      //   reasons: without it `syncStructure` judges an existing code block "new in the UI" and
+      //   inserts a second copy beside it, and `syncDeletions` treats it as "in the document but not
+      //   in the tree" and deletes it. Measured against the kernel: a code block is a root-level
+      //   `data-type="NodeCodeBlock"` with no listItem.
+      for (const cid of parsedDom.rootCodeBlockIds) {
+        map.set(cid, cid);
+        this.lastListItems.set(cid, cid);
+        this.lastByBlock.set(cid, cid);
       }
       // The block id of an entry is its **value** in the first two tables (node → block) and its **key**
       // in the reverse table (block → node) —— the rule itself is in `isUnseenButOurs`.
@@ -964,6 +976,16 @@ export class SiYuanStore {
    * no query, which is the same bargain `nodesWithParas` makes for attached paragraphs.
    */
   private lastTableMarkdown = new Map<string, string>();
+
+  /**
+   * Node id → the exact markdown its **code block** is known to hold.
+   *
+   * ★ Same contract as `lastTableMarkdown` above and for the same reason: a code block's whole body
+   *   is its carrier, so the only honest way to avoid rewriting one on every keystroke is an exact
+   *   comparison against what the document held last. Seeded by `loadDoc`, advanced only after a
+   *   successful write, and left alone when a write fails so the next pass retries.
+   */
+  private lastCodeMarkdown = new Map<string, string>();
 
   /**
    * Node IDs that have ever appeared in the node tree (cumulative, not reset by loadBlockMap).
@@ -1319,14 +1341,17 @@ export class SiYuanStore {
     //   `syncStructure` owns (created by the markdown route, rewritten when the cells change).
     //   Running the text path over one would look for a paragraph that does not exist, judge the
     //   node "new in the UI", and insert a duplicate beside the table.
-    const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table);
+    // ★ A code block is excluded for exactly the same reason as a table: it has no paragraph, so the
+    //   text path would look for one, call the node new, and insert a duplicate beside the block.
+    const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table && !n.codeBlock);
 
-    // ★ Table blocks are mapped (a table is a node) but are **not** text nodes: `flat` excludes
+    // ★ Table and code blocks are mapped (each is a node) but are **not** text nodes: `flat` excludes
     //   them, so they must not count towards "the tree and the document disagree". Skipping this
     //   made every pass over a document containing a table look structural, and a plain text edit
     //   was routed through the whole structural write for nothing.
     const tableBlocks = new Set(this.lastDomTree?.rootTableIds ?? []);
-    const textMapped = [...blockMap.values()].filter((b) => !tableBlocks.has(b)).length;
+    const codeBlocks = new Set(this.lastDomTree?.rootCodeBlockIds ?? []);
+    const textMapped = [...blockMap.values()].filter((b) => !tableBlocks.has(b) && !codeBlocks.has(b)).length;
 
     // first read the current text of each block, for comparison
     const current = new Map<string, string | undefined>();
@@ -2166,7 +2191,10 @@ export class SiYuanStore {
     {
       // ★ Table nodes are excluded: they are mapped by their own block id and are written by the
       //   branch below, so counting them here would only make a complete mapping look broken.
-      const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table);
+      //   ★ Code-block nodes are excluded for the same reason: mapped by their own block id,
+      //   written by their own branch below. Counting either kind here makes a complete mapping
+      //   look broken for every document that holds one.
+      const flat: OutlineNode[] = flatNodes(nodes).filter((n) => !n.table && !n.codeBlock);
       // only validate when "the tree is clearly larger than SiYuan's default cap of 64",
       // otherwise small documents (which are all new nodes anyway) would be wrongly blocked.
       const looksBroken = (m: Map<string, string>): boolean =>
@@ -2253,6 +2281,42 @@ export class SiYuanStore {
           //   Ownership: this walk owns the table's **existence**, `syncTableCells` owns its
           //   **content**. Cell editing cannot change a table's shape (cells are plain strings in
           //   `TableData`), so a structural pass has nothing to say about the body.
+          continue;
+        }
+
+        // ★★ A code-block node: the same treatment as a table, and for the same measured reasons.
+        //
+        //   A SiYuan code block is a root-level block of its own (`data-type="NodeCodeBlock"`,
+        //   verified against the running kernel), with no listItem and no paragraph —— so it cannot
+        //   live in a `NodeList` and the markdown route is the only way to create it. Anchored at
+        //   the **document**, exactly like a table.
+        if (n.codeBlock) {
+          const md = codeBlockToKramdown(n.codeBlock);
+          if (!myBlock) {
+            try {
+              const res = await this.client.insertBlock(md, docId, '');
+              const cid = String(res ?? '').trim();
+              if (cid) {
+                // The kernel mints the id, and a code-block node's id **is** its block id.
+                n.id = cid;
+                blockMap.set(cid, cid);
+                this.lastListItems.set(cid, cid);
+                this.lastByBlock.set(cid, cid);
+                this.freshlyInserted.add(cid);
+                // The block now holds this markdown —— record it, or the next pass compares
+                // against nothing and rewrites a block it has only just created.
+                this.lastCodeMarkdown.set(cid, md);
+                count++;
+              }
+            } catch {
+              // A code block that cannot be created must not abort the whole write-back; the
+              // remaining nodes are still written, and the node stays unmapped so the next pass
+              // tries again rather than treating it as done.
+            }
+          }
+          // ★ Content is **not** written here: like a table, this walk owns the block's existence
+          //   and `syncCodeBlocks` owns its body. Two writers for one block body is the defect D18
+          //   records, and it is what made that regression case pass with its own code removed.
           continue;
         }
 
@@ -2583,6 +2647,36 @@ export class SiYuanStore {
       }
     };
     await walk(nodes);
+    await this.syncCodeBlocks(nodes);
+  }
+
+  /**
+   * Write every **code block** whose source changed since the last round.
+   *
+   * ★ The mirror of `syncTableCells`, and written the same way on purpose: markdown through
+   *   `updateBlock`, one writer for the body, and the baseline advanced only on success so a refused
+   *   write is retried rather than recorded as saved.
+   */
+  private async syncCodeBlocks(nodes: OutlineNode[]): Promise<void> {
+    const walk = async (list: OutlineNode[]): Promise<void> => {
+      for (const n of list) {
+        if (n.codeBlock) {
+          const md = codeBlockToKramdown(n.codeBlock);
+          const blockId = this.lastListItems.get(n.id) || '';
+          const known = this.lastCodeMarkdown.get(n.id);
+          if (blockId && known !== undefined && known !== md) {
+            try {
+              await this.client.updateBlock(blockId, md);
+              this.lastCodeMarkdown.set(n.id, md);
+            } catch (e) {
+              console.warn('[om] could not write the code block of', n.id, e);
+            }
+          }
+        }
+        if (n.children?.length) await walk(n.children);
+      }
+    };
+    await walk(nodes);
   }
 
   /**
@@ -2650,13 +2744,18 @@ export class SiYuanStore {
         //   one, and `indentNodes` already refuses to move it (the D9 notes) —— so a move has nothing
         //   to achieve.
         //
+        //   ★ A code block is skipped by the same rule, not a second one beside it: it is the same
+        //   shape (a root-level block with no listItem), so `moveBlock` would carry its body from a
+        //   tree that may predate the latest write and revert it —— the D19 mechanism exactly.
+        if (!n.table && !n.codeBlock) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
+        //
         //   ★ Measured, and this is why the check is not "any failure counts": including tables here
         //   fails **4 of 8** runs of `e2e/table.spec.ts`; excluding them passes **14 of 14**. A
         //   one-run or two-run red proof of this line reports "stayed green" and would have thrown
         //   the fix away —— `scripts/redproof.py` runs the check once per side, so this defect
         //   **cannot** be proved with it. The mutation has to be run enough times to beat the flake
         //   rate, which is what the counts above are; the runs are listed in
-        //   `docs/todo/inline-markup-sync.md` §8.
+        //   `docs/todo/inline-markup-sync.md` §7.
         //
         //   ★★ And do not trust a *new* case just because it was written for this: a case built to
         //   catch it (edit a cell, then make a structural change, assert the edit is still there)
@@ -3363,9 +3462,19 @@ export class SiYuanStore {
     // The key is derived the same way as in loadBlockMap:
     //   always the listItem's own block ID
     //   (when kramdownToTree parses a native document, the node ID is exactly the listItem's inline id).
+    // ★★★ `type IN ('i','c')` —— a code block must be scanned too, or it can never be deleted.
+    //
+    //   Measured symptom (the one the user reported as "a code block can't be deleted at all"):
+    //   this query asked only for `type='i'` (listItems), and a **code block is `type='c'`** —— a
+    //   root-level `NodeCodeBlock` with no listItem. So a code block the user removed from the
+    //   outline was never a candidate here, nothing was sent, no error was raised, and the block
+    //   stayed in the document forever. Clearing it in the panel looked like it worked.
+    //
+    //   A table (`type='t'`) is **deliberately not** in this list: it is written by `syncStructure`
+    //   and removed by its own path, so adding it here would delete tables that are still shown.
     const rows = await this.client.sql<{ id: string; ial: string }>(
       `SELECT b.id AS id, b.ial AS ial FROM blocks b
-        WHERE b.root_id='${sqlStr(docId)}' AND b.type='i'`,
+        WHERE b.root_id='${sqlStr(docId)}' AND b.type IN ('i','c')`,
       5000,
     );
 

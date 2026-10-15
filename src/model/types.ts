@@ -27,6 +27,21 @@ export interface TableData {
   rows: string[][];
 }
 
+/**
+ * A code block's contents: its language tag and its source, **verbatim**.
+ *
+ * ★ `code` is never parsed, escaped or re-flowed. A code block is code: any transformation is a
+ *   corruption of the thing the user stored, and the whole reason this type exists is that the
+ *   inline-markup reader destroyed one (measured: ` ```js ` became an empty `<code>` plus a literal
+ *   `` `js ``, and the source lines were scattered into the document title's paragraphs).
+ */
+export interface CodeBlockData {
+  /** The fence's info string — `js`, `python`, or `''` for a plain fence. */
+  lang: string;
+  /** The block's body, exactly as stored, including its own newlines and indentation. */
+  code: string;
+}
+
 export interface OutlineNode {
   id: string;
   modified: number;
@@ -79,6 +94,16 @@ export interface OutlineNode {
    * appears at document root, because a `NodeList` cannot contain one.
    */
   table?: TableData;
+  /**
+   * Set when this node **is a code block** rather than a list item.
+   *
+   * ★ Same reasoning as `table` above and measured the same way: a SiYuan code block is its own
+   *   block (`data-type="NodeCodeBlock"`, a root-level child of the document with no listItem), so
+   *   it cannot be a node's text and must be a node of its own. Before this, the reader folded a
+   *   fenced run into the document title's paragraphs — the block showed **nowhere** in the outline
+   *   and could not be deleted, which is how the defect was reported.
+   */
+  codeBlock?: CodeBlockData;
   children: OutlineNode[];
 }
 
