@@ -1032,6 +1032,15 @@ function walkNodesToLines(list: OutlineNode[], depth: number, lines: string[]): 
       lines.push('');
       continue;
     }
+    // ★ A code-block node emits its **fence**, not a list item — same reason, same shape.
+    //   Without this, any path that serializes a subtree containing a code block (today: the
+    //   task-marker markdown fallback in `store.ts`, via `nodeSubtreeToKramdown`) would emit an
+    //   empty `- \u200b` list item for it: the code silently replaced by a blank bullet.
+    if (n.codeBlock) {
+      lines.push(codeBlockToKramdown(n.codeBlock));
+      lines.push('');
+      continue;
+    }
     const line = nodeToLine(n);
     const indent = '  '.repeat(depth);
     // Measured: the attribute must be on the "same line" as the list item, after `- `,

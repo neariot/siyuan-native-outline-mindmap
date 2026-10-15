@@ -23,7 +23,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { codeBlockToKramdown, kramdownToTree } from './map';
+import { codeBlockToKramdown, kramdownToTree, nodeSubtreeToKramdown } from './map';
 
 /** A kramdown document holding exactly one fenced block, with its attribute line. */
 const doc = (fence: string): string =>
@@ -95,6 +95,29 @@ test('an unterminated fence keeps its code instead of dropping the block', () =>
   const tree = kramdownToTree('```py\nprint(1)\n');
   assert.equal(tree.length, 1);
   assert.deepEqual(tree[0].codeBlock, { lang: 'py', code: 'print(1)\n' });
+});
+
+test('a subtree containing a code block serializes the fence, not an empty bullet', () => {
+  // ★ `walkNodesToLines` is on the live task-marker fallback path (`store.ts`, via
+  //   `nodeSubtreeToKramdown`). Without the code-block branch, a code block in a serialized
+  //   subtree came out as an empty `- \u200b` list item: the code silently replaced by a blank
+  //   bullet on a path nobody associates with code blocks.
+  const out = nodeSubtreeToKramdown({
+    id: '20260101120000-parent00',
+    modified: 0,
+    text: '<span>甲</span>',
+    children: [],
+  });
+  assert.match(out, /^- 甲$/m);
+  const cb = nodeSubtreeToKramdown({
+    id: '20260101120000-cbfence',
+    modified: 0,
+    text: '',
+    codeBlock: { lang: 'js', code: 'const a = 1;' },
+    children: [],
+  });
+  assert.match(cb, /^```js\nconst a = 1;\n```$/m);
+  assert.doesNotMatch(cb, /^- /m);
 });
 
 test('a table and a code block in one document do not claim each other', () => {
