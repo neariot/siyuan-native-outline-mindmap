@@ -308,6 +308,23 @@ test('★★★ a code block source is editable in the outline, and the map prev
       .poll(() => shownCode(page), { message: 'the edit must come back after a reload', timeout: 20_000 })
       .toBe(EDITED);
 
+    // ── Multi-character typing keeps the caret in the box ──
+    //   (The box used to be keyed on its own value, so the first keystroke remounted it,
+    //   focus fell to BODY, the rest of the typing went nowhere — and a Backspace then
+    //   deleted the whole selected row instead of a character.)
+    const box2 = page.locator('.om-outline-wrap textarea.om-node-code').first();
+    await box2.click();
+    await page.keyboard.type('XYZ');
+    await expect
+      .poll(() => shownCode(page), { message: 'typed characters must land in the box', timeout: 20_000 })
+      .toBe(`${EDITED}XYZ`);
+    const focusedClass = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.className ?? '',
+    );
+    expect(String(focusedClass), 'the caret must stay in the code box while typing').toContain(
+      'om-node-code',
+    );
+
     // ── And the mind map previews the source instead of a placeholder ──
     await toMindmapView(page);
     await expect(page.locator('.mm-node').first()).toBeVisible({ timeout: 30_000 });

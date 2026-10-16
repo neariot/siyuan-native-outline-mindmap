@@ -3606,7 +3606,13 @@ const clearFormat = (): void => {
                 rendering it as markup is how a sample containing `<div>` disappears.
               */
               <textarea
-                key={`${n.id} ${n.codeBlock.code}`}
+                // ★ The key is the node id **only**, never the source: keying on the value
+                //   remounts the box on every keystroke (measured: after one typed character
+                //   focus falls to BODY, the rest of the typing goes nowhere, and a Backspace
+                //   then deletes the whole selected row instead of a character). External updates
+                //   still reach an unfocused box through the ref callback's model-wins guard below,
+                //   so no remount is needed for those either.
+                key={n.id}
                 ref={(el) => {
                   if (el) {
                     codeMap.current.set(n.id, el);

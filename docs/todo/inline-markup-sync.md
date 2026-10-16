@@ -769,6 +769,12 @@ as a broken character. Reported as "renders but cannot be edited or deleted".
   multi-line sample on the first edit. Only the caret-holding box may write (the stale
   cell rule), reported as `'text'` (the cell rule: `'struct'` would rewrite every code
   block wholesale). Tab inserts `\t` at the caret instead of leaving the box.
+* The box's React key is the node id **only**: keying it on the value remounted the box
+  on every keystroke (measured: after one typed character focus fell to BODY, the rest of
+  the typing went nowhere, and a Backspace then deleted the whole selected row instead of
+  a character). Pinned by typing `XYZ` into the box in the E2E case and asserting both the
+  value and that the caret is still in the box — shown red with `redproof.py` (key
+  reverted to value-keyed, deployed) and green after the byte-identical restore.
 * `codePreview(n)` (`lang: first line`, 60 chars) feeds `label()`, `runsOf()` and the
   export; the outline copy path serializes the full fence, and the delete/extract
   confirms name the preview instead of "(empty node)".
