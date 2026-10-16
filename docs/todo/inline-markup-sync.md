@@ -4,7 +4,7 @@ Plan and evidence for the class of defects where **what the outline shows and wh
 SiYuan holds disagree**. Every entry below was measured; the measurement is named so
 it can be re-run, and none of it is a reading of the source alone.
 
-Status: **D1–D21 fixed and verified**, D9 included, and table cells are editable.
+Status: **D1–D22 fixed and verified**, D9 included, and table cells are editable.
 D19 (§7) is the one defect here whose proof is **run counts, not `redproof.py`** — said so where
 it belongs, because the tool runs the check once per side and this defect is a race.
 
@@ -688,7 +688,55 @@ D19 mechanism exactly. Both now read `!n.table && !n.codeBlock`.
   as its own row (with `data-lang`), deletion removes the block (`type='c'` gone from the block list)
   while the neighbours survive, and indent refuses it while the mind map shows it as a topic.
 
-## 10. Standing rules for the fix
+## 10. D22 — a duplicated `plan.push` scrambled every drag reorder
+
+### Symptom
+
+`e2e/outline.spec.ts:1095` failed in four consecutive runs: dragging the third row above the first
+left the other two swapped, and a below-drop produced no movement at all. The dragged row landed —
+but the siblings around it were scrambled, and in the below case nothing visibly happened.
+
+### Cause
+
+Two `plan.push` lines in `moveNodes`' `collect`, one directly after the other
+(`src/siyuan/store.ts`). The D21 commit (`04244fe`) added the guarded push
+(`if (!n.table && !n.codeBlock)`) **above** the older unguarded push (`if (!n.table)`) instead of
+replacing it — `git blame` shows the two lines from two different commits. Every node was planned
+twice, so the plan for [甲, 乙, 丙] was [甲, 甲, 乙, 乙, 丙, 丙].
+
+That corrupts `prevNodeOf` for every index ≥ 2, by the arithmetic of the map itself. The plan for
+the three rows (甲 / 乙 / 丙 in the fixture) becomes each id twice in order, so the predecessor map
+answers the wrong node for every index past the first:
+
+* above-drop of the third row (UI tree 丙 / 甲 / 乙): the doubled plan reads predecessors as
+  third→front, first→third, second→**third** (should be first). `moveBlock` then yanks the second
+  row directly after the third instead of after the first, producing 丙 / 乙 / 甲. Exactly the
+  measured failure.
+* below-drop of the third row (UI tree 甲 / 丙 / 乙): the doubled predecessor list answers the
+  first row for the third row's predecessor slot. `moveBlock` puts the third row right after the
+  first — which is where it already was. The move executes and visibly does nothing. Exactly the
+  measured "no movement".
+
+### Why load was not the cause
+
+The first three failures ran at load 4.5–12.6 on a 4-core box, and the runner's own banner warns
+that failures under load "may be the machine". That made load a live suspect, and it was wrong:
+the fourth run failed identically, the fixed-code run passed the same case at normal load, and —
+decisively — the corruption is derivable from the source by hand, with no timing involved. A load
+explanation predicts random failures; this one failed the same two sub-cases with the same two
+wrong orders. When the math predicts the exact wrong output, the math is the cause.
+
+### How it is pinned
+
+* The drag case (`outline.spec.ts:1095`) goes red with the duplicate re-added and green without it,
+  at `--repeat 3`: 3/3 red mutated, 3/3 green clean, byte-identical restore, 3/3 green after.
+  (A single-run proof would have been accepted here — the failure is deterministic, not a race —
+  but `--repeat 3` costs one extra suite run and removes the question.)
+* Full suite after the fix: **147 passed, 0 failed**.
+* The stale comment that said "not a second one beside it" now describes the single rule and names
+  the incident, so the next edit that adds a push knows there must be exactly one.
+
+## 11. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.

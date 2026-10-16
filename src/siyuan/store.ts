@@ -2744,10 +2744,16 @@ export class SiYuanStore {
         //   one, and `indentNodes` already refuses to move it (the D9 notes) —— so a move has nothing
         //   to achieve.
         //
-        //   ★ A code block is skipped by the same rule, not a second one beside it: it is the same
+        //   ★ A code block is skipped by the same rule: it is the same
         //   shape (a root-level block with no listItem), so `moveBlock` would carry its body from a
         //   tree that may predate the latest write and revert it —— the D19 mechanism exactly.
-        if (!n.table && !n.codeBlock) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
+        //
+        //   ★ There is exactly **one** push per node here. A second push with a narrower guard was
+        //   once added above the older one instead of replacing it, so every node was planned twice
+        //   and `prevNodeOf` pointed every index ≥ 2 at the wrong predecessor: a drag that moved the
+        //   third row above the first left the other two swapped, and a below-drop did nothing at
+        //   all. Both measured on the isolated instance, both explained by the doubled plan, and the
+        //   drag case (`outline.spec.ts:1095`) is red-proofed against it at --repeat 3.
         //
         //   ★ Measured, and this is why the check is not "any failure counts": including tables here
         //   fails **4 of 8** runs of `e2e/table.spec.ts`; excluding them passes **14 of 14**. A
@@ -2761,7 +2767,7 @@ export class SiYuanStore {
         //   catch it (edit a cell, then make a structural change, assert the edit is still there)
         //   passed 6 of 6 runs **with the mutation in place**, so it defended nothing and was
         //   deleted. Only the run counts above discriminate.
-        if (!n.table) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
+        if (!n.table && !n.codeBlock) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
         if (n.children?.length) collect(n.children, n.id);
       });
     };

@@ -6,7 +6,7 @@
 
 The three largest files in the repository represent the primary targets for gradual modularization:
 - `Outliner.tsx` 5,024 lines
-- `store.ts` 3,639 lines
+- `store.ts` 3,645 lines
 - `mount.ts` 2,424 lines
 
 *(Measured and monitored by `scripts/check-todo-counts.py` to prevent untracked code bloat).*
