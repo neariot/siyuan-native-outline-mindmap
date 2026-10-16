@@ -812,11 +812,26 @@ export default function Mindmap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, pendingEditId]);
 
+  /**
+   * What the edit overlay is pre-filled with.
+   *
+   * ★ A code-block node has no text carrier: pre-filling with its (empty) text would open
+   *   a blank box and committing would keep the old source — the edit visibly "does
+   *   nothing". The source is the editable value; the mount's `handleEdit` routes it back
+   *   into `codeBlock.code`, never into `text`.
+   */
+  const editInitial = (node: OutlineNode | undefined): string =>
+    node?.codeBlock ? (node.codeBlock.code ?? '') : htmlToText(node?.text ?? '');
+
   /** Commit the edit (empty text counts as clearing, but the node is kept and the caller writes back a placeholder) */
   const commitEdit = (): void => {
     if (editingId === null) return;
     const id = editingId;
-    const next = editingText.replace(/\s+$/, '');
+    // ★ Code source is verbatim: stripping trailing whitespace would corrupt a sample
+    //   whose last line is indentation or a significant trailing newline — the writer
+    //   round-trips the source unchanged, so the editor must hand it over unchanged too.
+    const isCode = layout.boxes.some((b) => b.node.id === id && !!b.node.codeBlock);
+    const next = isCode ? editingText : editingText.replace(/\s+$/, '');
     setEditingId(null);
     setEditingText('');
     onEditNode?.(id, next);
@@ -1441,7 +1456,7 @@ export default function Mindmap({
             // F2 enters editing (the habit from file explorers)
             e.preventDefault();
             const hit = layout.boxes.find((b) => b.node.id === selectedId);
-            beginEdit(selectedId, htmlToText(hit?.node.text ?? ''));
+            beginEdit(selectedId, editInitial(hit?.node));
           }
         }}
         onWheel={(e) => {
@@ -1515,7 +1530,7 @@ export default function Mindmap({
                     if (didDragRef.current) return;
                     // Double-click enters inline editing when editable; in read-only mode it falls back to "focus this node"
                     if (editable && onEditNode) {
-                      beginEdit(b.node.id, htmlToText(b.node.text ?? ''));
+                      beginEdit(b.node.id, editInitial(b.node));
                     } else {
                       onZoomChange?.(b.node.id);
                     }
@@ -1881,7 +1896,7 @@ export default function Mindmap({
                   const n = ctxMenu.id;
                   setCtxMenu(null);
                   const hit = layout.boxes.find((b) => b.node.id === n);
-                  beginEdit(n, htmlToText(hit?.node.text ?? ''));
+                  beginEdit(n, editInitial(hit?.node));
                 }}
               >
                 {t('cmdEditNode')}

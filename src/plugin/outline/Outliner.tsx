@@ -33,7 +33,7 @@ import {
 import { MOBILE_MAX_WIDTH } from '../../core/layout';
 
 import { genId, now } from '../../model/ids';
-import { makeSiyuanId, pasteLineInfo } from '../../core/map';
+import { codeBlockToKramdown, makeSiyuanId, pasteLineInfo } from '../../core/map';
 import { putImage, getImageUrl } from './images';
 import { TaskBox } from './RichContent';
 import { renderFormula } from './katex';
@@ -435,6 +435,18 @@ export default function Outliner(props: OutlinerProps) {
    *   are pinned in `outline/table-cells.ts`.
    */
   const cellMap = useRef(new Map<string, HTMLElement>());
+  /**
+   * Editable code sources, keyed by node id (one box per code-block node).
+   *
+   * ★ A separate map for the same reason as `cellMap`: a code block has no paragraph
+   *   block, so putting its editor in `elMap` would let caret/selection/`syncText`
+   *   helpers treat source as paragraph text. The box is a `<textarea>` rather than a
+   *   contenteditable: only a control whose value is plain text round-trips newlines
+   *   verbatim — a contenteditable `<code>` joins its line divs with no newline at all
+   *   (`textContent` of `<code>a<div>b</div></code>` is `ab`), silently unwrapping
+   *   every multi-line sample on the first edit.
+   */
+  const codeMap = useRef(new Map<string, HTMLTextAreaElement>());
   /**
    * Editable divs for a node's attached paragraphs, **an array per node** (index = paragraph index).
    *
@@ -1795,10 +1807,19 @@ export default function Outliner(props: OutlinerProps) {
     const htmlParts: string[] = [];
     const walk = (ns: OutlineNode[], depth: number) => {
       for (const n of ns) {
-        // ⚠️ Do not call this `t` -- it is the i18n lookup function
-        const text = htmlToText(n.text);
-        lines.push(`${'  '.repeat(depth)}- ${text}`);
-        htmlParts.push(`<li>${n.text || ''}${n.children.length > 0 ? '<ul>' : ''}`);
+        if (n.codeBlock) {
+          // ★ A code block copied as text must stay a fence: its text carrier is empty,
+          //   so the bullet form below would serialize it as `- ` and the source would be
+          //   lost on paste anywhere outside the plugin (the JSON payload keeps it whole).
+          const fence = codeBlockToKramdown(n.codeBlock).replace(/\n$/, '').split('\n');
+          for (const fl of fence) lines.push(`${'  '.repeat(depth)}${fl}`);
+          htmlParts.push(`<li><pre><code>${escapeHtml(n.codeBlock.code)}</code></pre>${n.children.length > 0 ? '<ul>' : ''}`);
+        } else {
+          // ⚠️ Do not call this `t` -- it is the i18n lookup function
+          const text = htmlToText(n.text);
+          lines.push(`${'  '.repeat(depth)}- ${text}`);
+          htmlParts.push(`<li>${n.text || ''}${n.children.length > 0 ? '<ul>' : ''}`);
+        }
         if (n.children.length > 0) walk(n.children, depth + 1);
         htmlParts.push(`${n.children.length > 0 ? '</ul>' : ''}</li>`);
       }
@@ -1991,6 +2012,41 @@ export default function Outliner(props: OutlinerProps) {
     const node = findNode(draft, ref.nodeId);
     if (!node?.table) return;
     if (!writeTableCell(node.table, ref.row, ref.col, value)) return;
+    touch(node);
+    nodesRef.current = draft;
+    onChange(draft, 'text');
+  };
+
+  /**
+   * Copy a code box's on-screen source into the model.
+   *
+   * ★ The mirror of `syncCell`, with the same two rules: only the box that **holds the
+   *   caret** may write (a stale element writing a neighbour's source is the same
+   *   data-loss shape), and the change is reported as `'text'` — the store diffs the
+   *   code markdown in `syncCodeBlocks` and writes the block, while `'struct'` would
+   *   additionally rewrite every code block in the document wholesale.
+   *
+   * The value is `el.value`, never innerHTML: code is not markup, and a sample holding
+   * `<div>` must come back as those characters, not as an element.
+   */
+  const syncCode = (id: string): void => {
+    const el = codeMap.current.get(id);
+    if (!el) return;
+    if (document.activeElement !== el) return;
+    const value = el.value ?? '';
+    const current = findNode(nodesRef.current, id);
+    // ★ Never silent: a box that cannot find its node swallows the keystroke, the box
+    //   keeps the character, no write is sent, and the panel looks correct until a
+    //   reload proves otherwise.
+    if (!current?.codeBlock) {
+      console.warn('[om] a code box has no matching code-block node in the tree:', id);
+      return;
+    }
+    const draft = cloneNodes(nodesRef.current);
+    const node = findNode(draft, id);
+    if (!node?.codeBlock) return;
+    if (node.codeBlock.code === value) return;
+    node.codeBlock.code = value;
     touch(node);
     nodesRef.current = draft;
     onChange(draft, 'text');
@@ -3338,7 +3394,12 @@ const clearFormat = (): void => {
       }
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       const active = document.activeElement;
-      if (selected.length > 0 && (!active || !active.classList.contains('node-text'))) {
+      // ★ A code box holds the caret the same way a paragraph does: with its row selected
+      //   (a click into the box re-selects the row), a Delete meant for a character would
+      //   otherwise delete the whole node instead. The box is a `<textarea>`, never a
+      //   `.node-text`, so it needs its own class here.
+      const editingText = !!active?.classList.contains('node-text') || !!active?.classList.contains('om-node-code');
+      if (selected.length > 0 && (!active || !editingText)) {
         e.preventDefault();
         e.stopPropagation();
         deleteNodes(selected);
@@ -3530,8 +3591,8 @@ const clearFormat = (): void => {
               </table>
             ) : n.codeBlock ? (
               /*
-                ★★ A code block renders as a `<pre><code>`, read-only, and is deliberately **not**
-                a `.node-text` element.
+                ★★ A code block renders as an editable `<textarea>`, and is deliberately
+                **not** a `.node-text` element.
 
                 Every helper that walks `.node-text` (caret, selection, copy, paste, `syncText`)
                 assumes a contenteditable paragraph; handing a code block one of those is how a
@@ -3540,22 +3601,53 @@ const clearFormat = (): void => {
                 the fence into an inline `<code>` on the document title's paragraph, so the block
                 was never a node and there was nothing to delete.
 
-                The source is inserted as `textContent`, never `innerHTML`: code is not markup, and
+                The box is registered in `codeMap` (never `elMap`) and written back by `syncCode`,
+                which copies `el.value` verbatim — never `innerHTML`: code is not markup, and
                 rendering it as markup is how a sample containing `<div>` disappears.
               */
-              <pre className="om-node-code" data-lang={n.codeBlock.lang || undefined}>
-                <code
-                  ref={(el) => {
-                    if (el) {
-                      // ★ `textContent`, not `innerHTML` — a code sample is text, and any tag in it
-                      //   must show as the characters the user typed.
-                      if (el.textContent !== n.codeBlock!.code) el.textContent = n.codeBlock!.code;
-                    }
-                  }}
-                >
-                  {n.codeBlock.code}
-                </code>
-              </pre>
+              <textarea
+                key={`${n.id} ${n.codeBlock.code}`}
+                ref={(el) => {
+                  if (el) {
+                    codeMap.current.set(n.id, el);
+                    const value = n.codeBlock!.code ?? '';
+                    // ★ The model wins for any box the user is not typing in (the same rule
+                    //   `node-text` and cells use: overwriting a focused editor eats a
+                    //   character). The key above already forces a remount when the value
+                    //   changes, so a stale element cannot survive to write old source back.
+                    if (el.value !== value && document.activeElement !== el) el.value = value;
+                  } else {
+                    codeMap.current.delete(n.id);
+                  }
+                }}
+                className="om-node-code"
+                data-lang={n.codeBlock.lang || undefined}
+                data-node-id={n.id}
+                readOnly={readOnly}
+                spellCheck={false}
+                wrap="off"
+                rows={Math.min(20, Math.max(1, (n.codeBlock.code ?? '').split('\n').length))}
+                defaultValue={n.codeBlock.code}
+                onInput={() => syncCode(n.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Tab') return;
+                  // ★ Tab indents the source instead of leaving the box (the cell rule, for
+                  //   the same reason: left alone the browser drops the caret into the document
+                  //   body). Unlike a cell there is no neighbour to visit, so the character is
+                  //   inserted at the caret — a code sample without Tab is barely editable.
+                  e.preventDefault();
+                  const ta = e.currentTarget;
+                  const s = ta.selectionStart ?? ta.value.length;
+                  const t = ta.selectionEnd ?? ta.value.length;
+                  ta.setRangeText('\t', s, t, 'end');
+                  syncCode(n.id);
+                }}
+                onBlur={(e) => {
+                  // A blur with uncommitted source still commits (the same rule as cells),
+                  // so the panel and the document cannot drift apart while unfocused.
+                  if ((e.currentTarget.value ?? '') !== (n.codeBlock!.code ?? '')) syncCode(n.id);
+                }}
+              />
             ) : (
             <div
               ref={(el) => {

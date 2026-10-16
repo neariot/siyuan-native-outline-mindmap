@@ -23,6 +23,7 @@ import { NativeHostDriver } from '../siyuan/native-driver';
 import type { IHostDriver } from '../siyuan/host-driver';
 import { extractUpdates, extractDeletions, extractTouchedIds, EchoGuard, ConflictTracker, withEchoGuard, visibleText, serializeTree, structureFingerprint, ownWriteBarrier } from './sync';
 import { escapeHtml } from '../model/html-escape';
+import { codePreview } from '../core/layout';
 import { makeSiyuanId } from '../core/map';
 import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } from './tree-ops';
 import type { IEventBus } from 'siyuan';
@@ -1454,7 +1455,14 @@ function OmTabApp({
       //   (`handleUndo` returned straight away at `if (!st.length) return`),
       //   even though the same data was undoable in the outline view. Added after measurement confirmed it.
       pushUndo(prevTreeRef.current);
-      let updated = mapNodes(nodesRef.current ?? [], id, text);
+      // ★ A code-block node carries no text: an edit of its source must land in
+      //   `codeBlock.code`, not in `text` — routing it through mapNodes would store the
+      //   source as paragraph HTML beside the unchanged block, and the next write-back
+      //   would keep the old code (the edit visibly "does nothing").
+      const editTarget = findNode(nodesRef.current ?? [], id);
+      let updated = editTarget?.codeBlock
+        ? mapCode(nodesRef.current ?? [], id, text)
+        : mapNodes(nodesRef.current ?? [], id, text);
       const store = storeRef.current;
       if (!docId || !store) {
         // The undo stack needs the tree "before the change", so it must be saved in sync with the change
@@ -1661,8 +1669,12 @@ function OmTabApp({
       const target = findNode(base, id);
       if (!target) return;
       const kids = countNodes(target) - 1;
+      // ★ A code-block node has no text, so the confirm would otherwise name it
+      //   "(empty node)" — show its source preview instead, the same string the map
+      //   draws for it.
       const label =
         plainNodeText(target.text) ||
+        codePreview(target) ||
         t('lblEmptyNodeParen');
       const msg =
         kids > 0
@@ -1759,6 +1771,7 @@ function OmTabApp({
       if (!target) return;
       const label =
         plainNodeText(target.text) ||
+        codePreview(target) ||
         t('lblEmptyNodeParen');
       const kids = target.children ?? [];
       if (!kids.length) {
@@ -2416,6 +2429,27 @@ function mapNodes(nodes: OutlineNode[], id: string, text: string): OutlineNode[]
     }
     if (n.children?.length) {
       const kids = mapNodes(n.children, id, text);
+      return kids === n.children ? n : { ...n, children: kids };
+    }
+    return n;
+  });
+}
+
+/**
+ * Replace a code block's source by node ID and return a new tree.
+ *
+ * ★ The mindmap edit overlay hands back plain text for every node, but a code-block
+ *   node must not gain paragraph text: its source lives in `codeBlock.code` and the
+ *   language stays untouched. Kept beside `mapNodes` (not folded into it) so the two
+ *   carriers cannot be confused at the call site.
+ */
+function mapCode(nodes: OutlineNode[], id: string, code: string): OutlineNode[] {
+  return nodes.map((n) => {
+    if (n.id === id && n.codeBlock) {
+      return { ...n, codeBlock: { ...n.codeBlock, code }, modified: Date.now() };
+    }
+    if (n.children?.length) {
+      const kids = mapCode(n.children, id, code);
       return kids === n.children ? n : { ...n, children: kids };
     }
     return n;

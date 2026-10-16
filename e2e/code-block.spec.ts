@@ -87,11 +87,13 @@ async function storedCode(api: KernelApi, docId: string): Promise<string | null>
   return String((kb.data as { kramdown?: string })?.kramdown ?? '');
 }
 
-/** The code text the outline is showing, or `null` when no code block is rendered. */
+/** The code source the outline is showing, or `null` when no code block is rendered. */
 function shownCode(page: Page): Promise<string | null> {
   return page.evaluate(() => {
-    const el = document.querySelector('.om-outline-wrap .om-node-code code') as HTMLElement | null;
-    return el ? el.textContent : null;
+    // ★ The box is a `<textarea>` (editable source), not a `<pre><code>` display:
+    //   its value is the source verbatim, newlines included.
+    const el = document.querySelector('.om-outline-wrap textarea.om-node-code') as HTMLTextAreaElement | null;
+    return el ? el.value : null;
   });
 }
 
@@ -137,10 +139,13 @@ test('★★★ a code block renders as its own node, and can be deleted', async
     const row = page.locator('.om-outline-wrap .node-row').filter({ has: page.locator('.om-node-code') }).first();
     await expect(row, 'the code block must have a row of its own to act on').toBeVisible();
     await row.click();
-    // ★ The click must **select** the row: Delete only acts on `selected`, and a read-only block row
-    //   has no editable element to take the caret. Asserting the class (not just "no error") is what
-    //   distinguishes "the row is deletable" from "the keypress went nowhere".
+    // ★ The click must **select** the row: Delete only acts on `selected`. The click lands
+    //   in the editable box, so the caret is there too — and a Delete with the caret in the
+    //   box must edit a character, not the node (see `handleWrapKeyDown`). Deleting the node
+    //   therefore means focus outside any editor (as after clicking the row's own chrome,
+    //   which focuses the wrap, never the box): focus the wrap, then Delete.
     await expect(row, 'clicking a code-block row must select it').toHaveClass(/selected/);
+    await page.locator('.om-outline-wrap').first().focus();
     await page.keyboard.press('Delete');
 
     // ★ The evidence comes from **inside** the polled function: `expect.poll` builds `message` once,
@@ -250,6 +255,68 @@ test('★★ a code block is not moved into a list by indent, and shows in the m
         timeout: 20_000,
       })
       .toBeGreaterThanOrEqual(3);
+  } finally {
+    if (docId) await removeDoc(api, docId);
+    await api.dispose();
+  }
+});
+
+test('★★★ a code block source is editable in the outline, and the map previews it', async ({ page }) => {
+  // The follow-up to D21: the block rendered read-only, so it could never be corrected in
+  // place; and the mind map drew it as an empty (zero-width) topic, which reads as a
+  // broken character. The criteria are the same shape as D21's: the kernel decides what
+  // was written, and the panel must show it back verbatim after a reload.
+  const api = await kernelApi(siyuanUrl(), siyuanToken());
+  let docId = '';
+  try {
+    docId = await docWithCodeBlock(api, SOURCE);
+    expect(await storedCode(api, docId), 'precondition: the document holds a code block').toContain(
+      'const a = 1;',
+    );
+
+    await openDoc(page, docId);
+    await toOutlineView(page);
+    await waitForStableOutline(page);
+
+    // ── The source sits in an editable box, verbatim ──
+    const box = page.locator('.om-outline-wrap textarea.om-node-code').first();
+    await expect(box, 'the source must sit in an editable box').toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => shownCode(page), {
+        message: 'the editable box must hold the source verbatim',
+        timeout: 20_000,
+      })
+      .toBe(SOURCE);
+
+    // ── Edit it: a multiline edit must keep its newline ──
+    //   (A contenteditable box would join the lines with no newline at all, which is why
+    //   the box is a textarea — the newline here is the criterion for that choice.)
+    const EDITED = 'const b = 2;\nconsole.log(b);';
+    await box.fill(EDITED);
+    await expect
+      .poll(() => storedCode(api, docId), {
+        message: 'an edit of the source must reach the document verbatim',
+        timeout: 30_000,
+      })
+      .toContain('const b = 2;');
+
+    // ── A reload shows the edit, newline included ──
+    await openDoc(page, docId);
+    await toOutlineView(page);
+    await waitForStableOutline(page);
+    await expect
+      .poll(() => shownCode(page), { message: 'the edit must come back after a reload', timeout: 20_000 })
+      .toBe(EDITED);
+
+    // ── And the mind map previews the source instead of a placeholder ──
+    await toMindmapView(page);
+    await expect(page.locator('.mm-node').first()).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => page.locator('.mm-node', { hasText: 'const b = 2;' }).count(), {
+        message: 'the mind map topic must preview the source, not a placeholder',
+        timeout: 20_000,
+      })
+      .toBeGreaterThanOrEqual(1);
   } finally {
     if (docId) await removeDoc(api, docId);
     await api.dispose();

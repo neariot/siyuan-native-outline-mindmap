@@ -677,6 +677,12 @@ export function serializeTree(tree: OutlineNode[]): string {
       //   character. This is the "added a field instead of the shape" pitfall again, and
       //   `sync-serialize.test.ts` pins it.
       if (n.table) parts.push(`${n.id}:table=${JSON.stringify(n.table)}`);
+      // ★★ A code block's source is **content**, and it reaches the document through
+      //   `syncCodeBlocks` rather than any paragraph block — the same shape as a table
+      //   cell. Without this line two states differing only in code serialize identically,
+      //   the first keystroke starts a write-back, every later one compares equal and is
+      //   dropped by the coalescing, and the document keeps only the first character.
+      if (n.codeBlock) parts.push(`${n.id}:code=${JSON.stringify(n.codeBlock)}`);
       if (n.children?.length) walk(n.children);
       parts.push(')');
     }
@@ -721,9 +727,12 @@ export function structureFingerprint(tree: OutlineNode[]): string {
       //   block has. Cell *content* deliberately stays out of this fingerprint —— putting it here
       //   would put every keystroke in a cell back on the whole structural path, which is the
       //   cost this function exists to avoid (measured: 189 API calls per typed character).
+      // ★ A code block's **presence** is structure (a block of its own appears or vanishes),
+      //   while its *content* stays out for the same keystroke-cost reason as cell content.
       const shape = n.table ? `t${n.table.header.length}x${n.table.rows.length}` : '';
+      const code = n.codeBlock ? 'c1' : '';
       parts.push(
-        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}n${n.numbered ? 1 : 0}${shape}`,
+        `${n.id}[${kids}]p${(n.paragraphs ?? []).length}n${n.numbered ? 1 : 0}${shape}${code}`,
       );
       if (n.children?.length) walk(n.children);
     }

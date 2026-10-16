@@ -425,6 +425,7 @@ build for the two UI ones.
 | D16 | clear-format acted on `activeId`, not the focused node | it resolves the node from `document.activeElement` first, like every other toolbar action | `toolbar-sync` case 7 |
 | **D9** | **tables** | a table node with `table` cells, written as a markdown table block | `table-markup` + redproof + `e2e/table.spec.ts` |
 | **D21** | **a code block could not be deleted at all** | a code-block node (`OutlineNode.codeBlock`), read as its own block; created by the markdown route; deleted by a scan that includes `type='c'`; selectable by clicking its row | `code-block` (7 reader/writer cases) + redproof ×3 + `e2e/code-block.spec.ts` |
+| **D23** | **a code block rendered but could not be edited** | editable `textarea` source box (`syncCode`, verbatim `value`); `codePreview` for map topics, export and confirm labels; code content in `serializeTree`, presence in `structureFingerprint`; `handleEdit` routes to `codeBlock.code` via `mapCode` | unit (label/runs/export + serialize) + redproof ×3 + `e2e/code-block.spec.ts` edit case |
 
 ### D9 — tables: a node kind, because a table is a block
 
@@ -736,7 +737,63 @@ wrong orders. When the math predicts the exact wrong output, the math is the cau
 * The stale comment that said "not a second one beside it" now describes the single rule and names
   the incident, so the next edit that adds a push knows there must be exactly one.
 
-## 11. Standing rules for the fix
+## 11. D23 — a code block rendered but could not be edited
+
+### Symptom
+
+Once D21 made the block a node, it rendered as a read-only `<pre><code>`: the source could
+be seen but never corrected in place. And the mind map drew the node as an empty
+(zero-width) topic — `label()`/`runsOf()` read only the empty text carrier — which reads
+as a broken character. Reported as "renders but cannot be edited or deleted".
+
+### Causes (four, independent)
+
+1. **No edit path.** The box was deliberately not a `.node-text`, but nothing replaced
+   `syncText` for it — so there was no way to write keystrokes into `codeBlock.code`.
+2. **No display string.** `label()`, `runsOf()` and `exportFreemind` all read `n.text`,
+   which is `''` for a code node: the topic, its measured width, and the `.mm` export all
+   got the placeholder. (Tables have the same gap; they are out of this scope.)
+3. **Blind coalescing.** `serializeTree` ignored `codeBlock`, so two states differing only
+   in source compared equal and every keystroke after the first was dropped — the same
+   pitfall as table cells (D19 mechanism, §7). `structureFingerprint` ignored its
+   presence, so gaining a block never took the structural path.
+4. **Wrong carrier in the map.** The mindmap overlay pre-filled the (empty) text and
+   `handleEdit` wrote it back through `mapNodes` — the source stayed unchanged while a
+   paragraph-looking edit visibly "did nothing".
+
+### Fix
+
+* The box is a `<textarea>` (`codeMap`, never `elMap`), written back by `syncCode` from
+  `el.value` verbatim — a contenteditable `<code>` joins its line divs with no newline at
+  all (`textContent` of `<code>a<div>b</div></code>` is `ab`), which would unwrap every
+  multi-line sample on the first edit. Only the caret-holding box may write (the stale
+  cell rule), reported as `'text'` (the cell rule: `'struct'` would rewrite every code
+  block wholesale). Tab inserts `\t` at the caret instead of leaving the box.
+* `codePreview(n)` (`lang: first line`, 60 chars) feeds `label()`, `runsOf()` and the
+  export; the outline copy path serializes the full fence, and the delete/extract
+  confirms name the preview instead of "(empty node)".
+* `serializeTree` carries `codeBlock`; the fingerprint carries its presence (`c1`) but
+  not its content (the keystroke-cost rule). `handleEdit` routes code targets through
+  `mapCode`, which touches `code` and leaves `lang` alone; the map overlay pre-fills the
+  source and commits it raw (no trailing-whitespace strip).
+* While the caret is in the box, Delete/Backspace edits a character — the wrap handler
+  skips `.om-node-code` the way it skips `.node-text`. Deleting the node means focus
+  outside the box (row chrome, then Delete), which is what the E2E case does.
+
+### How it is pinned
+
+* Unit: a code label shows language + first line, runs are non-placeholder, the export
+  carries the preview (`layout.test.ts`); a code edit is a `serializeTree` change, an
+  unchanged block is not, gaining a block changes the fingerprint while editing content
+  does not (`sync-serialize.test.ts`). Shown red with `scripts/redproof.py` (×3:
+  `codePreview` neutered, serialize inverted, fingerprint presence dropped), each
+  byte-identical restored and green after.
+* E2E (`code-block.spec.ts`, new case): fill the box with a two-line source, the kernel
+  holds it, a reload shows it back byte-for-byte (newline included), and a map topic
+  contains the edited line. The old delete case now blurs the box before Delete — with
+  the caret inside, Delete edits a character by design.
+
+## 12. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.

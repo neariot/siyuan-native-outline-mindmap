@@ -652,6 +652,24 @@ console.log('\ntext measurement and runsOf');
   check('does not throw: empty text', Array.isArray(runsOf(N('x', ''))));
 }
 
+{
+  // ★★★ A code-block node has no text carrier, so label()/runsOf() used to return the
+  //   zero-width placeholder — the mind map showed an empty box where the user reads
+  //   "special characters". The box must preview language + first line instead.
+  const CB = (id: string, lang: string, code: string): OutlineNode =>
+    ({ id, modified: 0, text: '', codeBlock: { lang, code }, children: [] }) as OutlineNode;
+  const cb = CB('cb', 'js', 'const a = 1;\nconsole.log(a);');
+  check('★ a code block label shows its language and first line, not a placeholder',
+    label(cb).includes('const a = 1;') && label(cb).includes('js'), JSON.stringify(label(cb)));
+  check('★ a code block has non-placeholder runs',
+    runsOf(cb).some((r) => r.text.includes('const a = 1;')), JSON.stringify(runsOf(cb)));
+  const xml = exportFreemind([cb], 'T', '(untitled)', 'Untitled');
+  check('★ a code block exports its source preview, not the untitled fallback',
+    xml.includes('const a = 1;') && !xml.includes('TEXT="(untitled)"'), xml);
+  check('★ an empty code block still renders safely, not a crash',
+    typeof label(CB('e', '', '')) === 'string' && runsOf(CB('e', '', '')).length >= 1);
+}
+
 // ──────────────────────────────────────────────────────────────────
 console.log('\nedgePath: all three line styles produce a valid SVG path');
 

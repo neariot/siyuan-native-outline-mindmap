@@ -217,6 +217,38 @@ check(
   'cell content is not structure; making it so would put every keystroke back on the structural path',
 );
 
+// ---------------------------------------------------------------- code blocks
+
+// ★ A code edit is **content** that reaches the document through `syncCodeBlocks`,
+//   never through a paragraph block — exactly like a table cell. Without it here the
+//   coalescing drops every keystroke after the first (the same pitfall as cells).
+const C = (code: string, lang = 'js'): OutlineNode => ({
+  id: 'c1',
+  modified: 0,
+  text: '',
+  codeBlock: { lang, code },
+  children: [],
+});
+
+check(
+  '★ a code edit is a change (the coalescing pitfall again, for code blocks)',
+  serializeTree([C('const a = 1;')]) !== serializeTree([C('const a = 2;')]),
+);
+check(
+  '★ an unchanged code block is not a change',
+  serializeTree([C('const a = 1;')]) === serializeTree([C('const a = 1;')]),
+);
+check(
+  '★ gaining a code block is a structural change (a block of its own appears)',
+  structureFingerprint([C('const a = 1;')]) !==
+    structureFingerprint([{ ...C('const a = 1;'), codeBlock: undefined }]),
+);
+check(
+  '★ editing code only is NOT a structural change (content rides the text-only path)',
+  structureFingerprint([C('const a = 1;')]) === structureFingerprint([C('const a = 2;')]),
+  'code content is not structure; making it so would put every keystroke back on the structural path',
+);
+
 // ---------------------------------------------------------------- report
 
 console.log(`sync-serialize: ${pass} passed, ${fail} failed`);

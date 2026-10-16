@@ -360,6 +360,12 @@ const V_GAP = 14;
 
 /** A node's display runs: keep inline formatting and merge the due date into the last run. */
 export function runsOf(n: OutlineNode): RichRun[] {
+  // ★ A code block has no text carrier: preview it as one plain run instead of the
+  //   zero-width placeholder. Without this the mind map draws an empty box where the
+  //   user reads "special characters" — the label/preview below is the same string the
+  //   box was measured for, so there is still one wrapping authority.
+  const preview = codePreview(n);
+  if (preview !== null) return [{ text: preview || '\u200b' }];
   // First parse the HTML into styled runs
   const runs = htmlToRuns(n.text);
   // Normalise whitespace: stay consistent with `label()`'s `\s+ → ' '`, otherwise
@@ -381,8 +387,30 @@ export function runsOf(n: OutlineNode): RichRun[] {
 }
 
 export function label(n: OutlineNode): string {
+  // Same preview as runsOf: a code block's text is empty, so without this the label
+  // is the zero-width placeholder and the topic looks like a broken character.
+  const preview = codePreview(n);
+  if (preview !== null) return (preview || '\u200b').slice(0, 60);
   const t = htmlToText(n.text).replace(/\s+/g, ' ').trim();
   return (t || '\u200b').slice(0, 60);
+}
+
+/**
+ * What a code-block node shows where a text carrier would be (mindmap topic, export).
+ *
+ * The block's body is multi-line source, but a topic is one wrapping label: the first
+ * non-empty line, prefixed with the language when there is one (`js: const a = 1;`).
+ * Returns null for non-code nodes so callers keep their text path untouched; an empty
+ * block yields `''` and the caller falls back to its placeholder, same as empty text.
+ */
+export function codePreview(n: OutlineNode): string | null {
+  const cb = n.codeBlock;
+  if (!cb) return null;
+  const first = (cb.code ?? '').split('\n').map((s) => s.trim()).find((s) => s.length > 0) ?? '';
+  const body = first.replace(/\s+/g, ' ').trim().slice(0, 60);
+  const lang = (cb.lang ?? '').trim();
+  if (lang && body) return `${lang}: ${body}`;
+  return lang || body;
 }
 
 /** A character's width in the layout's units: CJK is roughly twice a Latin character. */
@@ -953,7 +981,9 @@ export function exportFreemind(
         const note = body
           ? `<richcontent TYPE="NOTE"><html><head></head><body>${body}</body></html></richcontent>`
           : '';
-        return `<node TEXT="${esc(htmlToText(n.text) || untitled)}">${note}${walk(n.children)}</node>`;
+        // ★ A code block has no text: export its preview, not the untitled fallback.
+        const display = codePreview(n) ?? htmlToText(n.text);
+        return `<node TEXT="${esc(display || untitled)}">${note}${walk(n.children)}</node>`;
       })
       .join('');
   return `<map version="1.0.1"><node TEXT="${esc(title || defTitle)}">${rootNote}${walk(nodes)}</node></map>`;
