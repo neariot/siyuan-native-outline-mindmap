@@ -229,7 +229,16 @@ test('★★★ the source is never parsed as markup, and survives a reload', as
   }
 });
 
-test('★★ a code block is not moved into a list by indent, and shows in the mind map', async ({ page }) => {
+test('★★ Tab inside a code box types a tab and changes no level, and the mind map shows a topic', async ({ page }) => {
+  // ★★ This case used to be named "a code block is not moved into a list by indent", and its comment
+  //   said "a code block cannot live inside a `NodeList` (measured)". **That was false** —— measured
+  //   2026-10-16: `insertBlock` with `parentID` = a list item creates a `NodeCodeBlock` inside it, and
+  //   `docs/kernel-api.md` §7.17 has the measurement. A code block is an ordinary node with a level
+  //   now, and its indent / outdent are covered by `e2e/code-block-nested.spec.ts`.
+  //
+  //   What is left here is the rule that made the old case pass without testing anything: **Tab inside
+  //   a code box types a tab character** and must not touch the node's level. Without this a Tab would
+  //   indent the block the moment nesting worked, and a code sample would become a re-parenting.
   const api = await kernelApi(siyuanUrl(), siyuanToken());
   let docId = '';
   try {
@@ -238,13 +247,22 @@ test('★★ a code block is not moved into a list by indent, and shows in the m
     await toOutlineView(page);
     await waitForStableOutline(page);
 
-    // ★ Indent must refuse it. A code block cannot live inside a `NodeList` (measured), and a
-    //   demote that "succeeded" would either lose the block or corrupt the list around it.
+    // ★ Tab types a tab: the source gains one, and the block stays where it was.
     const row = page.locator('.om-outline-wrap .node-row').filter({ has: page.locator('.om-node-code') }).first();
+    const box = row.locator('textarea.om-node-code');
+    const before = (await box.inputValue()).split('\n');
+    // ★ The level criterion needs the position **before** the keypress: a count cannot see it (a moved
+    //   row still renders as a row) and a screenshot of one state cannot either.
+    const xBefore = Math.round((await row.boundingBox())?.x ?? -1);
     await row.click();
     await page.keyboard.press('Tab');
     await page.waitForTimeout(800);
-    expect(await storedCode(api, docId), 'indent must not remove the code block').toContain('const a = 1;');
+    expect(Math.round((await row.boundingBox())?.x ?? -2), 'Tab must not re-parent the block').toBe(xBefore);
+    // ★ And the tab really went into the **source**: a tab character does not change the line count,
+    //   so "same number of lines" would pass with nothing typed at all.
+    expect(await box.inputValue(), 'the tab must be a character in the source').toContain('\t');
+    expect(await storedCode(api, docId), 'the tab is stored too').toContain('\t');
+    expect(before.length, 'precondition: the source had lines to tab into').toBeGreaterThan(0);
 
     // ★ And the mind map must not have swallowed it either: it is a node, so it has a topic.
     await toMindmapView(page);

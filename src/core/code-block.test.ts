@@ -133,3 +133,60 @@ test('a table and a code block in one document do not claim each other', () => {
   assert.deepEqual(tree[1].table, { header: ['h1', 'h2'], rows: [['a', 'b']] });
   assert.equal(tree[2].text, '<span>甲</span>');
 });
+
+// ── A fence **inside** a list item is a child node ──
+//
+//   Measured against the running kernel (2026-10-16): `insertBlock` with `parentID` = a list item
+//   creates a `NodeCodeBlock` inside it, and the exported markdown indents the fence under the item.
+//   So this is a shape a user can produce in SiYuan's own editor, and the reader has to place it.
+//
+//   It used to `roots.push`, so the block showed as a **top-level** row: the panel displayed a level
+//   the document did not have, and the write-back had no anchor that could reproduce it.
+//
+//   The fixture is the kernel's own export shape, verbatim in structure: the fence and its attribute
+//   line are indented two spaces deeper than the list item they belong to.
+
+const NESTED = [
+  '- {: id="20260101120000-li00001" updated="1"}甲',
+  '  ```js',
+  '  const a = 1;',
+  '  ```',
+  '  {: id="20260101120000-cbfence" updated="1"}',
+  '- {: id="20260101120000-li00002" updated="1"}乙',
+  '',
+].join('\n');
+
+test('a fence indented inside a list item becomes that item\'s child', () => {
+  const tree = kramdownToTree(NESTED);
+  assert.equal(tree.length, 2, 'the two list items are the only roots');
+  assert.equal(tree[0].id, '20260101120000-li00001');
+  assert.equal(tree[0].text, '<span>甲</span>');
+  // ★ The criterion: the code block is a **child** of 甲, not a root of its own. The node count
+  //   alone cannot tell them apart (both shapes give two roots before / one after), so the parent
+  //   link is the assertion.
+  assert.equal(tree[0].children.length, 1, '甲 has one child');
+  const child = tree[0].children[0];
+  assert.deepEqual(child.codeBlock, { lang: 'js', code: 'const a = 1;' });
+  assert.equal(child.id, '20260101120000-cbfence', 'the id still comes from the attribute line');
+  assert.equal(tree[1].children.length, 0, '乙 has no code block of its own');
+});
+
+test('a fence at the document level is still a root, not a child of the node above it', () => {
+  // ★ The counter-case, so the nesting rule cannot be read as "a fence is always a child": a fence
+  //   written **between** two nodes is a sibling of them, and must stay one.
+  const md = [
+    '- {: id="20260101120000-li00001" updated="1"}甲',
+    '',
+    '```js',
+    'const a = 1;',
+    '```',
+    '{: id="20260101120000-cbfence" updated="1"}',
+    '',
+    '- {: id="20260101120000-li00002" updated="1"}乙',
+    '',
+  ].join('\n');
+  const tree = kramdownToTree(md);
+  assert.equal(tree.length, 3, 'node, code block, node —— all at the top');
+  assert.deepEqual(tree[1].codeBlock, { lang: 'js', code: 'const a = 1;' });
+  assert.equal(tree[0].children.length, 0, 'a root-level fence does not attach to 甲');
+});

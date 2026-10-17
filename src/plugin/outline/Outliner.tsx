@@ -22,6 +22,8 @@ import {
   outdentNodes as outdentInTree,
 } from './indent';
 import { shouldRollBackScroll } from './auto-scroll';
+import { visibleText } from '../sync';
+import { collectDiag, copyText, formatDiag } from './diagnostics';
 import {
   HEADER_ROW,
   nextTableCell,
@@ -288,8 +290,22 @@ function hydrateEditable(el: HTMLElement): void {
   });
 }
 
-/** Insert html at saved range (or end of el). Returns nothing; caller syncs. */
-function insertHtml(range: Range | null, el: HTMLElement, html: string): void {
+/**
+ * Insert html at saved range (or end of el). Returns nothing; caller syncs.
+ *
+ * ★ `caretIntoSelector` exists for the wrapper buttons: after inserting a **pair** of marks the
+ *   caret must land **between** them, and doing that by querying the DOM afterwards is unreliable
+ *   — `execCommand('insertHTML')` returns with the caret already moved, and a query-then-set can
+ *   be overwritten by the browser before the next keystroke (measured: the caret stayed outside
+ *   the `<code>` and the typed character landed outside the mark). So the element to place the
+ *   caret into is selected from the fragment **while it is still ours**, before insertion.
+ */
+function insertHtml(
+  range: Range | null,
+  el: HTMLElement,
+  html: string,
+  caretIntoSelector?: string,
+): void {
   el.focus();
   const sel = window.getSelection();
   let r = range;
@@ -298,7 +314,22 @@ function insertHtml(range: Range | null, el: HTMLElement, html: string): void {
     r.selectNodeContents(el);
     r.collapse(false);
   }
+  const placeCaret = (target: Node | null): void => {
+    if (!target || !sel) return;
+    const nr = document.createRange();
+    nr.setStart(target, 0);
+    nr.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  };
   try {
+    // The fragment is built first so the caret target can be taken from it, not looked up after.
+    let caretTarget: Node | null = null;
+    if (caretIntoSelector) {
+      const probe = document.createElement('div');
+      probe.innerHTML = html;
+      caretTarget = probe.querySelector(caretIntoSelector)?.firstChild ?? null;
+    }
     (sel as Selection).removeAllRanges();
     (sel as Selection).addRange(r);
     const ok = document.execCommand('insertHTML', false, html);
@@ -307,16 +338,52 @@ function insertHtml(range: Range | null, el: HTMLElement, html: string): void {
       r.deleteContents();
       const last = frag.lastChild;
       r.insertNode(frag);
-      if (last) {
-        const nr = document.createRange();
-        nr.setStartAfter(last);
-        nr.collapse(true);
-        (sel as Selection).removeAllRanges();
-        (sel as Selection).addRange(nr);
+      if (caretTarget) {
+        // The node moved into the document with the fragment; find it by walking the inserted run.
+        const live = el.querySelector(caretIntoSelector ?? '');
+        placeCaret(live?.firstChild ?? null);
+      } else if (last) {
+        placeCaret(last);
+      }
+      return;
+    }
+    if (caretIntoSelector) {
+      // ★★★ Do not ask the browser to insert this at all.
+      //
+      //   Measured, three times over: `execCommand('insertHTML')` commits the nodes and then runs
+      //   its **own caret fixup**, and whatever selection is set afterwards in the same tick is
+      //   discarded — the caret stayed inside the pre-existing `<span>` at its old offset (probe,
+      //   at 0ms, 50ms, 300ms and 900ms: identical every time), the wrapper rendered as an empty
+      //   grey capsule with the caret outside it, and no amount of re-setting the range fixed it.
+      //   The behaviour is inside the command, so the fix is to keep the command out of it.
+      //
+      //   So the pair is inserted as real DOM nodes and the caret is placed on them directly. The
+      //   `<code>` is created empty and the caret goes inside it, so the next keystroke lands in
+      //   the mark — which is the whole point of the button.
+      const box = document.createElement('div');
+      box.innerHTML = html;
+      const inner = box.querySelector(caretIntoSelector);
+      if (inner) {
+        // Insert at the saved range, or at the end of the node when it is gone or elsewhere.
+        let at: Range | null = r;
+        if (!at || !el.contains(at.commonAncestorContainer)) {
+          at = document.createRange();
+          at.selectNodeContents(el);
+          at.collapse(false);
+        }
+        at.deleteContents();
+        const frag = document.createDocumentFragment();
+        while (box.firstChild) frag.appendChild(box.firstChild);
+        const lastInserted = frag.lastChild;
+        at.insertNode(frag);
+        const live = el.querySelector(caretIntoSelector) as HTMLElement | null;
+        placeCaret(live?.firstChild ?? lastInserted);
+        return;
       }
     }
   } catch {
     el.insertAdjacentHTML('beforeend', html);
+    if (caretIntoSelector) placeCaret(el.querySelector(caretIntoSelector ?? '')?.firstChild ?? null);
   }
 }
 
@@ -447,6 +514,143 @@ export default function Outliner(props: OutlinerProps) {
    *   every multi-line sample on the first edit.
    */
   const codeMap = useRef(new Map<string, HTMLTextAreaElement>());
+
+  /**
+   * Set by `makeCodeBlock`; consumed by the effect below **after** the render that mounts the
+   * new box. A timer cannot do this: the toolbar prevents the default mousedown, so the caret is
+   * still in the outgoing `.node-text` when the button is pressed, and React unmounting it drops
+   * focus to BODY (measured).
+   */
+  const focusCodeBoxAfterRender = useRef(false);
+
+  /**
+   * The code boxes that were on screen when the current conversion started.
+   *
+   * ★★ This is what identifies "the box this conversion made". The focus run used to take the
+   *   **first** `textarea.om-node-code` in the DOM, which is the right box only while the document
+   *   holds exactly one code block —— the shape every earlier case had, so nothing showed. A
+   *   document that already contains code blocks (the user's held five, all empty, from earlier
+   *   attempts) therefore had the caret put into the **first of those**, never into the box just
+   *   created: the keystrokes went to a box that was already there or to the document body, and the
+   *   new block in the kernel stayed empty. Measured on their document, then reproduced here as a
+   *   case (`e2e/code-block-in-doc-with-code.spec.ts`).
+   *
+   *   Ids, not elements, because the store **replaces** the node's id with the block id the kernel
+   *   mints: the new box is absent from the snapshot before the swap and after it, so it stays the
+   *   target across the re-mount that the swap causes.
+   */
+  const codeBoxesBeforeConvert = useRef<Set<string>>(new Set());
+
+  /**
+   * A focus run is in progress (or already finished) —— one latch per conversion.
+   *
+   * ★★★ Without it the caret could never leave a converted code box. The effect that reads
+   *   `focusCodeBoxAfterRender` runs after **every** render, and the flag is only cleared when the
+   *   focus has held for its whole window; so a click on another node (which re-renders) started a
+   *   fresh chase, took the caret straight back, and the panel stayed unusable (measured: the caret
+   *   was still in the code box 15s after clicking a second node, and a case needing two code boxes
+   *   could not begin). The flag is now consumed by the run it started.
+   */
+  const codeFocusRunStarted = useRef(false);
+  // ★ Handle of the pending requestAnimationFrame, so a new conversion can **cancel** the previous
+  //   run instead of waiting for its next frame to notice it is stale (measured: the abort-on-next-frame
+  //   version still stole the caret for one frame, which was enough to lose the "click the row" race).
+  const focusRafId = useRef<number | null>(null);
+  // ★ A **generation counter** for the focus run. A new conversion increments it; an older run whose
+  //   rAF chain is still alive sees the mismatch and aborts instead of fighting the new one for the
+  //   caret (measured: two conversions within the run's ~3s window made the caret unmovable, so the
+  //   second row could never be clicked —— "the caret must move into the row to convert" timed out).
+  const focusRunGeneration = useRef(0);
+
+  /**
+   * A **stable** ref callback per code box, built on demand and cached by node id.
+   *
+   * ★★ Why the callback cannot be an inline arrow any more (two measured defects, both caused by
+   *   that shape):
+   *
+   *   1. An inline arrow is a *new function* on every render, so React detaches (`ref(null)`) and
+   *      re-attaches **every** code box on **every** render —— not only when one is replaced. The
+   *      detach pass therefore ran for boxes that were still on screen, and the commit below fired
+   *      on ordinary re-renders.
+   *   2. It committed `lastCodeEl.current`, **one shared reference** for the whole panel, rather
+   *      than the element of the box being detached. With a single code box on screen the two are
+   *      the same element and nothing shows at all —— which is why every earlier case passed. With
+   *      two (the user's document held an empty code block from an earlier attempt next to the
+   *      new one), detaching the second box committed the **first** box's empty value into the
+   *      second box's node: the model said "empty", `syncCodeBlocks` wrote the empty fence to the
+   *      kernel, and the panel kept showing the typed characters because a focused box is never
+   *      overwritten. That is exactly the reported "I typed `test` and SiYuan never got it".
+   *
+   * A stable callback is detached only on a real unmount, so the element read here is the one the
+   * browser is removing and the commit cannot cross nodes.
+   */
+  const codeRefs = useRef(new Map<string, (el: HTMLTextAreaElement | null) => void>());
+
+  /**
+   * Commit what a detached code box holds, then let it go.
+   *
+   * ★ On **unmount** the value is handed back while the element still exists: a code block made
+   *   by converting a node is re-mounted by the store (it swaps in the block id the kernel mints,
+   *   and the key is the id), and whatever was typed into the element being destroyed would go
+   *   with it.
+   *
+   *   The caret guard is deliberately **not** applied: on unmount `document.activeElement` is
+   *   already the body, so requiring it would skip exactly the commit that matters.
+   *
+   *   ★ A node that is **gone** from the tree is skipped silently. The usual reason is the id swap:
+   *   the model already holds the typed text (every keystroke commits through `syncCodeFrom`), the
+   *   node has just
+   *   been renamed to the kernel's block id, and committing under the old id would only produce
+   *   `syncCodeFrom`'s "no matching code-block node" warning on every conversion.
+   */
+  const releaseCodeBox = (id: string, gone: HTMLTextAreaElement | null): void => {
+    if (gone) {
+      // ★ Commit whenever there is **anything to lose**, including when the node has just left the
+      //   tree: that is the id swap, and it is exactly when the keystrokes typed between the
+      //   conversion and the kernel's answer live in this element and nowhere else. Guarding it
+      //   with "the node must still be findable" threw them away and the document stayed empty
+      //   (measured: the empty-node case stopped reaching the kernel).
+      const node = findNode(nodesRef.current, id);
+      if (node?.codeBlock || gone.value !== '') syncCodeFrom(gone, id);
+    }
+    codeMap.current.delete(id);
+    codeRefs.current.delete(id);
+  };
+
+  const codeRefFor = (id: string): ((el: HTMLTextAreaElement | null) => void) => {
+    const cache = codeRefs.current;
+    const hit = cache.get(id);
+    if (hit) return hit;
+    const cb = (el: HTMLTextAreaElement | null): void => {
+      if (!el) {
+          releaseCodeBox(id, codeMap.current.get(id) ?? null);
+        return;
+      }
+      codeMap.current.set(id, el);
+      // ★★★ Put the caret back **inside the commit**, not on the next frame.
+      //
+      //   A box made by converting a node is re-mounted when the store swaps in the block id the
+      //   kernel mints, and the browser drops the caret to BODY for the gap. The frame-by-frame
+      //   loop below closed that gap a frame or more later, and every keystroke typed inside it
+      //   went to the document body instead of the box (measured: typing `test` produced `tt` — the
+      //   `e` and the `s` were delivered to BODY, and the model-wins pass rewrote the box from the
+      //   model in between).
+      //
+      //   A ref callback runs in the commit's **layout** phase, and the browser dispatches key
+      //   events only between tasks, so focusing here leaves no window at all.
+      if (focusCodeBoxAfterRender.current && !codeBoxesBeforeConvert.current.has(id)) {
+        const end = el.value.length;
+        el.focus();
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // A box the browser will not focus yet keeps the caret `focus()` chose; the loop retries.
+        }
+      }
+    };
+    cache.set(id, cb);
+    return cb;
+  };
   /**
    * Editable divs for a node's attached paragraphs, **an array per node** (index = paragraph index).
    *
@@ -478,7 +682,36 @@ export default function Outliner(props: OutlinerProps) {
   const [marqueeRect, setMarqueeRect] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  // ★ The diagnostic panel: collapsed by default, opened deliberately, and kept (see
+  //   `./diagnostics.ts` — removing a temporary badge once destroyed the only instrument).
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diag, setDiag] = useState('');
+  const [diagCopied, setDiagCopied] = useState('');
+  useEffect(() => {
+    if (!diagOpen) return;
+    const upd = (): void => setDiag(formatDiag(collectDiag()));
+    const soon = (): void => {
+      window.setTimeout(upd, 60);
+    };
+    upd();
+    const timer = window.setInterval(upd, 1500);
+    document.addEventListener('focusin', soon);
+    document.addEventListener('touchend', soon);
+    window.addEventListener('popstate', soon);
+    window.addEventListener('hashchange', soon);
+    window.addEventListener('load', soon);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('focusin', soon);
+      document.removeEventListener('touchend', soon);
+      window.removeEventListener('popstate', soon);
+      window.removeEventListener('hashchange', soon);
+      window.removeEventListener('load', soon);
+    };
+  }, [diagOpen]);
   const [tableRC, setTableRC] = useState({ r: 3, c: 3 });
+  // The code block's language, kept as panel state: it is written once, into the node.
+  const [codeLang, setCodeLang] = useState('');
   const [anchor, setAnchor] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -546,7 +779,7 @@ export default function Outliner(props: OutlinerProps) {
   } | null>(null);
   /** Whether a long-press drag is in progress (drives visual feedback in the UI) */
   const [touchDragging, setTouchDragging] = useState(false);
-  const [panel, setPanel] = useState<null | 'emoji' | 'mention' | 'noderef' | 'table' | 'shortcuts'>(null);
+  const [panel, setPanel] = useState<null | 'emoji' | 'mention' | 'noderef' | 'table' | 'code' | 'shortcuts'>(null);
   const [panelQ, setPanelQ] = useState('');
   const [find, setFind] = useState({ open: false, q: '', rep: '', total: 0 });
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -951,7 +1184,7 @@ export default function Outliner(props: OutlinerProps) {
     }
   };
 
-  const openPanel = (name: 'emoji' | 'mention' | 'noderef' | 'table' | 'shortcuts'): void => {
+  const openPanel = (name: 'emoji' | 'mention' | 'noderef' | 'table' | 'code' | 'shortcuts'): void => {
     // ★★ Fallback: when a panel is opened by clicking a **toolbar button**, focus has already left the node,
     //   `activeNodeId` is usually null ⇒ `closePanel` has no focus to restore,
     //   so after closing, focus stays on the button and **typing does not reach the node** (confirmed by measurement).
@@ -2018,21 +2251,30 @@ export default function Outliner(props: OutlinerProps) {
   };
 
   /**
-   * Copy a code box's on-screen source into the model.
+   * Copy a code box's on-screen source into the model — the entry point every box event uses.
    *
-   * ★ The mirror of `syncCell`, with the same two rules: only the box that **holds the
-   *   caret** may write (a stale element writing a neighbour's source is the same
-   *   data-loss shape), and the change is reported as `'text'` — the store diffs the
-   *   code markdown in `syncCodeBlocks` and writes the block, while `'struct'` would
-   *   additionally rewrite every code block in the document wholesale.
+   * ★ The **element** is passed in rather than looked up by id, because every caller already has
+   *   it in the event. `codeMap` is keyed by node id, and an id that has just been replaced by the
+   *   kernel's block id is in that map one commit later than the handler is updated (see the
+   *   `onInput` comment): a lookup in that window returns nothing and the keystroke disappears
+   *   without a word. Measured, and it was the reported "the text never reaches SiYuan".
    *
-   * The value is `el.value`, never innerHTML: code is not markup, and a sample holding
-   * `<div>` must come back as those characters, not as an element.
+   * ★ The value is `el.value`, never innerHTML: code is not markup, and a sample holding `<div>`
+   *   must come back as those characters, not as an element.
+   *
+   * The change is reported as `'text'` — the store diffs the code markdown in `syncCodeBlocks` and
+   * writes the block, while `'struct'` would additionally rewrite every code block in the document
+   * wholesale.
    */
-  const syncCode = (id: string): void => {
-    const el = codeMap.current.get(id);
-    if (!el) return;
-    if (document.activeElement !== el) return;
+  /**
+   * Copy a code box's value into the model and report it.
+   *
+   * Split out of `syncCode` so the **unmount** path can reuse it without the caret guard: the
+   * element being removed can no longer be `document.activeElement` (the browser has already moved
+   * focus to the body), so the guard would skip precisely the commit that matters — see the ref
+   * callback in the code-box renderer for the measured shape.
+   */
+  const syncCodeFrom = (el: HTMLTextAreaElement, id: string): void => {
     const value = el.value ?? '';
     const current = findNode(nodesRef.current, id);
     // ★ Never silent: a box that cannot find its node swallows the keystroke, the box
@@ -2951,8 +3193,31 @@ export default function Outliner(props: OutlinerProps) {
 
   const wrapSelection = (before: string, after: string): void => {
     const el = document.activeElement as HTMLElement | null;
+    if (!el || !el.isContentEditable || !rootRef.current?.contains(el)) return;
+    // ★★ No selection: insert the pair and put the caret **between** them.
+    //
+    //   Measured (the reported "the inline-code button does nothing"): with no selection the old
+    //   path fell through to `insertHtml`'s fallback, which selects the node's whole contents and
+    //   collapses to the **end**. So it appended an empty pair and left the caret after it:
+    //     `<span>alpha</span>`  →  `<span>alpha</span><code></code>`
+    //   The empty `<code>` renders as a grey capsule (the user saw exactly that), the keystrokes
+    //   that follow land **outside** the mark, and the pair is never written to the document
+    //   (measured: the kernel still held `alpha`). It looked like a dead button.
+    //
+    //   The fix is the ordinary editor behaviour: insert the pair, then place the caret between.
+    const selNow = window.getSelection();
+    const hasSel = !!(selNow && selNow.rangeCount > 0 && !selNow.isCollapsed);
+    if (!hasSel) {
+      // ★ `caretIntoSelector` is what makes the pair usable: the caret must end up **inside**
+      //   `before`, not after it (see `insertHtml`). Querying for the element afterwards and
+      //   moving the caret was tried first and did not hold — measured, the caret stayed outside.
+      insertHtml(lastRange.current, el, `${before}${after}`, 'code');
+      const nid = el.getAttribute('data-node-id');
+      if (nid) syncText(nid);
+      return;
+    }
     const r = lastRange.current;
-    if (el && el.isContentEditable && rootRef.current?.contains(el) && r) {
+    if (r) {
       // ★★★ The selected text has to be carried **into** the replacement.
       //
       //   `insertHtml` replaces whatever the range covers, and it was handed only
@@ -2977,6 +3242,244 @@ export default function Outliner(props: OutlinerProps) {
       }
     }
   };
+
+  /**
+   * Turn the node the caret is in into a **code block** — the whole node, not a `<code>` mark
+   * around a few characters.
+   *
+   * ★ Why the `</>` toolbar button does this rather than an inline mark: a node is a list item
+   *   whose text is a paragraph, so an inline mark cannot hold a multi-line sample — every
+   *   newline in it needs its own line, and a fenced block is the carrier SiYuan can actually
+   *   store (a code block is a root-level `NodeCodeBlock`, verified against the running kernel).
+   *   Measured before: pressing the button with nothing selected inserted an **empty** pair, the
+   *   kernel never received it, and it read as a dead button.
+   *
+   * ★ Which node: the focused one, resolved the same way every other toolbar action resolves its
+   *   target (`fmt` / `clearFormat` both use `document.activeElement` first). Falling back to the
+   *   first row would convert a node the user is not looking at.
+   *
+   * The node's text becomes the block's source, so converting a node that already holds
+   * something does not silently lose it.
+   */
+  const makeCodeBlock = (): void => {
+    const focused = document.activeElement as HTMLElement | null;
+    const id = focused?.getAttribute?.('data-node-id') || activeId;
+    if (!id) return;
+    const source = findNode(nodesRef.current, id);
+    if (!source) return;
+    if (source.codeBlock) {
+      // Already a code block: put the caret in it rather than converting twice.
+      const box = codeMap.current.get(id);
+      if (box) box.focus();
+      return;
+    }
+    const code = visibleText(source.text ?? '');
+    // ★ Focus the new box **after the render**, not from a timer.
+    //
+    //   Three earlier attempts all failed the same way, and the reason is structural:
+    //     · a `setTimeout(0)` focus grabs the element React is about to unmount;
+    //     · reading `codeMap` during the swap is a race (the ref deletes before it re-registers);
+    //     · querying by the minted id matches nothing, because the store overwrites a code-block
+    //       node's id with the block id the kernel mints.
+    //   All three share one cause: the focus is requested **before** React has committed the new
+    //   row. The toolbar's `onMouseDown` calls `preventDefault` (so the caret never leaves the
+    //   old `.node-text`), and when that element is unmounted the browser drops focus to BODY
+    //   (measured: `activeElement` was `BODY.fn__flex-column`).
+    //
+    //   So the request is recorded and honoured by the render effect below, which runs after the
+    //   DOM is in place — and it retries, because the store may swap the id once more when the
+    //   kernel assigns the block.
+    if (focusRafId.current !== null) {
+      window.cancelAnimationFrame(focusRafId.current);
+      focusRafId.current = null;
+    }
+    focusRunGeneration.current += 1;
+    focusCodeBoxAfterRender.current = true;
+    codeFocusRunStarted.current = false;
+    // ★ What was on screen **before** this conversion —— see `codeBoxesBeforeConvert`.
+    codeBoxesBeforeConvert.current = new Set(codeMap.current.keys());
+    mutate((draft) => {
+      const node = findNode(draft, id);
+      if (!node) return;
+      // ★★ The node gets a **new id**, and this is load-bearing rather than cosmetic.
+      //
+      //   A node's id is the id of its list item block. `syncStructure` decides "does this node
+      //   already exist in the document?" by `blockMap.get(n.id)`, and a converted node's old id
+      //   still maps to that **list item** — so the walk took the "already there" branch, never
+      //   created a code block, and the next write had nothing to write into. Measured: the
+      //   outline showed a code box, the caret was in it, the keystrokes landed there — and the
+      //   document still held the original list item, unchanged, forever.
+      //
+      //   A fresh id makes the node genuinely new, so the markdown route runs and the kernel
+      //   mints the code block. The old list item is then removed as a deletion, exactly like any
+      //   other node the tree no longer holds.
+      node.id = makeSiyuanId();
+      node.text = '';
+      node.codeBlock = { lang: '', code };
+      touch(node);
+    });
+  };
+
+  /**
+   * The model wins for any code box **nobody is typing in** —— an external change (another panel,
+   * a document reload) must reach a box that is on screen.
+   *
+   * ★ It was a guard inside the ref callback, so it only ran while the callback ran. With the
+   *   callback now stable per node (`codeRefFor`) that is a real mount/unmount only, so the pass
+   *   moved here: one sweep after every render, over the boxes that are actually mounted.
+   *
+   *   The caret guard is the whole point: overwriting the box being typed into is how a character
+   *   is eaten. A box whose value already matches the model is left alone, so this cannot fight
+   *   the user's own keystrokes.
+   */
+  useEffect(() => {
+    for (const [id, el] of codeMap.current) {
+      const model = findNode(nodesRef.current, id)?.codeBlock?.code ?? '';
+      if (el.value !== model && document.activeElement !== el) {
+          el.value = model;
+      }
+    }
+  });
+
+  /**
+   * Focus the code box once the DOM holds it — after render, with a bounded retry.
+   *
+   * ★ Why an effect and not a timer (three measured failures): the toolbar's `onMouseDown`
+   *   `preventDefault`s so the caret never leaves the old `.node-text`; React then unmounts that
+   *   element and the browser drops focus to BODY. Any focus requested before the commit lands on
+   *   an element that is about to disappear, and any id-based lookup misses, because the store
+   *   overwrites a code-block node's id with the block id the kernel mints. Reading the DOM **after**
+   *   the commit is the only moment when the box exists under a stable handle.
+   *
+   * The retry exists because the store may replace the node id once more when the kernel answers,
+   * which re-mounts the box; the loop re-reads the live element rather than a captured reference.
+   */
+  useEffect(() => {
+    if (!focusCodeBoxAfterRender.current || codeFocusRunStarted.current) return;
+    codeFocusRunStarted.current = true;
+    const myGeneration = focusRunGeneration.current;
+    // ★★ Abort if a newer conversion has started: the older run's rAF chain is still alive and would
+    //   otherwise keep calling `box.focus()` on a box that no longer belongs to it, stealing the
+    //   caret from whatever the user clicked in the meantime.
+    const abortIfStale = (): boolean => {
+      if (focusRunGeneration.current !== myGeneration) return true;
+      return false;
+    };
+    // ★★ The flag is cleared only when the focus has actually **held**, not when the effect runs.
+    //
+    //   Cleared eagerly, the effect body runs on a render whose DOM does not hold the box yet —
+    //   the `mutate` re-render is asynchronous — so the loop searches a tree that has no textarea,
+    //   burns its budget, and gives up while the box is still on its way. Measured: the flag was
+    //   consumed on that empty pass, and the caret stayed on BODY for the whole session.
+    //
+    //   So the loop owns the flag, and it only releases it once the focus has **held**. The id is
+    //   tracked as well, because the store replaces a code-block node's id with the block id the
+    //   kernel mints, which re-mounts the box and drops focus again.
+    //
+    // ★★ Why the hold window is ~60 frames and not 2 (measured, and the reason six earlier
+    //   attempts failed while looking correct):
+    //
+    //     tick 0  box:true focused:false  id=…46gfpd1
+    //     tick 1  box:true focused:true   id=…46gfpd1
+    //     tick 2  box:true focused:true   id=…46gfpd1   ← a 2-frame threshold stopped here
+    //     … later  activeElement = BODY, id = …jx8emro    ← and the focus was lost anyway
+    //
+    //   Two frames is ~32ms, far shorter than the kernel round trip, so the loop declared success
+    //   **before** the id came back and the re-mount happened. The window must therefore outlast
+    //   that round trip: 60 frames ≈ 1s, which covers the measured ~200ms id replacement. The id
+    //   check inside it is what keeps the window from firing on a box that has already been replaced.
+    // ★★★ The loop must also be **bounded in total**. The "focus was stolen" branch used to count
+    //   its retries and never look at the count, so a caret that left the box —— the user clicking
+    //   another node —— was taken back on the very next frame, forever: the panel could not be
+    //   used again after one conversion (measured: clicking a second node never moved the caret
+    //   out of the box for as long as the panel stayed open, and a case that needs two code boxes
+    //   could not even get started). One budget now covers every branch, so the window ends
+    //   whether or not the focus was ever stolen.
+    const HOLD_FRAMES = 60;
+    const BUDGET_FRAMES = 30;
+    let tries = 0;
+    let stableFor = 0;
+    let lastId: string | null = null;
+    const focus = (): void => {
+      if (abortIfStale()) return;
+      // ★★ The box this conversion made, not the first one on screen: see
+      //   `codeBoxesBeforeConvert`. Exactly one box may qualify, and until it exists the run waits.
+      const findTargetBox = (): HTMLTextAreaElement | null => {
+        const fresh: HTMLTextAreaElement[] = [];
+        rootRef.current
+          ?.querySelectorAll('textarea.om-node-code')
+          .forEach((el) => {
+            const id = el.getAttribute('data-node-id') ?? '';
+            if (!codeBoxesBeforeConvert.current.has(id)) fresh.push(el as HTMLTextAreaElement);
+          });
+        return fresh.length === 1 ? fresh[0] : null;
+      };
+      const box = findTargetBox();
+      const finish = (): void => {
+        if (focusRafId.current !== null) {
+          window.cancelAnimationFrame(focusRafId.current);
+          focusRafId.current = null;
+        }
+        focusCodeBoxAfterRender.current = false;
+        codeFocusRunStarted.current = false;
+        codeBoxesBeforeConvert.current = new Set();
+      };
+      const again = (): void => {
+        if (++tries < BUDGET_FRAMES) focusRafId.current = window.requestAnimationFrame(focus);
+        else finish();
+      };
+      if (!box) {
+        stableFor = 0;
+        again();
+        return;
+      }
+      if (document.activeElement !== box) {
+        // ★★★ Yield at once when the caret is somewhere **else inside the panel**: that is the
+        //   user putting it there on purpose, and chasing it back is what made the panel
+        //   unusable. Focus on BODY or outside the panel is the other case —— the re-mount
+        //   dropping it —— and that one the run exists to repair.
+        const active = document.activeElement as HTMLElement | null;
+        if (active && active !== box && rootRef.current?.contains(active)) {
+          finish();
+          return;
+        }
+        // ★★ Re-focusing must not move the caret to the start. A bare `focus()` puts the caret at
+        //   offset 0 in a textarea, so every steal sent the next character to the front of the
+        //   source (measured: typing `test` produced `t`, `et`, `est`, `estt` —— every character
+        //   in front of the one before it). The selection is still readable while the box is
+        //   unfocused, so it is put back.
+        if (abortIfStale()) return;
+        const start = box.selectionStart;
+        const end = box.selectionEnd;
+        box.focus();
+          if (start !== null && end !== null) {
+          try {
+            box.setSelectionRange(start, end);
+          } catch {
+            // A textarea that cannot hold a selection (detached mid-frame) keeps the caret
+            // `focus()` chose; there is nothing to repair.
+          }
+        }
+        stableFor = 0;
+        lastId = box.getAttribute('data-node-id');
+        again();
+        return;
+      }
+      const id = box.getAttribute('data-node-id');
+      if (id !== lastId) {
+        lastId = id;
+        stableFor = 0;
+        again();
+        return;
+      }
+      if (++stableFor >= HOLD_FRAMES) {
+        finish();
+        return;
+      }
+      again();
+    };
+    focus();
+  });
 
   const insertAtCaret = (html: string): void => {
     const el = document.activeElement as HTMLElement | null;
@@ -3038,6 +3541,41 @@ export default function Outliner(props: OutlinerProps) {
   };
 
   /**
+ * Insert a code block, as a node that is a **block of its own**.
+ *
+ * ★ Why it is a node rather than markup inside a node's text: a SiYuan code block is a
+ *   root-level block (`data-type="NodeCodeBlock"`, verified against the running kernel) with no
+ *   listItem and no paragraph, so it cannot live inside a `NodeList` — the same reason a table
+ *   cannot (see `insertTable`). The store writes it through the markdown route, which is the
+ *   only one the kernel accepts for this block type.
+ *
+ * ★ Why the focus request is here and not left to the user: a freshly created block is empty, so
+ *   without it the user sees an empty box and has to tap it before typing — and a tap that lands
+ *   on the row (not the box) puts the caret in the neighbouring node instead, which is exactly
+ *   what was reported: "the caret ends up in front of the code block".
+ */
+const insertCodeBlock = (): void => {
+    const lang = codeLang.trim();
+    const node: OutlineNode = {
+      id: makeSiyuanId(),
+      modified: now(),
+      text: '',
+      codeBlock: { lang, code: '' },
+      children: [],
+    };
+    mutate((draft) => {
+      draft.push(node);
+      return undefined;
+    });
+    // Focus the new box on the next frame: the node must be in the DOM first.
+    window.setTimeout(() => {
+      const box = codeMap.current.get(node.id);
+      if (box) box.focus();
+    }, 0);
+    closePanel();
+  };
+
+/**
  * Clear the formatting of a node.
  *
  * ★ The node is resolved from the **focused** element first, the way every other toolbar
@@ -3601,31 +4139,23 @@ const clearFormat = (): void => {
                 the fence into an inline `<code>` on the document title's paragraph, so the block
                 was never a node and there was nothing to delete.
 
-                The box is registered in `codeMap` (never `elMap`) and written back by `syncCode`,
-                which copies `el.value` verbatim — never `innerHTML`: code is not markup, and
-                rendering it as markup is how a sample containing `<div>` disappears.
+                The box is registered in `codeMap` (never `elMap`) and written back by
+                `syncCodeFrom`, which copies `el.value` verbatim — never `innerHTML`: code is not
+                markup, and rendering it as markup is how a sample containing `<div>` disappears.
               */
               <textarea
                 // ★ The key is the node id **only**, never the source: keying on the value
                 //   remounts the box on every keystroke (measured: after one typed character
                 //   focus falls to BODY, the rest of the typing goes nowhere, and a Backspace
                 //   then deletes the whole selected row instead of a character). External updates
-                //   still reach an unfocused box through the ref callback's model-wins guard below,
-                //   so no remount is needed for those either.
+                //   still reach an unfocused box through the model-wins effect below, so no
+                //   remount is needed for those either.
                 key={n.id}
-                ref={(el) => {
-                  if (el) {
-                    codeMap.current.set(n.id, el);
-                    const value = n.codeBlock!.code ?? '';
-                    // ★ The model wins for any box the user is not typing in (the same rule
-                    //   `node-text` and cells use: overwriting a focused editor eats a
-                    //   character). The key above already forces a remount when the value
-                    //   changes, so a stale element cannot survive to write old source back.
-                    if (el.value !== value && document.activeElement !== el) el.value = value;
-                  } else {
-                    codeMap.current.delete(n.id);
-                  }
-                }}
+                // ★ The ref is a **stable per-node callback** (see `codeRefFor`), so React
+                //   detaches it only on a real unmount and the commit it makes cannot cross
+                //   nodes. Model-wins for an unfocused box lives in the effect below, because a
+                //   stable callback no longer runs on every render.
+                ref={codeRefFor(n.id)}
                 className="om-node-code"
                 data-lang={n.codeBlock.lang || undefined}
                 data-node-id={n.id}
@@ -3634,7 +4164,14 @@ const clearFormat = (): void => {
                 wrap="off"
                 rows={Math.min(20, Math.max(1, (n.codeBlock.code ?? '').split('\n').length))}
                 defaultValue={n.codeBlock.code}
-                onInput={() => syncCode(n.id)}
+                // ★★★ The element comes from the **event**, never from `codeMap`. React updates a
+                //   mounted element's props in the mutation phase and attaches its ref in the
+                //   layout phase, so for the length of one commit the handler carries the **new**
+                //   node id while the map still holds the box under the **old** one —— a lookup
+                //   then returns nothing and the keystroke is dropped with no error at all
+                //   (measured: `syncCode` received the right id and `val: null` four times, the box
+                //   showed the text and the document stayed empty).
+                onInput={(e) => syncCodeFrom(e.currentTarget, n.id)}
                 onKeyDown={(e) => {
                   if (e.key !== 'Tab') return;
                   // ★ Tab indents the source instead of leaving the box (the cell rule, for
@@ -3646,12 +4183,14 @@ const clearFormat = (): void => {
                   const s = ta.selectionStart ?? ta.value.length;
                   const t = ta.selectionEnd ?? ta.value.length;
                   ta.setRangeText('\t', s, t, 'end');
-                  syncCode(n.id);
+                  syncCodeFrom(ta, n.id);
                 }}
                 onBlur={(e) => {
                   // A blur with uncommitted source still commits (the same rule as cells),
                   // so the panel and the document cannot drift apart while unfocused.
-                  if ((e.currentTarget.value ?? '') !== (n.codeBlock!.code ?? '')) syncCode(n.id);
+                  if ((e.currentTarget.value ?? '') !== (n.codeBlock!.code ?? '')) {
+                    syncCodeFrom(e.currentTarget, n.id);
+                  }
                 }}
               />
             ) : (
@@ -3980,6 +4519,35 @@ const clearFormat = (): void => {
           />
         </div>
       )}
+      {/* ★ The diagnostic panel: a permanent, deliberately-opened instrument (see `./diagnostics.ts`).
+          A defect on a platform the suites cannot reach is invisible without a signal **on the
+          device**, and this is that signal — shapes and identity only, never document content. */}
+      {diagOpen && (
+        <div className="om-diag">
+          <pre className="om-diag-text">{diag}</pre>
+          <button
+            type="button"
+            className="om-diag-copy"
+            onClick={() => setDiagCopied(copyText(diag) ? 'copied' : 'copy failed')}
+          >
+            {diagCopied || 'copy'}
+          </button>
+          <button type="button" className="om-diag-close" onClick={() => setDiagOpen(false)}>
+            x
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="om-diag-toggle"
+        aria-expanded={diagOpen}
+        onClick={() => {
+          setDiagCopied('');
+          setDiagOpen((v) => !v);
+        }}
+      >
+        diag
+      </button>
       {/* Toolbar open/close switch -- **the same one as the mind map view** (collapsed by default on narrow screens, can be expanded/collapsed).
           Shown only on narrow screens (`@container (max-width: 560px)`); on desktop it is always expanded. */}
       <button
@@ -4016,7 +4584,17 @@ const clearFormat = (): void => {
         <button title={t('tipBold')} onClick={() => fmt('bold')}><b>B</b></button>
         <button title={t('tipItalic')} onClick={() => fmt('italic')}><i>I</i></button>
         <button title={t('tipStrike')} onClick={() => fmt('strikeThrough')}><s>S</s></button>
-        <button title={t('tipInlineCode')} onClick={() => wrapSelection('<code>', '</code>')}>&lt;/&gt;</button>
+        <button title={t('tipCodeBlockBtn')} onClick={() => makeCodeBlock()}>&lt;/&gt;</button>
+        {/* ★★ Inline code is a **separate** action from `</>`, and it has to stay reachable on the
+            desktop: the only other entry point is the mobile bar's format drawer, and `.mobile-bar-fixed`
+            is `display: none` above 768px (device width). Reusing the `</>` slot for the code-block
+            conversion therefore left desktop with **no** inline code at all —— a capability dropped as
+            collateral, not a decision (measured: `e2e/toolbar-sync.spec.ts` could no longer find the
+            button at all and timed out for 2 minutes). `<code>` is the form this plugin stores inline
+            code in (`richtext.ts`: `inlineCode` ⇔ `<code>c</code>`), not backticks.
+            The glyph is the `&#96;` entity rather than a literal backtick: a bare one in JSX text opens
+            a template literal for every source scanner, including this repository's own language audit. */}
+        <button title={t('tipInlineCode')} onClick={() => wrapSelection('<code>', '</code>')}><code style={{ fontSize: '12px' }}>&#96;</code></button>
         <button title={t('tipUnderline')} onClick={() => fmt('underline')}><u>U</u></button>
         <label title={t('tipTextColor')} style={{ padding: '4px 7px', cursor: 'pointer' }}>
           A
@@ -4074,6 +4652,9 @@ const clearFormat = (): void => {
           }
         }}>🌐</button>
         <button title={t('tipTable')} onClick={() => (panel === 'table' ? closePanel() : openPanel('table'))}>▦</button>
+        {/* ★ Code block: a node of its own, like the table (see `insertCodeBlock`). It had no entry
+            at all, so a document could hold a code block but the user could never create one. */}
+        <button title={t('tipCodeBlock')} onClick={() => (panel === 'code' ? closePanel() : openPanel('code'))}>{'</>'}</button>
         <button title={t('tipEmoji')} onClick={() => (panel === 'emoji' ? closePanel() : openPanel('emoji'))}>😄</button>
         <button title={t('tipTagHash')} onClick={() => {
           const tag = prompt(t('phTagName'));
@@ -4092,6 +4673,37 @@ const clearFormat = (): void => {
         <button title={t('tipNodeRef')} onClick={() => openPanel('noderef')}>⛓</button>
         <span className="sep" />
         <button title={t('tipNumbered')} onClick={() => toggleNumberedMany(activeIds)}>1.</button>
+        {/*
+          ★★ Outdent / indent, **copied from the mobile bar** (`.mobile-bar-fixed`, which has had
+            them all along). The top toolbar was the one surface without them, so on a desktop or a
+            tablet-width dock the only way to change a node's level was the Tab / Shift+Tab
+            shortcut —— unavailable on a touch keyboard, and undiscoverable everywhere else.
+
+          Same actions, same icons, same i18n keys as the mobile pair, on purpose: two buttons that
+            do the same thing must look the same, or the user has to learn the toolbar twice. They
+            take `activeIds` like every other button here, so a multi-row selection indents as a
+            whole exactly as the batch toolbar does (`cmdIndent` in `.selbar`).
+        */}
+        <button
+          className="indent-btn"
+          title={t('tipOutdentShiftTab')}
+          aria-label={t('tipOutdentShiftTab')}
+          onClick={() => activeIds.length > 0 && outdentNodes(activeIds)}
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.5 16V4M10.8 5l-5 5 5 5M5.8 10h11.7" />
+          </svg>
+        </button>
+        <button
+          className="indent-btn"
+          title={t('tipIndentTab')}
+          aria-label={t('tipIndentTab')}
+          onClick={() => activeIds.length > 0 && indentNodes(activeIds)}
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.2 10H2.5M9.2 15l5-5-5-5M17.5 4v12" />
+          </svg>
+        </button>
         <button title={t('tipNote')} onClick={() => activeId && (activeId === '__root__' ? toggleDocPara() : togglePara(activeId))}>📝</button>
         <button title={t('tipZoomNode')} onClick={() => activeId && onZoomChange?.(activeId)}>⊙</button>
         <button title={t('tipCollapseAll')} onClick={() => setCollapseAll(true)}>⏩</button>
@@ -4216,6 +4828,22 @@ const clearFormat = (): void => {
           {t('lblRows')} <input type="number" min={1} max={20} value={tableRC.r} onChange={(e) => setTableRC((s) => ({ ...s, r: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
           {t('lblCols')} <input type="number" min={1} max={10} value={tableRC.c} onChange={(e) => setTableRC((s) => ({ ...s, c: Number(e.target.value) || 1 }))} style={{ width: 56 }} />
           <button className="btn primary" onClick={() => insertTable()}>{t('cmdInsert')}</button>
+          <button onClick={() => closePanel()}>{t('cmdClose')}</button>
+        </div>
+      )}
+
+      {/* ★ Code block panel: the language is optional (the fence works without one), and the new
+          block is focused on creation — otherwise the caret lands in the neighbouring node,
+          which was the reported symptom. */}
+      {panel === 'code' && (
+        <div
+          ref={panelBoxRef}
+          tabIndex={-1}
+          onKeyDown={panelKeyDown}
+          style={{ padding: '8px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}
+        >
+          {t('lblLang')} <input value={codeLang} onChange={(e) => setCodeLang(e.target.value)} placeholder="js" style={{ width: 80 }} />
+          <button className="btn primary" onClick={() => insertCodeBlock()}>{t('cmdInsert')}</button>
           <button onClick={() => closePanel()}>{t('cmdClose')}</button>
         </div>
       )}
@@ -4384,6 +5012,7 @@ const clearFormat = (): void => {
           was written for was never applied to anything, and the panel had no gutter to drag in. */}
       <div
         className="om-outline"
+        data-doc-id={docId || ''}
         onClick={(e) => {
           if (suppressClickAfterMarqueeRef.current) {
             suppressClickAfterMarqueeRef.current = false;

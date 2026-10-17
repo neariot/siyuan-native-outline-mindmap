@@ -111,3 +111,37 @@ a counter with no writer is worse than no counter, because a test can assert on 
 `=== 0` remain and are the ones that can fail).
 
 ---
+
+### 0.6 A placement rule copied from another block kind becomes law of nature in two releases
+
+**Symptom**: a comment in the tree operations refused an operation for a kind of block, citing the
+kernel: "a `NodeList` cannot contain a table — the kernel hangs it off the document and refuses it
+inside". The same condition was then widened to a **second** block kind, a code block, with the
+sentence "it is the same shape, so it is refused by the same rule rather than a second one beside it".
+
+Both claims were false. Measured against the running kernel (2026-10-16): `insertBlock` with
+`parentID` = a list item produces a `NodeTable` **and** a `NodeCodeBlock` inside it, and the export
+shows both nested. What the comment had actually recorded was a property of **our own writer**, which
+anchors every new block at the document root — a choice, stated as a kernel law. Meanwhile the code
+block half of the condition was never measured at all: it was the table's sentence with the nouns
+swapped.
+
+**Practice**: a rule that refuses an operation needs a measurement **of that kind of block**, dated
+in the comment, and the reason has to name the layer that actually causes it. "The kernel refuses"
+and "we anchor it there, so we cannot nest it" lead to completely different fixes, and only one of
+them is true here. When one condition covers two kinds because they *look* alike, measure both or
+split them: the second kind is where the untested half lives.
+
+Two things made this survive for so long, and both are cheap to check:
+
+· **no test pinned the rule** (`indent.test.ts` mentioned neither tables nor code blocks), so a
+  "harmless cleanup" could have dropped it with everything green —— and, worse, the rule could have
+  been extended again;
+· **the sentence was quoted onward** —— into the store's writer comment, into my own answer to a user
+  question, into a second code path. An unmeasured claim is not neutral: it spreads.
+
+And a `code: 0` that does nothing is the answer to distrust most: the kernel also returns success for
+a move it silently ignores (`docs/kernel-api.md` §7.17). A layer that trusts it reports success for a
+change the document never got, so **verify where the block ended up**, not that the call returned.
+
+**Tests**: `src/plugin/outline/indent.test.ts`, `e2e/code-block-nested.spec.ts`

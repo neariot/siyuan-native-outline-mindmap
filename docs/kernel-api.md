@@ -324,3 +324,67 @@ plugin is not the suspect —— the kernel is. Reading the plugin's own code
 further cannot find it.
 
 ---
+
+## 7.17 A code block — and a table — can be a **child** of a list item, but cannot be *moved*
+
+Measured on 3.x, isolated instance, 2026-10-16. Both halves matter, and they point in opposite
+directions.
+
+### Creating one nested works
+
+```python
+insertBlock(dataType='markdown', data='```js\nhello\n```',
+            parentID=<that list item's block id>, previousID=<that item's paragraph block id>)
+# → code: 0, and the exported markdown shows:
+#     - 甲
+#
+#       ```js
+#       hello
+#       ```
+#     - 乙
+```
+
+The `previousID` is what places it: with an **empty** `previousID` the fence lands *before* the
+item's text; pointing it at the item's paragraph block puts the fence after it, which is the
+sensible order. A table behaves identically — `insertBlock` with a markdown table and the same
+anchors produces a `NodeTable` inside the list item.
+
+So the claim "a `NodeList` cannot contain a table / a code block" is **not a kernel restriction**.
+It is a choice a writer makes (anchoring every block at the document root), and once written into a
+comment it starts to read like a law of nature —— see `docs/pitfalls/wiring.md` §0.6 for what that
+cost here.
+
+### Moving one does not
+
+```python
+moveBlock(<code block id>, parentID=<document id>, previousID='')
+# → code: -1  "`previousID` can not be the ID of a document"
+
+moveBlock(<code block id>, parentID=<top-level NodeList id>, previousID=<a list item in it>)
+# → code: 0   …… and the block does not move. The export still shows the fence inside the item.
+```
+
+The second answer is the dangerous one: **`code: 0` with nothing done**. Every layer above reads it
+as "the move happened", so a plugin that repositions by moving will show the user a panel whose
+structure the document does not have, and report nothing. Moving a code block between levels has to
+be written as **create at the new anchor, then delete the old block** (the id changes, so the
+caller must re-map it).
+
+### Reading one back
+
+`getBlockKramdown` indents the fence and its attribute line by two spaces per level, and emits the
+list item's own attribute line **after** its text and **before** the fence:
+
+```
+- {: id="…li…"}甲
+  {: id="…para…"}
+
+  ```js
+  hello
+  ```
+  {: id="…codeblock…"}
+```
+
+So a reader must take the fence's **indentation** as its level, and strip that indentation back off
+the source lines — the lines arrive with the block's own indent still in them, and a writer that does
+not strip it re-saves the indent, so the damage grows with every save.

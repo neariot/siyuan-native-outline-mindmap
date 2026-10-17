@@ -60,6 +60,13 @@ type SiYuanGlobal = {
   };
 };
 
+/** The address fields this module reads: `globalThis.location` in a browser, a plain object in tests. */
+interface LocationLike {
+  pathname?: string;
+  search?: string;
+  hash?: string;
+}
+
 /** A layout tree node: may be Layout / Wnd / Tab, decided by structure */
 type LayoutNode = {
   id?: string;
@@ -244,6 +251,45 @@ function fromMobileEditor(): string {
 }
 
 /**
+ * Mobile, second path: the **page URL** itself.
+ *
+ * ★ Why this exists: `fromMobileEditor` reads six `window.mobile.*` globals, and on a real
+ *   iOS Safari none of them is populated unless the mobile editor happens to have booted a
+ *   protyle already (measured on Redroid, where they are; reported empty on a real phone).
+ *   With no id the panel mounts against nothing: the shell renders with the default title and
+ *   the row list of whatever was last resolved — which is exactly the measured symptom
+ *   (`rows=5`, a 7-character default title, and no code block at all, because the block was
+ *   never read from the document the user is actually looking at).
+ *
+ *   The URL is authoritative, not a guess: the kernel serves the mobile shell at
+ *   `?id=<rootId>` and SiYuan keeps it in sync as the user moves between documents, so the id
+ *   in the address **is** the open document. It is only consulted after the globals miss, and
+ *   still only for the documented `id=` parameter — never a wildcard, and never the last
+ *   candidate.
+ */
+function fromMobileUrl(): string {
+  try {
+    // ★ Read `globalThis.location`, not `window.location`, for the same reason `asGlobal` reads
+    //   `globalThis.siyuan`: one spelling, so the test and the browser cannot drift apart.
+    const loc = (globalThis as unknown as { location?: LocationLike }).location;
+    if (!loc) return '';
+    const search = typeof loc.search === 'string' ? loc.search : '';
+    const hash = typeof loc.hash === 'string' ? loc.hash : '';
+    // SiYuan ids are `YYYYMMDDHHmmss-xxxxxxx`; the shape is the criterion, not just the length,
+    // so a stray `?id=` carrying something else is left alone rather than adopted.
+    const ID = '[0-9]{14}-[0-9a-z]{7}';
+    const fromSearch = new RegExp(`[?&]id=(${ID})`).exec(search);
+    if (fromSearch) return fromSearch[1];
+    // Some deployments keep the document in the hash.
+    const fromHash = new RegExp(`[?&#]id=(${ID})`).exec(hash);
+    if (fromHash) return fromHash[1];
+  } catch {
+    /* an unreadable location is simply no evidence */
+  }
+  return '';
+}
+
+/**
  * Get the ID of the currently active document; returns an empty string when it cannot be resolved.
  *
  * When it cannot be resolved, do **not** fall back to guessing (scanning the DOM, taking the last editor, etc.) ——
@@ -252,7 +298,9 @@ function fromMobileEditor(): string {
  */
 export function getActiveDocId(): string {
   try {
-    return fromDesktopLayout() || fromMobileEditor();
+    // Desktop first: its layout tree is authoritative, and a stale `?id=` on a desktop tab
+    // would otherwise outvote it.
+    return fromDesktopLayout() || fromMobileEditor() || fromMobileUrl();
   } catch {
     return '';
   }

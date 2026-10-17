@@ -642,7 +642,7 @@ export class SiYuanStore {
       //   every later stage finds it by the same rules as a list item's node: otherwise
       //   `syncStructure` would judge an existing table "new" and insert a second copy of it,
       //   and `syncDeletions` would delete it as "in the document but not in the tree".
-      for (const tid of parsedDom.rootTableIds) {
+      for (const tid of parsedDom.tableIds) {
         map.set(tid, tid);
         this.lastListItems.set(tid, tid);
         this.lastByBlock.set(tid, tid);
@@ -652,7 +652,7 @@ export class SiYuanStore {
       //   inserts a second copy beside it, and `syncDeletions` treats it as "in the document but not
       //   in the tree" and deletes it. Measured against the kernel: a code block is a root-level
       //   `data-type="NodeCodeBlock"` with no listItem.
-      for (const cid of parsedDom.rootCodeBlockIds) {
+      for (const cid of parsedDom.codeBlockIds) {
         map.set(cid, cid);
         this.lastListItems.set(cid, cid);
         this.lastByBlock.set(cid, cid);
@@ -1349,8 +1349,8 @@ export class SiYuanStore {
     //   them, so they must not count towards "the tree and the document disagree". Skipping this
     //   made every pass over a document containing a table look structural, and a plain text edit
     //   was routed through the whole structural write for nothing.
-    const tableBlocks = new Set(this.lastDomTree?.rootTableIds ?? []);
-    const codeBlocks = new Set(this.lastDomTree?.rootCodeBlockIds ?? []);
+    const tableBlocks = new Set(this.lastDomTree?.tableIds ?? []);
+    const codeBlocks = new Set(this.lastDomTree?.codeBlockIds ?? []);
     const textMapped = [...blockMap.values()].filter((b) => !tableBlocks.has(b) && !codeBlocks.has(b)).length;
 
     // first read the current text of each block, for comparison
@@ -2238,19 +2238,49 @@ export class SiYuanStore {
         //   route (measured — `insertBlock` with a `NodeTable` **DOM** answers `code: 0` and
         //   creates nothing at all, which is the one failure shape that must never be shipped).
         //
-        //   Anchored at the document root, because a `NodeList` cannot contain a table; the
-        //   kernel is asked for a root-level block after the last top-level list item.
+        //   A table used to be anchored at the document root unconditionally, on the claim that a
+        //   `NodeList` cannot contain one; that was **this branch's own choice** written down as a
+        //   kernel law, and a direct measurement refuted it. It is anchored by its place in the
+        //   tree now, exactly like a code block.
         if (n.table) {
           const md = tableToKramdown(n.table);
-          if (!myBlock) {
-            // ★ Always at the **document**, never after a list item.
-            //
-            //   Anchoring on a top-level list item asks the kernel for a sibling position
-            //   *inside* the `NodeList`, and a `NodeList` cannot contain a table (measured) — so
-            //   the insert is refused or lands somewhere else. A table is appended under the
-            //   document root, which is the only structure the kernel accepts.
-            const tparentID = docId;
-            const tpreviousID = '';
+          // ★★ Anchored by **where it sits in the tree**, for the same measured reason as a code
+          //   block (one layer below): `insertBlock` with `parentID` = a list item creates a
+          //   `NodeTable` **inside** it, and with `previousID` = that item's paragraph the table
+          //   lands after the item's own text. "A `NodeList` cannot contain a table" was this
+          //   branch's own choice, written down as a kernel law —— and it was measured to be false
+          //   (`docs/kernel-api.md` §7.17).
+          const wantTblParent = parentAnchor || docId;
+          // ★★★ A table whose parent changed cannot be **moved**: `moveBlock` on a `NodeTable`
+          //   answers `code: 0` and leaves it where it was (measured, same call and same silent
+          //   outcome as for a code block). So a level change is written as create-then-delete, and
+          //   the node adopts the id the kernel mints —— the same shape as the code-block branch.
+          const haveTblParent = myBlock ? this.lastDomTree?.parentOf.get(myBlock) ?? '' : '';
+          let recreateTbl = false;
+          if (myBlock && haveTblParent && haveTblParent !== wantTblParent) {
+            recreateTbl = true;
+            try {
+              await this.client.deleteBlock(myBlock);
+              this.lastAliveBlockIds.delete(myBlock);
+              this.lastDomTree?.aliveIds.delete(myBlock);
+              this.lastTableMarkdown.delete(myBlock);
+              this.lastListItems.delete(myBlock);
+              this.lastByBlock.delete(myBlock);
+              blockMap.delete(myBlock);
+            } catch (e) {
+              // ★ Do **not** insert a second copy when the delete failed: two tables is worse than
+              //   one in the wrong place, and the next pass retries (the mapping is gone). Never
+              //   silent, though —— a swallowed delete is indistinguishable from "the level change
+              //   did nothing", which is the shape this whole branch exists to remove.
+              console.warn('[om] could not delete the table being re-parented:', myBlock, e);
+              recreateTbl = false;
+            }
+          }
+          if (!myBlock || recreateTbl) {
+            const tSub = parentAnchor ? this.lastByBlock.get(parentAnchor) || '' : '';
+            const tParentPara = tSub ? this.lastBlockMap.get(tSub) || '' : '';
+            const tparentID = parentAnchor || docId;
+            const tpreviousID = parentAnchor ? tParentPara : '';
             try {
               const res = await this.client.insertBlock(md, tparentID, tpreviousID);
               const tid = String(res ?? '').trim();
@@ -2284,17 +2314,61 @@ export class SiYuanStore {
           continue;
         }
 
-        // ★★ A code-block node: the same treatment as a table, and for the same measured reasons.
+        // ★★ A code-block node, anchored by **where it sits in the tree**.
         //
-        //   A SiYuan code block is a root-level block of its own (`data-type="NodeCodeBlock"`,
-        //   verified against the running kernel), with no listItem and no paragraph —— so it cannot
-        //   live in a `NodeList` and the markdown route is the only way to create it. Anchored at
-        //   the **document**, exactly like a table.
+        //   It used to be "the same treatment as a table": always the document root, on the claim
+        //   that a code block cannot live in a `NodeList`. **That claim was wrong and is now measured**
+        //   (2026-10-16, isolated instance): `insertBlock` with `parentID` = a list item produces a
+        //   `NodeCodeBlock` **inside** it, and with `previousID` = that item's paragraph the fence
+        //   lands after the item's own text — the shape the reader now expects, and the shape a user
+        //   gets by writing a fenced block inside a list item in SiYuan's editor.
+        //
+        //   So a **nested** code block is anchored in its parent's list item, and only a top-level one
+        //   goes to the document. A table still goes to the document (unchanged), because that branch
+        //   has no nested anchor yet —— see the refusal in `indent.ts`, whose comment now says so.
         if (n.codeBlock) {
           const md = codeBlockToKramdown(n.codeBlock);
-          if (!myBlock) {
+          // ★★ Where this block **ought** to live: inside its parent's list item, or at the document.
+          const wantCbParent = parentAnchor || docId;
+          // ★★★ A code block whose parent changed cannot be **moved**, so it has to be re-created.
+          //
+          //   Measured (2026-10-16, isolated instance): `moveBlock` on a `NodeCodeBlock` answers
+          //   `code: 0` and leaves the block exactly where it was —— tried to the document root
+          //   (refused: "`previousID` can not be the ID of a document"), into the top-level `NodeList`
+          //   (accepted, **no-op**: the export still showed the fence inside the list item). A silent
+          //   no-op is the worst shape here: the panel would show a new level that the document does
+          //   not have, and nothing would report it.
+          //
+          //   So an indent / outdent of a code block is written as create-then-delete. The new block
+          //   gets the id the kernel mints, and the node adopts it (the same mechanism the create
+          //   branch below already uses), so the panel re-renders against the real block.
+          const haveCbParent = myBlock ? this.lastDomTree?.parentOf.get(myBlock) ?? '' : '';
+          let recreateCb = false;
+          if (myBlock && haveCbParent && haveCbParent !== wantCbParent) {
+            recreateCb = true;
             try {
-              const res = await this.client.insertBlock(md, docId, '');
+              await this.client.deleteBlock(myBlock);
+              this.lastAliveBlockIds.delete(myBlock);
+              this.lastDomTree?.aliveIds.delete(myBlock);
+              this.lastCodeMarkdown.delete(myBlock);
+              this.lastListItems.delete(myBlock);
+              this.lastByBlock.delete(myBlock);
+              blockMap.delete(myBlock);
+            } catch {
+              // ★ If the delete failed, do **not** insert a second copy: the old block is still
+              //   there, and two fences is worse than one in the wrong place. The next pass retries
+              //   (the mapping is gone, so this branch runs again).
+              recreateCb = false;
+            }
+          }
+          if (!myBlock || recreateCb) {
+            try {
+              // The same listItem → node → paragraph chain the node branch below uses for a child level.
+              const cbSub = parentAnchor ? this.lastByBlock.get(parentAnchor) || '' : '';
+              const cbParentPara = cbSub ? this.lastBlockMap.get(cbSub) || '' : '';
+              const cbParentID = parentAnchor || docId;
+              const cbPreviousID = parentAnchor ? cbParentPara : '';
+              const res = await this.client.insertBlock(md, cbParentID, cbPreviousID);
               const cid = String(res ?? '').trim();
               if (cid) {
                 // The kernel mints the id, and a code-block node's id **is** its block id.
@@ -2669,6 +2743,9 @@ export class SiYuanStore {
               await this.client.updateBlock(blockId, md);
               this.lastCodeMarkdown.set(n.id, md);
             } catch (e) {
+              // ★ Never silent: the panel keeps showing the source while the kernel holds an
+              //   empty fence, and nothing else reports it. `lastCodeMarkdown` is deliberately
+              //   **not** updated, so the next pass writes this block again.
               console.warn('[om] could not write the code block of', n.id, e);
             }
           }
@@ -2740,13 +2817,13 @@ export class SiYuanStore {
         //   tree predates the edit writes the old cells back over it. The user sees the edit
         //   acknowledged and then silently gone.
         //
-        //   Nothing is lost by skipping: a table is a root-level block, a `NodeList` cannot contain
-        //   one, and `indentNodes` already refuses to move it (the D9 notes) —— so a move has nothing
-        //   to achieve.
+        //   Nothing is lost by skipping: `moveBlock` is a **silent no-op** for both kinds (measured
+        //   2026-10-16 —— `code: 0`, and the block does not move), and reordering a block this pass
+        //   carries its body from the tree it was given, which may predate the latest write.
         //
-        //   ★ A code block is skipped by the same rule: it is the same
-        //   shape (a root-level block with no listItem), so `moveBlock` would carry its body from a
-        //   tree that may predate the latest write and revert it —— the D19 mechanism exactly.
+        //   ★ So the reason is the **lost-edit** one above, for tables *and* code blocks alike —— and
+        //   not the old belief that they cannot be nested: they can (measured, same day), and a level
+        //   change is written by re-creating the block in `syncStructure`, not by moving it.
         //
         //   ★ There is exactly **one** push per node here. A second push with a narrower guard was
         //   once added above the older one instead of replacing it, so every node was planned twice
@@ -2767,6 +2844,11 @@ export class SiYuanStore {
         //   catch it (edit a cell, then make a structural change, assert the edit is still there)
         //   passed 6 of 6 runs **with the mutation in place**, so it defended nothing and was
         //   deleted. Only the run counts above discriminate.
+        // ★ A **code block** stays out of this pass as well, and for a measured reason rather than
+        //   the table's lost-edit one: `moveBlock` on a `NodeCodeBlock` answers `code: 0` and moves
+        //   nothing. A code block that changed level is therefore re-created by `syncStructure`'s
+        //   code-block branch (delete + insert at the right anchor), which is the only route the
+        //   kernel actually honours.
         if (!n.table && !n.codeBlock) plan.push({ nodeId: n.id, wantPid: parentId, index: i });
         if (n.children?.length) collect(n.children, n.id);
       });
@@ -2786,8 +2868,14 @@ export class SiYuanStore {
     //   neither add nor delete any listItem (placeholders are added only inside `ensureChildList`, and registered as soon as they are).
     //   The cache scope is strictly limited to this call and does not span write-backs, so it cannot see a stale structure.
     const listCache = new Map<string, string>();
+    // ★ The placeholder item of each list this pass created, so a node that becomes that list's
+    //   **first** child can be moved **after** it. `ensureChildList` mints that item for a list it
+    //   creates; without it the only remaining move shape is the one the kernel ignores (below).
+    const placeholderByList = new Map<string, string>();
+    // ★ Child lists that were empty and got replaced, deleted **after** the moves (see the call site).
+    const staleLists = new Set<string>();
     let topListId = '';
-    const resolveWantList = async (wantPid: string): Promise<string> => {
+    const resolveWantList = async (wantPid: string, needAnchorItem = false): Promise<string> => {
       if (wantPid === '') {
         if (!topListId) {
           if (this.lastDomTree?.topListId) {
@@ -2812,10 +2900,63 @@ export class SiYuanStore {
         listCache.set(wantPid, '');
         return '';
       }
-      const ensured = await this.ensureChildList(pBlockId);
+      let ensured = await this.ensureChildList(pBlockId);
       // Register the placeholder for cleanup by THIS call (see `cleanup`); the moves happen first and the
       // deletion runs at the end, so a move and a delete cannot interleave.
-      if (ensured.placeholderId) cleanup.add(ensured.placeholderId);
+      if (ensured.placeholderId) {
+        cleanup.add(ensured.placeholderId);
+        if (ensured.listId) placeholderByList.set(ensured.listId, ensured.placeholderId);
+      }
+
+      // ★★★★ A child list is not the same thing as a usable **move target**, and the difference is a
+      //   silent one (measured 2026-10-17 against the isolated instance, `docs/pitfalls/data.md`).
+      //
+      //   `moveBlock(node, parentID=<list>, previousID='')` —— the only shape left when the node
+      //   becomes a list's first child —— is **ignored** when that list holds no list item: the
+      //   kernel answers `code: 0` and moves nothing. Anchoring on the parent's paragraph instead
+      //   fails the same way (`code: 0`), and `parentID` = the listItem is rejected outright
+      //   (`code: -1`, "`previousID` can not be the ID of a document").
+      //
+      //   The empty list is reached constantly: outdenting a node's only child leaves the parent with
+      //   an empty child list (the kernel may remove it outright, which is the same problem), so
+      //   indenting the node straight back has no target. Measured failure shape: the panel shows the
+      //   new level, the document keeps the old one, and `moveNodes` returns `moved: 0` having
+      //   reported nothing.
+      //
+      //   The repair is the one shape measured to work: a list **with an item in it** to position
+      //   against. So an empty list is deleted and a fresh one created with a placeholder (the
+      //   create path `ensureChildList` already has), the node is moved **after** that placeholder,
+      //   and `cleanup` deletes it at the end of this call.
+      //
+      //   ★ "Delete it" is not a nicety: leaving the empty list behind gives the parent **two** child
+      //   lists, which is defect #53's duplicated structure (a node whose blockId is a `List` can
+      //   never be position-corrected, because `actualParentOf` only holds `type='i'`).
+      if (needAnchorItem && ensured.listId && !ensured.placeholderId) {
+        const state = await this.childListTargetState(ensured.listId);
+        if (state !== 'usable') {
+          // ★ Seed the table with the **empty string**, which is this store's own encoding of "looked
+          //   up and really is absent" (see `ensureChildList`: an empty hit skips both the cache hit
+          //   and the SQL fallback and goes straight to the create path).
+          //
+          //   ★★ Deleting the entry is NOT enough, and that was measured: `ensureChildList` then asks
+          //   SQL, and the lagging index **returns the very same removed list id** —— so the move got
+          //   the same unusable target a second time and the document stayed flat. The live read above
+          //   is the authority that beats the index here.
+          const staleListId = ensured.listId;      // ★ capture BEFORE reassigning `ensured`, or the freshly
+                                                  //   created list gets deleted instead of the stale one
+          this.childListByItem.set(pBlockId, '');
+          ensured = await this.ensureChildList(pBlockId);
+          if (ensured.placeholderId) {
+            cleanup.add(ensured.placeholderId);
+            if (ensured.listId) placeholderByList.set(ensured.listId, ensured.placeholderId);
+          }
+          // ★ Deleting the old list is left until **after** the moves, and only for `'empty'`: it is
+          //   the one state where removing it cannot lose a node. `'absent'` has nothing to remove, and
+          //   a list that still holds a node is never removed —— losing a child node to make room for a
+          //   move would trade a visible defect for data loss.
+          if (state === 'empty') staleLists.add(staleListId);
+        }
+      }
       // ★ Also remember this result: the same parent's child List does not change again within this moveNodes
       listCache.set(wantPid, ensured.listId);
       return ensured.listId;
@@ -2895,11 +3036,6 @@ export class SiYuanStore {
 
       if (!blockId) continue; // no block created yet / no listItem yet —— the walk above will handle it
 
-      // ★ resolveWantList resolves the parent node's container List; every node's target container must be corrected
-      const wantListId = await resolveWantList(wantPid);
-
-      if (!wantListId) continue;
-
       // The expected **predecessor** (the node one position earlier in the UI under the same parent).
       // The first one (index 0) has no predecessor → positioning by parentID suffices.
       // ★ The key is **its own** position: `{parent}#{index}` → the previous node.
@@ -2942,6 +3078,18 @@ export class SiYuanStore {
         if (!prevBlockId) continue; // predecessor listItem unknown → skip this round, do not fall back to the paragraph block
       }
 
+      // ★ resolveWantList resolves the parent node's container List; every node's target container must be corrected.
+      //
+      // ★★ It is asked for **after** the predecessor, because that is what decides whether the list
+      //   has to be usable as a move target: a node at index > 0 is anchored on its predecessor (a
+      //   listItem, which is a real anchor whatever the list looks like), while the **first** child
+      //   has none and needs the list to contain an item of its own (measured —— see
+      //   `resolveWantList`). Asking first would also create a child list for entries this loop then
+      //   skips on the `!prevBlockId` line above.
+      const wantListId = await resolveWantList(wantPid, !prevBlockId);
+
+      if (!wantListId) continue;
+
       const actualParentBlock = actualParentOf.get(blockId) ?? '';
 
       if (!actualParentBlock) continue;
@@ -2972,8 +3120,21 @@ export class SiYuanStore {
       //   if it is already first, nothing needs to be done.
       if (!prevBlockId) {
         const wantSibs = sibsOf.get(wantListId) ?? [];
-        if (wantSibs[0] === blockId) {
-          continue; // already first in the target container, the order is right
+        // ★★★ "Already the first child of the target container" is only a reason to do nothing when
+        //   the block is **in** that container — and the sibling list it is read from can be stale.
+        //
+        //   Measured (the sibling list is a DOM snapshot, and a snapshot taken before this write-back
+        //   still describes the document as it was): outdent 乙 out of 甲, then indent it back. The
+        //   re-indent's pass read a sibling list that still named 乙 as 甲's first child, so this
+        //   shortcut skipped the move —— while `parentOk` was **false** (the block was in the root
+        //   list, not in 甲's child list), which already said a move was needed. The panel showed 乙
+        //   nested, the document kept it at the top level, and `moveNodes` returned `moved: 0` with
+        //   nothing reported (measured, with the plan and every entry's `actual` / `wantListId` logged).
+        //
+        //   ⇒ The shortcut now also requires `parentOk`. Losing the optimisation costs one move; the
+        //   stale-snapshot case costs a **silent divergence** between the panel and the document.
+        if (parentOk && wantSibs[0] === blockId) {
+          continue; // already in the target container and already first: the order is right
         }
         // it needs to become first → use parentID (the kernel inserts it at the front of that container)
       }
@@ -2982,9 +3143,20 @@ export class SiYuanStore {
       try {
         // ★ With a predecessor use previousID —— it determines **both** the parent and the order
         //   (in the kernel previousID takes precedence over parentID, see block_op.go L433-437).
-        if (prevBlockId) {
-          await this.client.moveBlock(blockId, '', prevBlockId);
+        // ★★ Without one this is the only shape left —— `moveBlock(id, parentID=<the list>)` —— and it
+        //   is **silently ignored when the list has no list item**: `code: 0`, nothing moves, nothing
+        //   reported. That is why `resolveWantList` was asked for a list that can be a target: when
+        //   this pass created one, its **placeholder item** is the anchor that works, the node lands
+        //   after it, and `cleanup` deletes the placeholder at the end of this call, leaving the node
+        //   alone in the list (measured end to end: `insertBlock('- placeholder', previousID=<the
+        //   parent's paragraph>)` → `moveBlock(node, previousID=<placeholder>)` → `deleteBlock`).
+        const anchor = prevBlockId || placeholderByList.get(wantListId) || '';
+        if (anchor) {
+          await this.client.moveBlock(blockId, '', anchor);
         } else {
+          // No anchor and no placeholder: the target list holds an item (that is what `needAnchorItem`
+          // established), and "insert at the front" is the correct order for a first child. Kept as the
+          // fallback so a degraded environment still attempts the move.
           await this.client.moveBlock(blockId, wantListId);
         }
         ok = true;
@@ -3081,6 +3253,41 @@ export class SiYuanStore {
    *
    * @returns `{ listId, placeholderId }` (both '' when no List can be obtained)
    */
+  /**
+   * Can this child list be the target of a `moveBlock` that has **no** predecessor?
+   *
+   * ★ Read **live** through `getBlockDOM` —— never the SQL index, never `lastDomTree`. Both of those
+   *   answer about a list that no longer exists: the index lags the write that emptied or removed it
+   *   by seconds, and the DOM snapshot can predate that write entirely. Measured: after outdenting a
+   *   node's only child, `ensureChildList` handed back the **removed** list's id, and the move into
+   *   it was answered `code: 0` with nothing moved —— the panel showed a level the document did not
+   *   have, and `moveNodes` returned `moved: 0` having reported nothing.
+   *
+   * ★ Three answers, not two, because the caller **deletes** a list in one of them:
+   *
+   *   · `'usable'` — the list exists and holds a list item, so the move can position against it.
+   *   · `'empty'`  — the list exists and holds nothing. `moveBlock(node, parentID=<it>, previousID='')`
+   *                 is ignored (`code: 0`); it is also the **only** case where deleting it is safe.
+   *   · `'absent'` — there is no such block (the read threw, or returned nothing): the id came from a
+   *                 lagging index. Nothing to delete, and nothing to move into.
+   *
+   *   A degraded environment (no `getBlockDOM`) answers `'usable'`, i.e. today's behaviour, so the
+   *   repair cannot make a stubbed client delete blocks.
+   */
+  private async childListTargetState(listId: string): Promise<'usable' | 'empty' | 'absent'> {
+    if (typeof this.client.getBlockDOM !== 'function') return 'usable';
+    let dom = '';
+    try {
+      const res = await this.client.getBlockDOM(listId);
+      dom = res?.dom ?? '';
+    } catch {
+      return 'absent'; // the block is not there (a stale id from the lagging index)
+    }
+    if (!dom) return 'absent';
+    const kids = parseDomToTree(dom, listId).childrenOf.get(listId) ?? [];
+    return kids.length > 0 ? 'usable' : 'empty';
+  }
+
   private async ensureChildList(
     listItemId: string,
   ): Promise<{ listId: string; placeholderId: string }> {

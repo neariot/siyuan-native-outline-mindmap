@@ -1566,6 +1566,56 @@ html[data-theme-mode='dark'] .om-bullet.collapsed .bullet-dot {
   box-shadow: inset 0 0 0 1px var(--b3-primary-color, #3370ff);
 }
 
+/* ★ The diagnostic panel: a permanent instrument for defects the suites cannot reach
+   (see src/plugin/outline/diagnostics.ts). Collapsed by default; opened deliberately, and it
+   stays. It reports shapes and identity only — never a title, never document text. */
+.om-diag-toggle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 40;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-weak);
+  font-family: var(--b3-font-family-code, ui-monospace, monospace);
+  font-size: 10px;
+  opacity: 0.55;
+}
+.om-diag {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  z-index: 41;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+}
+.om-diag .om-diag-text {
+  flex: 1;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--b3-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.om-diag button {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #fff;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+}
+
 /* An editable table cell is a **leaf** contenteditable div inside the th/td, never the cell itself.
    A contenteditable <table> lets the browser treat every keystroke as a structural edit — delete a
    row, split a cell — and the outline has no path that could undo it: the model is a plain

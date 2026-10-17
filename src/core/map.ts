@@ -1269,15 +1269,33 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
       }
       return;
     }
-    roots.push({
+    const node: OutlineNode = {
       id: idFromAttr ?? '',
       modified: 0,
       // A table has no paragraph of its own; `text` is unused and stays empty.
       text: '',
       table,
       children: [],
-    });
-    lastNode = null;
+    };
+    // ★★★ Nesting follows the table's **indentation**, like a fence and like every other block.
+    //
+    //   It used to `roots.push` unconditionally, on the claim that "a `NodeList` cannot contain a
+    //   table". **Measured, that is false** (2026-10-16, isolated instance): `insertBlock` with
+    //   `parentID` = a list item creates a `NodeTable` inside it, with `previousID` = that item's
+    //   paragraph placing it after the item's text —— and `createDocWithMd` with an indented table
+    //   produces the same document. A user can therefore write a table inside a list item in
+    //   SiYuan's own editor, and it used to read back as a **top-level** row: the panel showed a
+    //   level the document did not have.
+    //
+    //   The cell content needs no un-indenting: `tableRowCells` trims every cell (see above), so the
+    //   block's own indent never reaches the values.
+    const depth = Math.floor((/^(\s*)/.exec(lines[0] ?? '')?.[1] ?? '').length / 2);
+    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+    if (stack.length) stack[stack.length - 1].node.children.push(node);
+    else roots.push(node);
+    stack.push({ depth, node });
+    nodeDepth.set(node, depth);
+    lastNode = node;
   };
 
   /**
@@ -1296,21 +1314,49 @@ export function kramdownToTree(kramdown: string): OutlineNode[] {
     pendingCode = null;
     if (lines === null) return;
     const open = lines[0];
-    void open;
     // The info string is whatever follows the opening backticks: ```js -> "js", ``` -> "".
     const lang = (open.match(/^\s*`{3,}\s*([^`\s]*)/)?.[1] ?? '').trim();
     const body = lines.slice(1);
     // Drop the closing fence only when it really is one; otherwise the last line is source.
     if (body.length && /^\s*`{3,}\s*$/.test(body[body.length - 1])) body.pop();
+    // ★★ Remove the fence's **own** indentation from every body line (CommonMark: up to the opening
+    //   fence's indent is the block's structure, not its content).
+    //
+    //   A document-level fence has no indent, which is why this never showed before: the moment a
+    //   fence can be nested inside a list item, the kramdown indents all its lines by two spaces a
+    //   level and the source came back with that indentation baked in —— `  const a = 1;` instead
+    //   of `const a = 1;`. It would be written straight back to the document, so the damage grew
+    //   with every save. Measured on the nesting case in `code-block.test.ts`.
+    const indent = /^(\s*)/.exec(open)?.[1] ?? '';
+    const unindent = indent
+      ? body.map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.replace(/^[ 	]+/, (m) => (m.length > indent.length ? m.slice(indent.length) : m))))
+      : body;
     const node: OutlineNode = {
       id: idFromAttr ?? '',
       modified: 0,
       text: '',
-      codeBlock: { lang, code: body.join('\n') },
+      codeBlock: { lang, code: unindent.join('\n') },
       children: [],
     };
-    roots.push(node);
-    lastNode = null;
+    // ★★★ Nesting follows the fence's **indentation**, like every other block.
+    //
+    //   It used to `roots.push(node)`, which is right for a document-level block and wrong for one
+    //   written **inside** a list item —— and a user can write that in SiYuan's own editor: the
+    //   kernel accepts it (measured: `insertBlock` with `parentID` = a list item produces a
+    //   `NodeCodeBlock` inside it, and the export shows the fence nested). Such a block then read
+    //   as a **top-level** row in the outline, so the panel showed a level the document did not
+    //   have, and the write-back had no anchor that could reproduce it.
+    //
+    //   Two spaces per level is the same measure the list-item branch uses below, and the stack is
+    //   the same one: a fence at depth 1 becomes a child of the node at depth 0, exactly as its
+    //   indentation says.
+    const depth = Math.floor((/^(\s*)/.exec(open)?.[1] ?? '').length / 2);
+    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+    if (stack.length) stack[stack.length - 1].node.children.push(node);
+    else roots.push(node);
+    stack.push({ depth, node });
+    nodeDepth.set(node, depth);
+    lastNode = node;
   };
 
   for (const rawLine of kramdown.split('\n')) {

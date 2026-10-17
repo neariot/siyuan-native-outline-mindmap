@@ -25,6 +25,19 @@ and **D21** (§9) made code blocks (the kernel's other root-level non-list block
 their own node, writable by the markdown route, and deletable.
 Design and measurements: `docs/todo/inline-markup-sync.md`.
 
+All primary defect queues are **0 open**. The two open items from the previous rounds are now
+**fixed**:
+
+· the level change into an **empty / already-removed** child list silently dropped by the kernel
+  (`code: 0`, nothing moved) —— root cause, the measured probe sequence, the wrong hypotheses and the
+  repair are in `docs/todo/inline-markup-sync.md` §12 and `docs/pitfalls/data.md`; the deterministic
+  case in `e2e/toolbar-indent.spec.ts` is green and serves as its red proof.
+· the two-boxes first-character flake (typing `t` into the second box left it empty, failing under
+  load and passing idle) —— root cause: a foreign transaction triggered a whole-document re-read while
+  the keystroke was still debounced, and the kernel had not flushed it yet, so the read overwrote the
+  tree that held the edit. Fix: `doReload` now merges code-block code, keeping the current model's
+  non-empty value when it differs from the read's. Green across 5 runs.
+
 Historical notes on resolved defects, retargeted citations (e.g. from `.logs/API-GOTCHAS.md` to `docs/kernel-api.md`), and fixed audit findings are committed in git history, `docs/AUDIT-FINDINGS.md`, and `docs/pitfalls/`.
 
 ---

@@ -15,7 +15,13 @@ type MutableGlobal = {
       getAttribute: (name: string) => string | null;
     } | null;
   };
+  location?: { pathname?: string; search?: string; hash?: string };
 };
+
+/** Set `location` the way the implementation reads it (`globalThis`), for one test. */
+function setLocation(v: { pathname?: string; search?: string; hash?: string }): void {
+  Object.defineProperty(globalThis, 'location', { value: v, configurable: true, writable: true });
+}
 
 const g = globalThis as unknown as MutableGlobal;
 
@@ -258,6 +264,78 @@ test('getActiveDocId resolves from mobile editors (editor, popEditor, protyle)',
   } finally {
     g.siyuan = origSiyuan;
     g.document = origDoc;
+  }
+});
+
+// ★★ The mobile URL is the last resort, and the reported failure is precisely that the
+//   globals miss: on a real iOS Safari none of `window.mobile.*` is populated, so the panel
+//   mounted against no document at all (measured: rows rendered, default title, code block
+//   absent — nothing read from the document the user was actually looking at).
+//
+//   The criterion is not "the URL parses" but "the id the URL carries wins only when nothing
+//   else answered", because a stale `?id=` on a desktop tab must never outvote the layout tree.
+test('getActiveDocId resolves from the mobile shell URL when the mobile globals are empty', () => {
+  const origSiyuan = g.siyuan;
+  const origDoc = g.document;
+  const origLoc = globalThis.location;
+  try {
+    const docId = '20261016050000-v000009';
+    g.document = { querySelector: () => null };
+    // A mobile shell with an editor that has booted no protyle yet: every global path empty.
+    g.siyuan = { mobile: { editor: {}, popEditor: {}, protyle: {} } };
+    setLocation({ pathname: '/stage/build/mobile/', search: `?id=${docId}`, hash: '' });
+    assert.equal(getActiveDocId(), docId);
+  } finally {
+    g.siyuan = origSiyuan;
+    g.document = origDoc;
+    Object.defineProperty(globalThis, 'location', { value: origLoc, configurable: true, writable: true });
+  }
+});
+
+test('★ the desktop layout outranks a stale ?id= in the address', () => {
+  const origSiyuan = g.siyuan;
+  const origDoc = g.document;
+  const origLoc = globalThis.location;
+  try {
+    const desktopId = '20261016050000-v000010';
+    g.document = {
+      querySelector: (selector: string) => {
+        if (selector === '.layout__wnd--active .item--focus') {
+          return { getAttribute: (attr: string) => (attr === 'data-id' ? 'tab-1' : null) };
+        }
+        return null;
+      },
+    };
+    g.siyuan = {
+      layout: {
+        centerLayout: {
+          children: [{ id: 'tab-1', model: { editor: { protyle: { block: { rootID: desktopId } } } } }],
+        },
+      },
+    };
+    setLocation({ pathname: '/stage/build/desktop/', search: '?id=20260101000000-vstale01', hash: '' });
+    assert.equal(getActiveDocId(), desktopId);
+  } finally {
+    g.siyuan = origSiyuan;
+    g.document = origDoc;
+    Object.defineProperty(globalThis, 'location', { value: origLoc, configurable: true, writable: true });
+  }
+});
+
+test('★ an id-shaped value that is not one is not adopted', () => {
+  const origSiyuan = g.siyuan;
+  const origDoc = g.document;
+  const origLoc = globalThis.location;
+  try {
+    g.document = { querySelector: () => null };
+    g.siyuan = { mobile: {} };
+    // A stray `?id=` that is not a SiYuan root id must be left alone, not adopted.
+    setLocation({ pathname: '/stage/build/mobile/', search: '?id=abc', hash: '' });
+    assert.equal(getActiveDocId(), '');
+  } finally {
+    g.siyuan = origSiyuan;
+    g.document = origDoc;
+    Object.defineProperty(globalThis, 'location', { value: origLoc, configurable: true, writable: true });
   }
 });
 

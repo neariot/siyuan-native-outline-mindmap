@@ -132,4 +132,38 @@ From the plugin side, "I called it wrong" and "the kernel has not written it yet
 called and look for a TODO / empty stub. Then carry the UI in carriers that **do** exist on mobile -- this plugin
 uses a dock + slash menu, which is why it works there. See `src/plugin/kernel-bugs.test.ts` (Defect 4).
 
+### 3.6 On iOS Safari the panel can mount with **no document at all** -- and it still looks fine
+
+**Symptom**: on a phone the outline opens, shows a handful of rows and a short title, and a document
+with a code block shows no code block (`boxes=0`, `rows=5`). Desktop is perfect; every desktop and
+Redroid test is green. Reported as "the code block cannot be edited or deleted at all".
+
+**Cause**: `getActiveDocId()` (`src/plugin/active-doc.ts`) resolved the open document from six
+`window.mobile.*` globals. **On iOS Safari none of them is populated** unless the mobile editor has
+already booted a protyle. With an empty id the panel mounts against nothing: the shell renders with
+its default title and whatever rows were last resolved, and no block is ever read from the document
+the user is actually looking at. The feature that was reported broken -- code-block editing -- was
+never involved; the panel was reading no document.
+
+**Measured** (`e2e` + a visible on-device badge carrying counts and an id tail, never content):
+`build=… boxes=0 oldpre=0 rows=5 tLen=7 dTail= focus=DIV.node-text`. `dTail=` empty is the whole
+diagnosis: the panel has no document id at all. Confirmed **not** a caching problem and **not** a
+fence-shape problem -- nine fence shapes were round-tripped through the real kernel on the test
+instance and every one read back as a code node.
+
+**Fix**: a third path reads the **document id out of the address** (`?id=<rootId>`), which is how the
+kernel itself dispatches the mobile shell and which it keeps in sync as documents change -- an
+authority, not a guess. It is consulted **last**, after the desktop layout tree (a stale `?id=` on a
+desktop tab must never outvote it) and after the globals, and only for a value that matches SiYuan's
+id shape (`YYYYMMDDHHmmss-xxxxxxx`), so a stray `?id=` is left alone rather than adopted. The
+"do not guess" rule at the top of that file still holds: this adds an **exact** source, not a
+fallback chain that picks a candidate and runs anyway.
+
+**Practice**: when a feature is broken on one platform only, and the DOM looks *plausible* rather than
+broken, suspect "the panel is not attached to anything" before suspecting the feature. Two of the
+three checks that found this -- `dTail=` empty, `tLen=` equal to the default title's length -- are
+identity checks, not feature checks; they are exactly what the E2E suites cannot see, because they
+always open a document by id. Pinned in `src/plugin/active-doc.test.ts` (URL fallback, desktop
+priority, id-shape rejection), shown red with `redproof.py`.
+
 ---

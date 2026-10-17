@@ -538,3 +538,102 @@ away with the text while the finger stays put), and the press that starts it is 
 **Tests**: `e2e/outline.spec.ts`
 
 ---
+
+### 6.9ee An id → element registry is one commit behind the handler that reads it
+
+**Symptom**: characters typed into a code box show up on screen and never reach the document. It is
+intermittent, it is worse the faster the typing, and the panel keeps looking correct until the
+document is reloaded. Measured on the user's own document: a code block created by `</>` held an
+empty fence while the panel showed the typed source.
+
+**Cause**: two gaps, both about **one keystroke**, and both inside a single React commit.
+
+· The handler resolved its element through a `Map` keyed by node id (`onInput={() => syncCode(n.id)}`).
+  React updates a mounted element's props in the **mutation** phase and attaches its ref in the
+  **layout** phase, so for the length of one commit the handler carries the **new** node id while the
+  map still holds the box under the **old** one. The lookup returned nothing and the keystroke was
+  dropped without a word (probe: `syncCode` received the right id and `val: null`, four times in a row).
+· The box is **re-mounted** when the store swaps in the block id the kernel mints (the row's key is the
+  node id), and the browser drops the caret to `BODY` for the gap. Every keystroke in that gap is
+  delivered to the document body instead of the box (typing `test` produced `tt`: the `e` and the `s`
+  went to BODY, and the model-wins pass rewrote the box from the model in between).
+
+**Practice**: take the element from the **event** (`onInput={(e) => syncCodeFrom(e.currentTarget, n.id)}`)
+— every caller already has it, and an identity that cannot be out of date beats a lookup. Put the caret
+back in a **ref callback** (the commit's layout phase) rather than on the next frame: keyboard events
+are dispatched between tasks, so focusing inside the commit leaves no window at all, while a
+`requestAnimationFrame` retry leaves a frame or more. Two related rules the same case produced:
+
+· a ref callback must be **stable per node** (`useRef(new Map())` of callbacks). An inline arrow is a new
+  function on every render, so React detaches and re-attaches every box on every render —— and a shared
+  "last element I saw" reference then commits one box's value into another box's node, which is the same
+  empty-document symptom with two boxes on screen.
+· a focus-retry loop must be **bounded**, and must **yield** when the caret is somewhere else inside the
+  panel. An unbounded loop that re-arms on every render takes the caret back from wherever the user put
+  it, forever (measured: clicking a second node never moved the caret out of the box for as long as the
+  panel stayed open).
+
+**Tests**: `e2e/code-block-from-empty.spec.ts` (typing starts immediately, plus a 36-character burst),
+`e2e/code-block-two-boxes.spec.ts` (two boxes, human pace, the order of the characters)
+
+### 6.9ff "The first `<selector>` in the DOM" is the right element only while there is exactly one
+
+**Symptom**: after `</>`, the caret does not appear in the new code box, and what is typed never
+reaches the document. The box itself is correct and the conversion works —— the converted node's
+list item is deleted and the kernel gets a new (empty) code block. It looks like the write-back
+fails, and it is not: nothing was ever typed into the box.
+
+**Cause**: the focus run asked for `rootRef.querySelector('textarea.om-node-code')`, which returns the
+**first** match in the document. That is the box just created only while the document holds no other
+code block —— the shape every test had, so all of them passed. Measured on the user's document, which
+held **five** empty code blocks from earlier attempts: the caret was put into the first of those five,
+the new box never got it, and the keystrokes went to a box that was already there. The defect was
+invisible in testing because the cases created their code blocks during the run and there was exactly
+one at a time.
+
+**Practice**: identify the element by **what distinguishes it**, not by its position. A conversion
+snapshots the ids of the code boxes that were on screen and then looks for the one that is *not* in
+that snapshot (`codeBoxesBeforeConvert`). Ids rather than elements, because the store replaces the
+node's id with the block id the kernel mints, and the box must stay the target across the re-mount
+that swap causes. The same snapshot gates the in-commit focus, or any box that mounts during the
+window would claim the caret.
+
+Two things make this class of bug survive so long, and both are worth checking whenever a selector is
+introduced: a query that is correct **only** under a uniqueness assumption that no product rule
+guarantees, and a test suite whose fixtures happen to satisfy that assumption. A case whose fixture
+must hold the awkward shape (a document that *already* contains the thing) is the only thing that
+finds it —— `e2e/code-block-in-doc-with-code.spec.ts` asserts the fixture really has five code blocks
+first, so a markdown change cannot quietly turn it into the easy shape again.
+
+**Tests**: `e2e/code-block-in-doc-with-code.spec.ts`
+
+### 6.9gg A foreign re-read during typing overwrites the box with a stale fence
+
+**Symptom**: typing the **first** character into a code box leaves it empty. Fails under load, passes
+idle. Distinct from §6.30 (the value read from a ref a commit behind `e.currentTarget`): that one
+was fixed by reading `e.currentTarget`, and this one survived it.
+
+**Cause**: a foreign transaction (the echo of the conversion, another client, a sync) triggers a
+whole-document re-read through `onWs` → `doReload`. That re-read waits for the plugin's own pending
+write (`ownWriteBarrier`, which flushes a debounced text edit), then calls `loadDoc()` and does
+`setNodes(tree)`. When the kernel had not yet flushed the typed character, `loadDoc` returned an
+**empty** fence, and `setNodes` replaced the tree that held the edit. React then re-rendered the
+box with `defaultValue=''`, and the keystroke was gone —— with no error anywhere. The window is
+narrow (the debounce must be mid-flight when the foreign transaction arrives), which is why it
+passes idle and fails loaded.
+
+**Practice**: `doReload` now merges code-block code before `setNodes`: for each code block in the
+read tree, if the current model holds a **non-empty** value that differs from the read's, the
+current value wins. The merge is narrow on purpose —— only code-block code, only by id, only when
+the current value is non-empty —— so a genuine external edit to the code (or to any other field)
+still comes through from the document. The read's `lastCodeMarkdown` baseline is still advanced, so
+the next save's diff still works.
+
+**A second race in the same case**: the first conversion's focus loop (180 frames ≈ 3s) was still
+alive when the second conversion started and stole the caret from the row click ("the caret must move
+into the row to convert"). Fixed with a generation counter, `cancelAnimationFrame` on a new run, an
+abort guard immediately before `box.focus()`, and cutting the budget to 30 frames so the loop cannot
+outlive the keystroke window. Green across 8 runs after that.
+
+**Tests**: `e2e/code-block-two-boxes.spec.ts` (green across 5 runs after the reverse-sync fix, 8 runs
+after the focus-loop fix).

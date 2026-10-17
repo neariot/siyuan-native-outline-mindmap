@@ -28,6 +28,7 @@ kernel:已删文档  # CJK text the product emits verbatim, quoted as evidence; 
 kernel:父文档  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/testing.md
 kernel:目标内容  # CJK text the product emits verbatim, quoted as evidence; seen in docs/pitfalls/plugin.md
 kernel:简体中文  # CJK text the product emits verbatim, quoted as evidence; seen in README.md
+kernel:原生大纲导图  # this plugin's own display name, as the mobile menu renders it; seen in scripts/verify-android.py
 
 # ------------------------------------------------------------------ CJK fixture content
 fixture:「逻辑图（向右）」  # CJK content the tests quote (a fixture identifier or the UI label under test); e.g. src/mindmap/structure-order.test.ts

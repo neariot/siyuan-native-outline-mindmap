@@ -460,6 +460,19 @@ plus one real usability problem: the settings bar overflows horizontally in a na
 so they could only be clicked after scrolling horizontally. The test does the honest thing (`revealInBar`) instead of
 covering the problem up with `force: true`.
 
+### Open defects this suite records rather than hides
+
+A suite that only reports what passes loses the thing that is hardest to find. One entry is recorded
+here as a **known failure with the evidence**, so nobody has to rediscover it and no green run implies
+it is fixed:
+
+| Case | What it records | Where the analysis lives |
+|---|---|---|
+| `e2e/code-block-two-boxes.spec.ts` | The **first** typed character is intermittently lost when a document holds two code boxes. Seen 2026-10-16 on the isolated instance: fails with the box loaded, passes idle. **Not** the `onInput` defect fixed in §6.30 (that one was the value read from a ref a commit behind); this one survives that fix, so its cause is still unknown | `docs/pitfalls/editor.md` §6.9ff for the sibling defect |
+
+`test.fixme` is the honest form here: the case runs and reports, the suite's exit code stays meaningful,
+and removing the modifier is a **criterion** for the fix rather than a comment claiming one.
+
 ### Injection verification
 
 A new E2E case likewise has to "break the implementation and confirm it goes red". Injection points verified so far:
@@ -604,6 +617,10 @@ fake:
 python3 scripts/verify-android.py                      # the full smoke case
 python3 scripts/verify-android.py --scenario keyboard  # toolbar snapping, non-occlusion
 python3 scripts/verify-android.py --scenario type      # soft-keyboard input and two-way sync
+python3 scripts/verify-android.py --scenario code \
+       --code-shape with-code                          # tap a code box, type, verify the document
+python3 scripts/verify-android.py --scenario code \
+       --code-shape text-only                          # negative control: the first check must fail
 ```
 
 - **It needs** `adb`, a mobile browser package, and the `PYTHON` interpreter that has Playwright
@@ -614,6 +631,16 @@ python3 scripts/verify-android.py --scenario type      # soft-keyboard input and
 - **What it measures**, and must: the toolbar's rect, the outline viewport's lower edge, the caret row,
   and button interactivity while Android's own soft keyboard is up. The screenshot comes from
   `adb exec-out screencap`, so it contains the real keyboard.
+- **The code scenario is the only place a tap is faked, and faking it is honest here.** Playwright's
+  `locator.tap()` requires a `hasTouch` context flag that a CDP-attached real device does not carry
+  (measured: "The page does not support tap" on a phone that taps perfectly well), so the tap goes
+  through CDP `Input.dispatchTouchEvent` at viewport CSS coordinates. That is the browser's real
+  touch pipeline — and unlike `adb shell input tap` it needs no device-pixel scaling, where the status
+  bar offset alone silently moves every coordinate.
+  **It also has a negative control**: `--code-shape text-only` builds a document with no code block,
+  so the very first check ("a code box renders") must fail. A scenario whose checks cannot fail is
+  decoration, and this is what keeps it honest — measured: 4/4 green with a code block, the first check
+  red without one.
 - **What it must not do**: fake the keyboard by resizing the viewport. `Emulation.setDeviceMetricsOverride`
   plus touch emulation sets a 393×852 viewport, but SiYuan keeps laying out the desktop DOM — a measured
   panel came out `left=401, width=877`, entirely off-screen. Any claim about the panel, the drawer or

@@ -1331,3 +1331,44 @@ says it passes.
   about this one.
 - **A red proof of the criterion, not just of the case**: changing Tab to insert a *sibling* fails on the
   assertion that names nesting, which is what shows the criterion still discriminates.
+
+### 6.30 `\n\s+` matches a **blank line**, so an indented-block criterion passes on a top-level one
+
+**Symptom**: a case asserting that a fenced block or a table is nested inside a list item went **green
+against a build where the block was never written into the kernel at all** — the document held it at
+the top level, two lines below the node, and the case said yes.
+
+```ts
+expect(md).toMatch(/- 甲[\s\S]*\n\s+\| ?h1/);   // ★ wrong
+```
+
+**Cause**: `\s` includes the newline, so `\n\s+` is satisfied by **an empty line** between 甲 and a
+block that starts at column 0. Every nesting assertion written that way is satisfied by both states.
+
+**Practice**: read the level the way the document states it, not with a pattern: how far is the block's
+own line indented, and what is the nearest list item **less indented** than that? `null` for column 0,
+and the counter-case asserts exactly that — otherwise the helper could be satisfied by a top-level
+block too:
+
+```ts
+function tableOwner(md: string): string | null {
+  const lines = md.split('\n');
+  const i = lines.findIndex((l) => /^\s*\| ?h1/.test(l));
+  if (i < 0) return null;
+  const indent = (/^(\s*)/.exec(lines[i]) ?? ['', ''])[1].length;
+  if (indent === 0) return null;                    // column 0 == the document level
+  for (let j = i - 1; j >= 0; j--) {
+    const m = /^(\s*)(?:[-*]|\d+\.)\s+/.exec(lines[j]);
+    if (m && m[1].length < indent) return lines[j].trim().replace(/^(?:[-*]|\d+\.)\s+/, '');
+  }
+  return null;
+}
+```
+
+This is the same family as "a count cannot see a level" (§6.27) and "a screenshot of one state cannot
+see it" (`6.9`): the assertion has to distinguish the two states, and every one of them needs a
+criterion that reads the **position**, not a shape. The only reason this was found is that
+`scripts/redproof.py` refused to certify the check: with the writer's anchor reverted it stayed green,
+and a green check on a real mutation is exactly the signal to distrust the check.
+
+**Tests**: `e2e/table-nested.spec.ts`, `e2e/code-block-nested.spec.ts`

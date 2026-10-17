@@ -1,7 +1,39 @@
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import postcssPrefixSelector from 'postcss-prefix-selector';
 import { HOST_SCOPE, scopeSelector } from './scripts/css-scope.mjs';
+
+/**
+ * A short hash of everything under `src/`, sorted by path.
+ *
+ * ★ The running bundle has to be identifiable from inside the editor: SiYuan loads a plugin once,
+ *   at start-up, with no route to reload it, so "deployed" and "running" can differ. The diagnostic
+ *   panel shows this value, and a user can read it in one glance (see `src/types/build-stamp.d.ts`).
+ *
+ *   Derived from the **source**, not from git: what ships is the working tree, and a commit id says
+ *   nothing about uncommitted work. Sorted paths make it stable across filesystems; content changes
+ *   change it, which is the only property that matters.
+ */
+function buildStamp(root = path.join(process.cwd(), 'src')): string {
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir).sort()) {
+      const full = path.join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else files.push(full);
+    }
+  };
+  walk(root);
+  const h = createHash('sha256');
+  for (const f of files) {
+    h.update(path.relative(root, f));
+    h.update(readFileSync(f));
+  }
+  return h.digest('hex').slice(0, 12);
+}
 
 // The only artifact is the SiYuan plugin (CommonJS, `siyuan` external, no HTML).
 // There is no TARGET switch -- building *is* the plugin.
@@ -14,6 +46,8 @@ const pluginConfig: ReturnType<typeof defineConfig> = defineConfig({
       // The plugin is a plain JS library: an index.html would mean nothing and would pollute the artifact.
       index: { import: './src/plugin/index.ts', html: false },
     },
+    // Replaced in the bundle, so the running code can name the build it came from.
+    define: { __OM_BUILD__: JSON.stringify(buildStamp()) },
   },
   output: {
     distPath: {

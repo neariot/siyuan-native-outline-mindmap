@@ -46,7 +46,17 @@ const src = fs.readFileSync(path.join(__dirname, 'outline', 'Outliner.tsx'), 'ut
 console.log('=== every panel container can take focus, and handles Escape ===');
 {
   const boxes = jsxElementsWithAttr(src, 'ref', '{panelBoxRef}');
-  check('★ the panel containers were found (precondition: 5 panels)', boxes.length === 5, `got=${boxes.length}`);
+  // ★★ The precondition is **coverage**, not a hardcoded figure: every panel the component can open
+  //   must have a container, because the two checks below are `every(...)` over what the probe
+  //   found and would pass over nothing. An exact literal went stale the moment a panel was added
+  //   (the code-block panel made it 6) and its red then hid the two real checks behind it, so the
+  //   expected number is derived from the panel names instead of written down.
+  const openable = new Set(Array.from(src.matchAll(/panel === '([a-z]+)'/g), (m) => m[1]));
+  check(
+    '★ every openable panel has a focusable container (precondition)',
+    openable.size > 0 && boxes.length === openable.size,
+    `containers=${boxes.length} openable=${openable.size} [${[...openable].join(',')}]`,
+  );
   check('★★★ every container carries `tabIndex` —— without it `box.focus()` is a no-op and Escape never arrives',
     boxes.every((b) => b.attrs.includes('tabIndex')),
     boxes.filter((b) => !b.attrs.includes('tabIndex')).map((b) => `line ${b.line}`).join(', '));

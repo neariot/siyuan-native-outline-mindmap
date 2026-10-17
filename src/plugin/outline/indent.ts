@@ -126,15 +126,19 @@ export function indentNodes(nodes: OutlineNode[], ids: readonly string[]): numbe
     if (idx <= 0) continue;
     const [moved] = list.splice(idx, 1);
     const prev = list[idx - 1];
-    // ★ A table is a block of its own and cannot become a child: measured, the kernel hangs a
-    //   table off the document and refuses it inside a `NodeList`. Leaving it where it is is
-    //   the only correct answer -- and it is silent either way, so it is stated here.
-    //   ★ A code block is the same shape (a root-level block, no listItem), so it is refused by
-    //   the same rule rather than a second one beside it -- one condition, two block kinds.
-    if (prev.table || moved.table || prev.codeBlock || moved.codeBlock) {
-      list.splice(idx, 0, moved);
-      continue;
-    }
+    // ★★★ Nothing is refused here any more.
+    //
+    //   This branch used to skip a **table** or a **code block**, on the claim that "the kernel hangs
+    //   it off the document and refuses it inside a `NodeList`" —— and that claim was measured to be
+    //   false on 2026-10-16 for both kinds: `insertBlock` with `parentID` = a list item creates a
+    //   `NodeTable` and a `NodeCodeBlock` inside it, and the exported markdown shows them nested
+    //   (`docs/kernel-api.md` §7.17). What it really recorded was our **writer's** choice to anchor
+    //   every such block at the document root; both branches now anchor by the block's place in the
+    //   tree, so a level change can be honoured.
+    //
+    //   The one thing still true here is the rule above it: the **first sibling** has no previous
+    //   sibling to attach to, so it cannot be indented. That is a property of the list, not of the
+    //   block kind, and it is what the remaining check above enforces.
     prev.children.push(moved);
     // ★ After attaching, the previous sibling must be expanded, otherwise the child is hidden by the collapsed state,
     //   and the user will think "I pressed Tab but the node disappeared".

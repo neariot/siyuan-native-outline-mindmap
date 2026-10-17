@@ -23,22 +23,35 @@ export interface BlockTreeState {
   /** listItem block ID -> task state (1: not done, 2: done) */
   itemTaskStatus: Map<string, number>;
   /**
-   * Document-root **table** block IDs, in document order.
+   * Every **table** block ID in the document, in document order —— at any depth.
    *
-   * ★ A table is not a list item: it has no `NodeListItem`, so none of the tables above can
-   *   hold it. Measured — the kernel stores a table with `parent_id` = the document and block
-   *   type `t`, and writing one inside a paragraph's inline DOM is stored as `<protyle-html>`.
-   *   Without this list a table in a document is invisible to the whole write path.
+   * ★ It began as "document-root table IDs", because that was all a table could be: no `NodeListItem`,
+   *   `parent_id` = the document, block type `t` (and writing one inside a paragraph's inline DOM is
+   *   stored as `<protyle-html>`). **That is no longer the only place one can live** —— measured on
+   *   the running kernel (2026-10-16), `insertBlock` with `parentID` = a list item creates a
+   *   `NodeTable` inside it, and a user can write the same in SiYuan's own editor.
+   *
+   *   Why the list exists at all: a table has no list item and no paragraph, so **no list table above
+   *   can hold it** —— at any level. Without this list the write path is blind to one, and a blind
+   *   table is worse than an unreadable one: `syncStructure` inserts a **second copy** beside it, and
+   *   `syncDeletions` deletes the original.
    */
-  rootTableIds: string[];
+  tableIds: string[];
   /**
-   * Document-root **code block** IDs, in document order.
+   * Every **code block** ID in the document, in document order —— at any depth.
    *
-   * ★ Same shape as `rootTableIds` above and measured the same way: a SiYuan code block is its own
-   *   root-level block (`data-type="NodeCodeBlock"`) with no listItem, so none of the list tables
-   *   can hold it. Without this list a code block in a document is invisible to the write path.
+   * ★ It began as "document-root code block IDs", because that was all a code block could be: a
+   *   `NodeCodeBlock` with no listItem, hung off the document. **That is no longer the only place one
+   *   can live** —— measured against the running kernel, `insertBlock` with `parentID` = a list item
+   *   creates a `NodeCodeBlock` inside it, and a user can write the same in SiYuan's own editor. So
+   *   the list is collected at any depth, and the name says what it holds.
+   *
+   *   Why the list is needed at all: no list table above can hold a code block (it has no listItem
+   *   and no paragraph), so without it the write path is blind to one —— and a blind block is worse
+   *   than an unreadable one: `syncStructure` judges it "new in the UI" and inserts a **second copy**
+   *   beside the original, while `syncDeletions` deletes the original.
    */
-  rootCodeBlockIds: string[];
+  codeBlockIds: string[];
   /** when the document has no list at all, the ID of SiYuan's default empty paragraph block under the document root (cleaned up when the first node is inserted) */
   emptyRootParagraphs: string[];
 }
@@ -56,8 +69,8 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
   const childrenOf = new Map<string, string[]>();
   const aliveIds = new Set<string>();
   const itemTaskStatus = new Map<string, number>();
-  const rootTableIds: string[] = [];
-  const rootCodeBlockIds: string[] = [];
+  const tableIds: string[] = [];
+  const codeBlockIds: string[] = [];
   let topListId = '';
 
   if (!domHtml) {
@@ -69,8 +82,8 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
       aliveIds,
       topListId,
       itemTaskStatus,
-      rootTableIds,
-      rootCodeBlockIds,
+      tableIds,
+      codeBlockIds,
       emptyRootParagraphs: [],
     };
   }
@@ -130,20 +143,27 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
           if (!topListId) topListId = id;
         }
 
-        // ★ A root-level table: measured, the kernel hangs it off the document, never off a
-        //   NodeList, and it is the only thing here that has no listItem parent.
-        if (type === 'NodeTable' && (parent.type === 'NodeDocument' || parent.id === rootDocId)) {
-          rootTableIds.push(id);
+        // ★★ A **table**, collected wherever it lives.
+        //
+        //   A table has no `NodeListItem` and no `NodeParagraph`, so it cannot appear in any of the
+        //   maps above — whether it hangs off the document or sits inside a list item (measured: both
+        //   are creatable, and a user can write the nested one in SiYuan's editor). Hence **no depth
+        //   condition**: every one of them has to reach the writer.
+        if (type === 'NodeTable') {
+          tableIds.push(id);
         }
 
-        // ★★ A root-level **code block**, collected for the same reason and the same way.
+        // ★★ A **code block**, collected wherever it lives.
         //
         //   Measured against the running kernel: a code block is
-        //   `<div data-type="NodeCodeBlock" class="code-block">` hung off the document, with no
-        //   listItem and no paragraph —— so, like a table, none of the tables above can hold it and
-        //   the whole write path is blind to it without this list.
-        if (type === 'NodeCodeBlock' && (parent.type === 'NodeDocument' || parent.id === rootDocId)) {
-          rootCodeBlockIds.push(id);
+        //   `<div data-type="NodeCodeBlock" class="code-block">`, hung off the document when it is a
+        //   document-level block —— no listItem and no paragraph, so none of the tables above can
+        //   hold it. It can equally live **inside a list item** (`insertBlock` with `parentID` = a
+        //   list item produces one, and the user can write the same in SiYuan's own editor), and it
+        //   stays invisible to every list table there too. Hence **no depth condition**: each of them
+        //   has to reach the writer, at any level.
+        if (type === 'NodeCodeBlock') {
+          codeBlockIds.push(id);
         }
 
         stack.push({ id, type });
@@ -180,8 +200,8 @@ export function parseDomToTree(domHtml: string, rootDocId: string): BlockTreeSta
     aliveIds,
     topListId,
     itemTaskStatus,
-    rootTableIds,
-    rootCodeBlockIds,
+    tableIds,
+    codeBlockIds,
     emptyRootParagraphs,
   };
 }

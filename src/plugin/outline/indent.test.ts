@@ -282,6 +282,44 @@ console.log('\nboundaries and invariants');
   check('indenting a node that is already at the head -> no change', sketch(t) === once);
 }
 
+// ── Tables and code blocks are ordinary nodes: they nest like anything else ──
+//
+//   They used to be refused, on the claim that "a `NodeList` cannot contain a table / a code block"
+//   —— measured against the running kernel on 2026-10-16, **false for both**:
+//   `insertBlock` with `parentID` = a list item creates a `NodeTable` and a `NodeCodeBlock` inside
+//   it, and the exported markdown shows them nested (`docs/kernel-api.md` §7.17). The real blocker
+//   had been **our writer**, which anchored every such block at the document root; it now anchors by
+//   the block's place in the tree, so the level change is writable and these cases must pass.
+{
+  console.log('  a table indents like any node, and so does a code block');
+  const T = (id: string): OutlineNode =>
+    ({ id, modified: 0, text: '', table: { header: ['a', 'b'], rows: [['1', '2']] }, children: [] }) as OutlineNode;
+  const C = (id: string): OutlineNode =>
+    ({ id, modified: 0, text: '', codeBlock: { lang: '', code: 'x' }, children: [] }) as OutlineNode;
+
+  const t1 = [N('A'), T('T')];
+  indentNodes(t1, ['T']);
+  check('★★ a table indents under its previous sibling', sketch(t1) === 'A | A > T', sketch(t1));
+  check('★ and the table is really a child, not only a sibling', t1[0].children.length === 1);
+  check('★★ the table keeps its own cells', t1[0].children[0].table?.header.join(',') === 'a,b');
+
+  const t2 = [N('A'), C('C')];
+  indentNodes(t2, ['C']);
+  check('★★ a code block indents like any node', sketch(t2) === 'A | A > C', sketch(t2));
+  check('★ and it keeps its source', t2[0].children[0].codeBlock?.code === 'x');
+
+  // ★★ The control: the refusal that is left is the **first sibling**, a property of the list, and
+  //   it must still apply to every kind —— otherwise "nothing is refused" would be the new bug.
+  const t3 = [T('T0'), N('A')];
+  indentNodes(t3, ['T0']);
+  check('★★ the first sibling still cannot indent, whatever kind it is', sketch(t3) === 'T0 | A', sketch(t3));
+
+  // ...and outdenting brings a table back to the top level.
+  const t4 = [N('A', T('T')), N('B')];
+  outdentNodes(t4, ['T']);
+  check('★★ a nested table outdents back beside its parent', sketch(t4) === 'A | T | B', sketch(t4));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (failures.length) {
   console.log('\nfailures:');

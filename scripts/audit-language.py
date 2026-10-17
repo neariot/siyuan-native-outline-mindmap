@@ -511,7 +511,13 @@ class JsScanner:
             i += 1
 
         if segments:
-            raise ScanError("unterminated template literal at offset %d" % segments[-1][0])
+            # ★ `segments` holds the **offset** of each open segment (`append(i + 1)`), so the offset is
+            #   `segments[-1]` itself. Indexing it as `segments[-1][0]` raised `TypeError: 'int' object is
+            #   not subscriptable` instead, so a file with an unterminated template literal killed this
+            #   audit with a traceback rather than reaching the `ScanError` handling that reports the
+            #   file as skipped-with-a-reason (measured: one stray backtick in a JSX text node in
+            #   `src/plugin/outline/Outliner.tsx` did exactly that).
+            raise ScanError("unterminated template literal at offset %d" % segments[-1])
         if subst:
             raise ScanError("unterminated `${...}` substitution")
 

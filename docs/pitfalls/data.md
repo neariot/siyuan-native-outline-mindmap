@@ -346,3 +346,54 @@ parses to `NodeList → NodeListItem → NodeParagraph(甲)` followed by `NodeHe
 the heading is a *sibling of the list*, not a child of the list item. SiYuan lifts it out. The markdown
 export still shows `- 甲\n\n  # 乙`, with the indentation preserved, which is exactly why reading the export
 invites the wrong conclusion: **the export renders, the tree decides.**
+
+## `moveBlock` into an **empty / already-removed** child list is answered `code: 0` and moves nothing
+
+Measured on the isolated instance, 2026-10-17, behind the defect that used to be recorded in
+`e2e/toolbar-indent.spec.ts` as `test.fixme` (now green, and left as a regression case).
+
+The sequence, all verified against the running kernel:
+
+```python
+# 乙 is 甲's only child. Outdent it.
+moveBlock(yi, parentID='', previousID=<甲's listItem>)          # code: 0, and 甲's child list is **removed** by the kernel
+# (verified: a getBlockDOM of the document now holds a single NodeList — the root one.)
+
+# Indent it straight back —— this is what moveNodes does for a first child (no predecessor):
+moveBlock(yi, parentID=<that list's id>, previousID='')        # code: 0 …… and nothing moves
+moveBlock(yi, parentID='', previousID=<甲's paragraph>)          # code: 0 …… and nothing moves either
+moveBlock(yi, parentID=<甲's listItem>, previousID='')          # code: -1 …… "previousID can not be the ID of a document"
+```
+
+`parentID` does not accept a `NodeList`, so an empty list **cannot be inserted into either**, and there
+is nothing to position against. The one shape the kernel honours is a placeholder:
+
+```python
+lst = insertBlock('- placeholder', previousID=<甲's paragraph>)  # a NEW child list, with a placeholder item
+moveBlock(yi, previousID=<the placeholder list item>)           # 乙 lands after it, inside 甲
+deleteBlock(<the placeholder>)                                  # → the document reads `- 甲\n  - 乙\n- 丙`
+```
+
+Two things the first write-up of this got wrong, both of them measured:
+
+· the empty list is **not** left behind by the kernel —— outdenting the last child removes it, so
+  "replacing it" is really "creating one where none exists". The phantom id came from the **lagging
+  SQL index**, which still returned the removed list's id, so `ensureChildList` handed back a block that
+  no longer existed and the move into it was answered `code: 0`.
+· the destructive step (deleting the old list) must run **after** the moves. Deleting first and then
+  finding the new list turns out to work too, but only because the index miss was avoided; doing it
+  after is safe either way —— the old list is deleted only in the state where the live read proved it
+  holds **no** item, so nothing is lost.
+
+The live read is the authority for that decision, not the index and not `lastDomTree`: both report a
+list with a child while the kernel holds an empty or absent one. `getBlockDOM` serialises the kernel's
+in-memory AST synchronously, so it is the only one of the three that answers the question.
+
+Two lessons that cost real time here, both about trusting a snapshot:
+
+· the "already the first child of the target container ⇒ nothing to do" shortcut is read from a DOM
+  snapshot, and in the case that matters the snapshot **predates the very move** that made the node a
+  child list's first element. The shortcut now also requires `parentOk` (`actualParent === wantList`),
+  which the stale snapshot cannot fake.
+· `code: 0` is the answer for a move that did not happen, for three different kinds of block (a code
+  block, a table, a list item). **Verify where the block ended up**, never that the call returned.

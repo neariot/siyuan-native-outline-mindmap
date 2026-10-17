@@ -448,7 +448,166 @@ class AndroidVerifier:
         }""")
         self.check("typed text synced into the current node's DOM", sample_text in content, f"current node content='{content}'")
 
+    def scenario_code(self, page, with_code=True):
+        """Scenario: tap a code box on the real device, type, and verify focus/value/kernel.
+
+        with_code=False is the negative control: the document holds no code block, so the
+        very first check must fail. A scenario whose checks cannot fail is decoration, and
+        this is what keeps them honest.
+
+        The source is deliberately **longer than the phone screen**: a code box is a single
+        textarea, so on a real device the question "is the whole block reachable" only
+        exists once the box is taller than the viewport — the case that matters is the one
+        a narrow fixture would hide.
+        """
+        print("\n--- Scenario: real-device code-box tap, type and sync ---")
+        lines = "\n".join(f"const line{n} = {n};" for n in range(1, 31))
+        doc = self._kernel(
+            "/api/filetree/createDocWithMd",
+            {"notebook": cfg.test_notebook, "path": "/AND-CodeProbe", "markdown": "- child node\n"},
+        )
+        try:
+            if with_code:
+                self._kernel(
+                    "/api/block/insertBlock",
+                    {"dataType": "markdown", "data": f"```js\n{lines}\n```", "parentID": doc},
+                )
+            # ★ Phone-side address: the device's own loopback through adb reverse (see DEVICE_LOOPBACK).
+            page.goto(f"http://{DEVICE_LOOPBACK}:{self.siyuan_port}/stage/build/mobile/?id={doc}")
+            page.wait_for_timeout(2500)
+            self.ensure_plugin_open_mobile(page)
+            self.ensure_outline_view(page)
+
+            box = page.locator(".om-outline-wrap textarea.om-node-code").first
+            has_box = box.count() > 0
+            self.check("a code box renders on the real device", has_box)
+            if not has_box:
+                self.shot("code_missing", page)
+                return
+            try:
+                box.scroll_into_view_if_needed(timeout=5000)
+            except Exception:
+                pass
+            self.touch_tap(page, box)
+            page.wait_for_timeout(1200)
+            focused = page.evaluate(
+                "() => { const a = document.activeElement; return a ? a.tagName + '.' + String(a.className).slice(0, 40) : 'none'; }"
+            )
+            self.check("tapping the code box focuses it on the real device", focused.startswith("TEXTAREA"), focused)
+            self.shot("code_focused", page)
+            self.bridge.input_text("Z")
+            page.wait_for_timeout(1000)
+            try:
+                val = box.input_value()
+            except Exception as e:
+                val = ""
+                self.check("the code box value is readable", False, str(e)[:100])
+                self.shot("code_unreadable", page)
+                return
+            # ★ A tap puts the caret at the tap point, so the character lands **where the finger was**,
+            #   not necessarily at the end. Asserting "the value changed" instead of "it ends with Z"
+            #   is what keeps this honest about what a real finger does.
+            # ★ Assert only that the character landed **somewhere** in the box: a tap puts the caret at
+            #   the tap point, so the character is not appended at the end. What was appended is
+            #   exactly what this criterion must not claim.
+            self.check("the typed character reaches the code box on the device", "Z" in val, f"len={len(val)}")
+            # The box must scroll internally, or a long block is only partly reachable.
+            scrollable = page.evaluate(
+                "() => { const t = document.querySelector('.om-outline-wrap textarea.om-node-code');"
+                " return t ? { scrollH: t.scrollHeight, clientH: t.clientHeight, lines: t.value.split('\\n').length } : null; }"
+            )
+            self.check(
+                "the code box is scrollable so a long block stays reachable",
+                bool(scrollable and scrollable["scrollH"] > scrollable["clientH"] and scrollable["lines"] >= 30),
+                str(scrollable),
+            )
+            kd = ""
+            synced = False
+            for _ in range(25):
+                kd_raw = self._kernel("/api/block/getBlockKramdown", {"id": doc})
+                kd = kd_raw.get("kramdown", "") if isinstance(kd_raw, dict) else str(kd_raw)
+                if "Z" in kd:
+                    synced = True
+                    break
+                page.wait_for_timeout(1000)
+            self.check("the typed character reaches the document on disk", synced, kd[:160])
+            self.shot("code_typed", page)
+        finally:
+            try:
+                self._kernel("/api/filetree/removeDocByID", {"id": doc})
+            except Exception as e:
+                print(f"  cleanup failed for {doc}: {e}")
+
+    def ensure_plugin_open_mobile(self, page):
+        """Ensures the plugin panel is mounted, through the mobile shell's own entry.
+
+        Mobile has no right-side dock: bottom toolbar "More" (#toolbarMore) -> the plugin
+        dock item. Falls back to the shared ensure_plugin_open when the panel is already up.
+        """
+        if page.locator(".om-mm-host").count() > 0:
+            return
+        more = page.locator("#toolbarMore").first
+        try:
+            more.wait_for(state="visible", timeout=15000)
+            more.click()
+            page.wait_for_timeout(800)
+        except Exception as e:
+            raise RuntimeError(f"the mobile More menu never appeared: {e}")
+        dock = page.locator('[data-type="mobile-plugin-dock"]').first
+        try:
+            dock.wait_for(state="visible", timeout=15000)
+            dock.click()
+        except Exception:
+            # Fall back to a text match (bazaar-installed builds may label it differently)
+            item = page.locator('.b3-menu__item:has-text("原生大纲导图")').first
+            item.wait_for(state="visible", timeout=15000)
+            item.click()
+        page.wait_for_selector(".om-mm-host", timeout=20000)
+
+    def touch_tap(self, page, locator):
+        """Taps the locator's center through CDP touch events.
+
+        ★ Why not `locator.tap()`: it requires the `hasTouch` context flag, which a
+        CDP-attached real-device context does not carry — it raises "The page does not
+        support tap" on a phone that taps perfectly well. `Input.dispatchTouchEvent`
+        travels the browser's real touch pipeline (touchstart/end, focus, click) at
+        viewport CSS coordinates, so no device-pixel scaling is needed either (which an
+        `adb shell input tap` would require, status-bar offset included).
+        """
+        box = locator.bounding_box()
+        if not box:
+            raise RuntimeError("tap target has no bounding box")
+        x = box["x"] + box["width"] / 2
+        y = box["y"] + box["height"] / 2
+        sess = page.context.new_cdp_session(page)
+        try:
+            sess.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y, "id": 1}]})
+            sess.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        finally:
+            try:
+                sess.detach()
+            except Exception:
+                pass
+
+    def _kernel(self, path, payload):
+        """POST to the test instance kernel; a refusal raises instead of reading as empty."""
+        import urllib.request
+        import json as _json
+
+        url = f"http://{cfg.siyuan_host}:{self.siyuan_port}{path}"
+        req = urllib.request.Request(
+            url,
+            data=_json.dumps(payload).encode(),
+            headers={"Authorization": f"Token {cfg.test_token()}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:
+            j = _json.load(r)
+        if not isinstance(j, dict) or j.get("code") != 0:
+            raise RuntimeError(f"kernel refused {path}: {j}")
+        return j["data"]
+
     def scenario_drawer(self, page):
+        """Scenario 4: expanding and collapsing the second-level format drawer (Aa panel)."""
         """Scenario 4: expanding and collapsing the second-level format drawer (Aa panel)."""
         print("\n--- Scenario 4: second-level format drawer expansion and linkage ---")
         bar = page.locator(".mobile-keyboard-bar").first
@@ -646,10 +805,12 @@ def main():
     parser.add_argument("--siyuan-host", default=cfg.siyuan_host,
                         help="hostname used from the host side to reach SiYuan (defaults to SIYUAN_HOST from .env). Note this is used only for **host-side** probing; the phone side goes through adb reverse, see DEVICE_LOOPBACK")
     parser.add_argument("--scenario", "-c", default="all",
-                        choices=["all", "setup", "idle", "keyboard", "type", "drawer", "dismiss", "scroll", "shot"],
-                        help="scenario to run: all(full) / idle / keyboard / type / drawer / dismiss / scroll / setup / shot")
+                        choices=["all", "setup", "idle", "keyboard", "type", "drawer", "dismiss", "scroll", "shot", "code"],
+                        help="scenario to run: all(full) / idle / keyboard / type / drawer / dismiss / scroll / shot / code(real-device code-box tap-type-sync)")
     parser.add_argument("--output-dir", "-o", default=".tmp/android-test", help="output directory for screenshots and artifacts")
     parser.add_argument("--text", default="native_mindmap_test", help="test content for the text input scenario")
+    parser.add_argument("--code-shape", default="with-code", choices=["with-code", "text-only"],
+                        help="code scenario fixture: with-code (a real code block) or text-only (negative control: no code box, the first check must fail)")
     parser.add_argument("--skip-setup", action="store_true", help="skip the ADB reverse / forward port forwarding steps")
     parser.add_argument("--keep-open", action="store_true", help="keep the browser connection open after the test finishes")
     parser.add_argument("--json", action="store_true", help="output the test report as JSON")
@@ -733,6 +894,8 @@ def main():
                 verifier.scenario_dismiss(page)
             if args.scenario in ("all", "scroll"):
                 verifier.scenario_scroll(page)
+            if args.scenario in ("all", "code"):
+                verifier.scenario_code(page, with_code=(args.code_shape == "with-code"))
 
             if not args.keep_open and browser:
                 browser.close()

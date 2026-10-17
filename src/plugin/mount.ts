@@ -29,6 +29,7 @@ import { addChild, addSibling, countNodes, findNode, removeNode, removeNodes } f
 import type { IEventBus } from 'siyuan';
 import { t } from './i18n';
 import { getActiveDocId as resolveActiveDocId } from './active-doc';
+import { DOC_RESOLVE_RETRY_MS, NAVIGATION_EVENTS, shouldKeepResolving } from './doc-resolve';
 import { getHostApp } from '../siyuan/host-compat';
 // Component styles: Mindmap does not import CSS itself (it used to rely on App.tsx importing it),
 // so the plugin's mount path must import them explicitly, or the mind map has no styles.
@@ -103,11 +104,11 @@ export function mountMindmap(custom: Custom, deps: MountDeps = {}): void {
 }
 
 /**
- * Get the currently active document ID (used by the Dock).
+ * How long to wait between re-reads while the active document is still unknown.
  *
- * Same source as the plugin-side `getActiveDocId`: on mobile it reads `siyuan.mobile.editor`,
- * on desktop `layout.centerLayout`, and finally falls back to DOM attributes.
- * It lives here on its own because the mount layer cannot conveniently import the plugin's main file (that would form a cycle).
+ * See `./doc-resolve.ts` for the measured iOS case that needs it and the criterion itself; it
+ * lives there so it stays assertable offline (importing the mount layer does not resolve outside
+ * the app, so a test on it fails to load instead of failing on its criterion).
  */
 /** Clean up the React root on unmount to avoid a memory leak */
 export function unmountMindmap(custom: Custom): void {
@@ -137,6 +138,9 @@ function OmTabApp({
   // The Dock has no `data.docId`, so the active document is resolved at runtime instead;
   // when the user switches documents (frequently on mobile) the content must follow.
   const [activeDoc, setActiveDoc] = React.useState<string>(givenDocId);
+  // The id the panel is currently showing, readable from the retry loop without re-subscribing.
+  const activeDocRef = React.useRef<string>(givenDocId);
+  activeDocRef.current = activeDoc;
   React.useEffect(() => {
     if (!followActive) return;
     const read = (): void => {
@@ -148,6 +152,17 @@ function OmTabApp({
 
     // Read an initial value first (a document may already be open at mount time).
     read();
+
+    // ★★ Until the resolved id **is** the one on screen, keep re-reading. See
+    //   `DOC_RESOLVE_RETRY_MS` for the measured iOS case that needs it, and `shouldKeepResolving`
+    //   for why the criterion is agreement rather than "something non-empty": a stale id from a
+    //   previous document answers non-empty and would otherwise stop the loop for good.
+    const poll = window.setInterval(() => {
+      if (!shouldKeepResolving(resolveActiveDocId(), activeDocRef.current)) {
+        window.clearInterval(poll);
+        read();
+      }
+    }, DOC_RESOLVE_RETRY_MS);
 
     // Afterwards it is event-driven, not polled.
     //
@@ -167,8 +182,31 @@ function OmTabApp({
       window.requestAnimationFrame(read);
     };
     eventBus?.on('switch-protyle', onSwitch);
+
+    // ★★★ The address is an event source too, and this is the measured iOS case.
+    //
+    //   A mobile session opens as `?r=<code>`: the kernel validates the access code and then
+    //   **redirects** to `?id=<rootId>`, which is where the mobile shell reads the document from
+    //   (verified in the kernel's own bundle: `new URLSearchParams(location.search).get("id")`).
+    //   While the panel is mounted at that moment there is no document to resolve: `mobile.editor`
+    //   exists but carries only `version` (no protyle), and the address holds no `?id=` either —
+    //   measured on a real phone: `url=/stage/build/mobile/?r=7q7zc45`, `editor:version`.
+    //
+    //   Then the redirect happens. `switch-protyle` does **not** fire for it (the page navigated,
+    //   the editor was never switched), so the id would have stayed empty for the rest of the
+    //   session: the panel showed rows and a title but every block came from nowhere, and a
+    //   document with a code block showed no code block at all.
+    //
+    //   So the address is watched directly. `popstate`/`hashchange` cover the back button and
+    //   hash navigation; the `load` listener covers a full navigation into this panel's session.
+    const onNav = (): void => {
+      window.setTimeout(read, 60);
+    };
+    for (const ev of NAVIGATION_EVENTS) window.addEventListener(ev, onNav);
     return () => {
+      window.clearInterval(poll);
       eventBus?.off('switch-protyle', onSwitch);
+      for (const ev of NAVIGATION_EVENTS) window.removeEventListener(ev, onNav);
     };
   }, [followActive, eventBus]);
   // ★ docId override used by Save As:
@@ -935,6 +973,33 @@ function OmTabApp({
       });
       void waitForOwnWrite.catch(() => undefined).then(() => loadDocRef.current?.()).then((tree: OutlineNode[] | undefined) => {
         if (!tree) return;
+        // ★★ Preserve an in-flight code edit across a foreign re-read.
+        //
+        //   A foreign transaction (an echo of our own write, another client, a sync) can trigger a
+        //   whole-document re-read while a keystroke is still debounced. The kernel may not have
+        //   flushed the typed character yet, so the read returns an **empty** fence and overwrites
+        //   the tree that holds the edit —— the box is cleared and the keystroke is lost, with no
+        //   error anywhere (measured: `e2e/code-block-two-boxes.spec.ts`, "the box must keep 't'").
+        //
+        //   The merge is narrow on purpose: only **code-block code**, only when the current model
+        //   holds a non-empty value that differs from the read, and only by id. Other fields still
+        //   come from the document, so a genuine external edit is not masked —— only the value the
+        //   user is actively typing is kept until the write lands.
+        const current = nodesRef.current;
+        if (current) {
+          const mergeCode = (loaded: OutlineNode[], cur: OutlineNode[]): void => {
+            for (const ln of loaded) {
+              const cn = cur.find((c) => c.id === ln.id);
+              if (ln.codeBlock && cn?.codeBlock) {
+                if (cn.codeBlock.code && cn.codeBlock.code !== ln.codeBlock.code) {
+                  ln.codeBlock.code = cn.codeBlock.code;
+                }
+              }
+              if (ln.children?.length && cn?.children?.length) mergeCode(ln.children, cn.children);
+            }
+          };
+          mergeCode(tree, current);
+        }
         nodesRef.current = tree;
         setNodes(tree);
       }).catch(() => {

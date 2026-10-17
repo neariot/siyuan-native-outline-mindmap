@@ -158,6 +158,49 @@ check(
   );
 }
 
+// ── A table indented inside a list item is that item's child ──
+//
+//   Measured against the running kernel (2026-10-16): `insertBlock` with `parentID` = a list item
+//   creates a `NodeTable` inside it, and with `previousID` = that item's paragraph the table lands
+//   after the item's text. `createDocWithMd` with an indented table produces the same document, so a
+//   user can write one inside a list item in SiYuan's own editor.
+//
+//   The reader used to `roots.push` every table, so such a table came back as a **top-level** row ——
+//   the panel showed a level the document did not have, and the write-back had no anchor that could
+//   reproduce it. The fixture below is the kernel's own export shape: rows indented two spaces, and
+//   the closing attribute line carrying `colgroup="|"`.
+{
+  const nested = [
+    '- 甲',
+    '  {: id="20260101000000-li00001"}',
+    '  |a|b|',
+    '  | ---| ---|',
+    '  |1|2|',
+    '  {: id="20260101000000-tblaaaa" colgroup="|"}',
+    '- 乙',
+    '  {: id="20260101000000-li00002"}',
+    '',
+  ].join('\n');
+  const tree = kramdownToTree(nested);
+  check('an indented table is a child of its list item, not a root', tree.length === 2 && tree[0].children.length === 1);
+  check('the child really is the table', !!tree[0]?.children[0]?.table);
+  check(
+    'the cells are intact (the block indent never reaches them)',
+    JSON.stringify(tree[0]?.children[0]?.table) === JSON.stringify({ header: ['a', 'b'], rows: [['1', '2']] }),
+  );
+  check('its id comes from the attribute line', tree[0]?.children[0]?.id === '20260101000000-tblaaaa');
+  check('the sibling list item is untouched', tree[1]?.children.length === 0);
+
+  // ★ The counter-case: a document-level table is still a root, so "a table is always a child"
+  //   cannot pass either.
+  const rooted = kramdownToTree(
+    ['- 甲', '  {: id="20260101000000-li00001"}', '', '|a|b|', '| ---| ---|', '|1|2|',
+     '{: id="20260101000000-tblbbbb" colgroup="|"}', ''].join('\n'),
+  );
+  check('a document-level table stays a root', rooted.filter((n) => n.table).length === 1);
+  check('and it does not attach to the node above it', (rooted.find((n) => n.table) ? 1 : 0) === 1);
+}
+
 if (fail > 0) {
   console.error(`\n${fail} failed, ${pass} passed\n`);
   for (const f of failures) console.error(`  ✗ ${f}`);

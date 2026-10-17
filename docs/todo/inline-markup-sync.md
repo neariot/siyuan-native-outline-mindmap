@@ -687,7 +687,90 @@ D19 mechanism exactly. Both now read `!n.table && !n.codeBlock`.
   `/selected/` assertion red) — every file restored byte-identical.
 * `e2e/code-block.spec.ts` — 3 cases, each asserting the **kernel** after the step: renders verbatim
   as its own row (with `data-lang`), deletion removes the block (`type='c'` gone from the block list)
-  while the neighbours survive, and indent refuses it while the mind map shows it as a topic.
+  while the neighbours survive, and the mind map shows it as a topic. (The case used to read "and
+  indent refuses it" —— that was the false kernel claim, see below; indent now really works.)
+
+### A code block is a node with a level (measured, then implemented)
+
+The old comment in `indent.ts` refused an indent for a code block because "a `NodeList` cannot contain
+a code block", extending a table's recorded finding. **Both claims were false** —— measured on the
+isolated instance, 2026-10-16 (`docs/kernel-api.md` §7.17):
+
+* `insertBlock` with `parentID` = a list item creates a `NodeCodeBlock` **inside** it; with
+  `previousID` = that item's paragraph the fence lands after the item's text. A table behaves the same.
+* `moveBlock` on a `NodeCodeBlock` answers `code: 0` and **moves nothing** (to the document it is
+  refused outright). So a level change has to be written as **create at the new anchor, delete the
+  old block** —— the only route the kernel honours.
+
+What changed on that basis:
+
+* **Reader** — a fence is placed by its **indentation**, like every other block, so one written
+  inside a list item reads as that item's child instead of a top-level row. Its lines arrive carrying
+  the block's own indent, which is stripped per line (CommonMark), or the indent would be re-saved on
+  every pass.
+* **DOM walk** — `rootCodeBlockIds` became `codeBlockIds`, collected at **any depth**: no list table can
+  hold a code block (no listItem, no paragraph), so an unseen one is inserted a second time and the
+  original deleted.
+* **Writer** — a nested code block is anchored in its parent's list item, a top-level one at the
+  document; and a block whose parent no longer matches the tree is deleted and re-created.
+* **Indent / outdent** — the `codeBlock` half of the refusal is gone; the `table` half stays, and its
+  comment now names the real cause (**our writer anchors tables at the document root**).
+
+* `src/core/code-block.test.ts` — 10 cases now, including the two nesting ones: an indented fence is the
+  list item's **child**, and a document-level fence is still a root (the counter-case, so "a fence is
+  always a child" cannot pass).
+* `src/plugin/outline/indent.test.ts` — 3 cases pinning the refusal that remains: a table does not
+  indent, a node after a table does not indent under it, and a node after an ordinary sibling does
+  (so the rule cannot decay into "refuse everything").
+* `e2e/code-block-nested.spec.ts` — 2 cases: a document that already holds a nested fence opens with it
+  as a child row and a save round trip leaves **one** fence; indenting a root-level code block nests it
+  **in the kernel** and outdenting brings it back. Two red proofs, one per side: the reader's
+  indentation rule reverted (the row stops being deeper) and the writer's nested anchor reverted (the
+  document never nests) —— both with their own assertion red.
+
+### A table is the same story, and the same two changes
+
+Measured the same day, with the same two numbers: `insertBlock` with `parentID` = a list item creates a
+`NodeTable` inside it (after the item's text, with `previousID` = that item's paragraph), and
+`moveBlock` on a `NodeTable` answers `code: 0` and **moves nothing** —— so a table's level change is
+create-then-delete as well. So `flushTable` nests by indentation, `rootTableIds` became `tableIds` at
+any depth (a table has no list item and no paragraph, so no list table can hold it), the writer anchors
+it by its place in the tree, and `indent.ts` no longer refuses anything at all.
+
+* `src/core/table-markup.test.ts` — 5 new checks: an indented table is its item's **child**, its cells
+  are intact, and a document-level table stays a root (the counter-case).
+* `src/plugin/outline/indent.test.ts` — rewritten: a table indents like any node and keeps its cells, a
+  code block does too, the **first sibling** still cannot indent whatever kind it is, and a nested table
+  outdents back beside its parent.
+* `e2e/table-nested.spec.ts` — 2 cases: a nested table loads as a child and a save leaves one table;
+  indenting nests it **with its cells** and outdenting brings both back. A table has one hazard a code
+  block does not: its cells are written by a **separate** pass keyed on the block id, and a re-create
+  changes that id —— so "it is nested" and "it still has its data" are two claims, and only the second
+  catches a lost edit.
+
+### ★★ The level assertion that could not see a level
+
+Both nesting cases first asserted the export with a regex, and **the table one passed against a build
+where the table was never written into the kernel at all**:
+
+```ts
+expect(md).toMatch(/- 甲[\s\S]*\n\s+\| ?h1/);   // ★ wrong
+```
+
+`\s+` also matches the newline of a **blank line**, so a table at the document level, two lines below
+甲, matches it. The red proof caught it ("the check stayed GREEN on a real mutation") —— which is the
+only reason it was found. The replacement reads the level the way the document states it: how far the
+block's own line is indented, and the nearest list item **less indented** than that; `null` means the
+document level, and the counter-case asserts exactly that. The code-block case had the same blind spot
+and was changed in the same pass.
+
+**Open**: once, during a red-proof sequence, a code block **vanished** from the document after an
+outdent (`fenceCount` 0). It has not reproduced since — 10 ordinary runs, plus a stress probe that
+repeated the cycle 36 times in one document, all green — and a probe on every `deleteBlock` call only
+ever showed the deletion pass removing the block that had already been deleted. So the path is unknown
+and the loss is unexplained; the nesting work is not claimed to have fixed it.
+* The level change is driven through the **toolbar** buttons, because inside a code box Tab inserts a
+  tab character. That is why those buttons exist at all.
 
 ## 10. D22 — a duplicated `plan.push` scrambled every drag reorder
 
@@ -799,7 +882,55 @@ as a broken character. Reported as "renders but cannot be edited or deleted".
   contains the edited line. The old delete case now blurs the box before Delete — with
   the caret inside, Delete edits a character by design.
 
-## 12. Standing rules for the fix
+## 12. Fixed: a level change into an **empty / already-removed** child list is silently dropped
+
+Same class of defect as D1-D21 (a write-back that reports success while the document keeps the old
+state), found while fixing this and recorded here because nothing reports it.
+
+**Measured chain** (isolated instance, 2026-10-17; probes in `docs/pitfalls/data.md`):
+
+1. Outdent 乙 out of 甲. The kernel **removes** 甲's child list (verified: one NodeList in the
+   document afterwards).
+2. Indent 乙 straight back. 乙 becomes the **first** child, so there is no predecessor, and the only
+   remaining move shape is `moveBlock(乙, parentID=<that list>, previousID='')`.
+3. **The kernel answers `code: 0` and moves nothing.** Anchoring on 甲's paragraph instead fails the
+   same way (`code: 0`), and `parentID` = 甲's listItem is rejected outright (`code: -1`,
+   "`previousID` can not be the ID of a document").
+4. So the panel showed 乙 one level down, the document kept it at the top level, and `moveNodes`
+   returned `moved: 0` having reported nothing —— an **intermittent** divergence, because it depended
+   on whether the pass's DOM snapshot was already fresh.
+
+**Two things the first write-up of this got wrong:**
+
+· the empty list is **not** left behind by the kernel —— outdenting the last child removes it, so
+  "replacing it" is really "creating one where none exists".
+· the id `ensureChildList` handed back came from the **lagging SQL index**, which still returned the
+  removed list's id. That is why the first repair (delete the list, then `ensureChildList` again) did
+  not work: it went straight back through SQL and got the same phantom. The repair had to seed the
+  mapping with the **empty-string** marker (`''`), which is this store's own encoding of "looked up
+  and really is absent" —— that skips both the cache hit and the SQL fallback and goes straight to the
+  create path.
+
+**The repair** (`src/siyuan/store.ts`): `resolveWantList` is now asked for a child list that can be a
+move target (`needAnchorItem = !prevBlockId`). When the list it finds holds no item (read **live**
+through `getBlockDOM`, because the index and the snapshot both lag), the mapping is seeded with the
+absent marker so the create path runs, the node is moved **after** the placeholder that path mints,
+and `cleanup` deletes the placeholder at the end of the call. The list is deleted only in the state
+where the live read proved it holds **no** item, and only **after** the moves, so no node is lost.
+
+**In place**: the "already the first child of the target container ⇒ nothing to do" shortcut now also
+requires `parentOk`, so a stale sibling list cannot decide to skip a move that is genuinely needed.
+
+**Pinned by** `e2e/toolbar-indent.spec.ts` (both cases green, three runs) and the red proof that made
+it green: the same case timed out for 2.0 minutes before the fix and passes in under 10 seconds after.
+
+**Rule it exposes**: `code: 0` is the answer for a move that did **not** happen, and it now has three
+measured victims in this tree (a code block, a table, a list item). A write-back that returns success
+must verify **where the block ended up**; a level change that is not found in the document afterwards is
+not a write-back, however clean its return value.
+
+
+## 13. Standing rules for the fix
 
 - Every claim about the kernel is re-measurable with the probes named in §2; if a
   kernel form cannot be confirmed, it is **not** written.
